@@ -25,6 +25,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   rooms: Room[] = [];
   filteredRooms: Room[] = [];
   svgPath: SafeResourceUrl | undefined;
+  selectedOutletSvgs: string[] = [];
 
   isArray(value: unknown): boolean {
     return Array.isArray(value);
@@ -37,7 +38,13 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     { key: 'suite', label: 'Suite', options: [] },
   ];
 
-  filters = { outlet: 'all', status: 'all', pax: 'all', suite: 'all' };
+  filters = {
+    outlet: 'all',
+    status: 'all',
+    pax: 'all',
+    suite: 'all',
+    svg: 'all',
+  };
   outletOptions: string[] = [];
   statusOptions: string[] = [];
   paxOptions: string[] = [];
@@ -73,6 +80,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         this.safeSvgUrl =
           this.sanitizer.bypassSecurityTrustResourceUrl(svgPath);
       }
+      this.updateSelectedOutletSvgs();
       this.buildOptions();
       this.applyFilters();
     });
@@ -111,6 +119,22 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       });
     });
   }
+  //#region function to get svg
+  private updateSelectedOutletSvgs() {
+    const outlet = this.filters.outlet;
+    if (outlet === 'all') {
+      this.selectedOutletSvgs = [];
+      return;
+    }
+
+    const set = new Set<string>();
+    this.rooms
+      .filter((r) => r.outlet === outlet)
+      .forEach((r) => r.svg.forEach((p) => set.add(p)));
+
+    this.selectedOutletSvgs = Array.from(set);
+  }
+  //#endregion
 
   private attachRoomListeners(svgDoc: Document) {
     this.rooms.forEach((room) => {
@@ -153,6 +177,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     const select = event.target as HTMLSelectElement | null;
     if (select) {
       this.filters[key] = select.value;
+      this.updateSelectedOutletSvgs();
       this.applyFilters();
     }
   }
@@ -161,13 +186,11 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     this.filteredRooms = this.rooms.filter(
       (r) =>
         (this.filters.outlet === 'all' || r.outlet === this.filters.outlet) &&
-        r.svg === this.svgPath &&
         (this.filters.status === 'all' || r.status === this.filters.status) &&
         (this.filters.pax === 'all' ||
           r.capacity.toString() === this.filters.pax) &&
         (this.filters.suite === 'all' || r.name === this.filters.suite)
     );
-    console.log(this.filteredRooms);
     this.occupied = this.filteredRooms.filter(
       (r) => r.status === 'occupied'
     ).length;

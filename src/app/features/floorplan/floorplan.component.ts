@@ -3,6 +3,7 @@ import { Room } from '../../core/models/room.model';
 import { RoomService } from '../../core/services/room.service';
 import { CommonModule } from '@angular/common';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
+import { Observable } from 'rxjs';
 
 type FilterKey = 'outlet' | 'status' | 'pax' | 'suite';
 
@@ -20,8 +21,14 @@ interface FilterConfig {
   styleUrls: ['./floorplan.component.scss'],
 })
 export class FloorplanComponent implements OnInit, AfterViewInit {
+  rooms$: Observable<Room[]> | undefined;
   rooms: Room[] = [];
   filteredRooms: Room[] = [];
+  svgPath: SafeResourceUrl | undefined;
+
+  isArray(value: unknown): boolean {
+    return Array.isArray(value);
+  }
 
   filtersConfig: FilterConfig[] = [
     { key: 'outlet', label: 'Outlet', options: [] },
@@ -56,9 +63,16 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   ) {}
 
   ngOnInit() {
-    this.safeSvgUrl = this.sanitizer.bypassSecurityTrustResourceUrl('/8FA.svg');
     this.roomService.rooms$.subscribe((rooms) => {
       this.rooms = rooms;
+
+      if (rooms.length > 0 && rooms[0]?.svg) {
+        const svgPath = Array.isArray(rooms[0].svg)
+          ? rooms[0].svg[0]
+          : rooms[0].svg;
+        this.safeSvgUrl =
+          this.sanitizer.bypassSecurityTrustResourceUrl(svgPath);
+      }
       this.buildOptions();
       this.applyFilters();
     });
@@ -147,12 +161,13 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     this.filteredRooms = this.rooms.filter(
       (r) =>
         (this.filters.outlet === 'all' || r.outlet === this.filters.outlet) &&
+        r.svg === this.svgPath &&
         (this.filters.status === 'all' || r.status === this.filters.status) &&
         (this.filters.pax === 'all' ||
           r.capacity.toString() === this.filters.pax) &&
         (this.filters.suite === 'all' || r.name === this.filters.suite)
     );
-
+    console.log(this.filteredRooms);
     this.occupied = this.filteredRooms.filter(
       (r) => r.status === 'occupied'
     ).length;

@@ -1,6 +1,8 @@
 <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 max-w-7xl mx-auto py-6">
   <!-- Left Panel -->
-  <div class="bg-white p-6 rounded-2xl shadow-lg flex flex-col lg:col-span-4 transition-all duration-500">
+  <div
+    class="bg-white p-6 rounded-2xl shadow-lg flex flex-col lg:col-span-4 transition-all duration-500"
+  >
     <h1 class="text-2xl font-bold text-orange-600 mb-4">
       PS Occupancy
       <span class="block text-sm text-gray-500 mt-1">Floorplan Dashboard</span>
@@ -9,11 +11,17 @@
     <!-- Filters -->
     <div class="space-y-4">
       <ng-container *ngFor="let filter of filtersConfig">
-        <label class="block font-semibold text-gray-700">{{ filter.label }}</label>
-        <select class="w-full p-2 border rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
-                (change)="updateFilter(filter.key, $event)">
+        <label class="block font-semibold text-gray-700">{{
+          filter.label
+        }}</label>
+        <select
+          class="w-full p-2 border rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
+          (change)="updateFilter(filter.key, $event)"
+        >
           <option value="all">All</option>
-          <option *ngFor="let opt of filter.options" [value]="opt">{{ opt }}</option>
+          <option *ngFor="let opt of filter.options" [value]="opt">
+            {{ opt }}
+          </option>
         </select>
       </ng-container>
     </div>
@@ -33,38 +41,53 @@
   </div>
 
   <!-- Right Panel -->
-  <div class="bg-white rounded-2xl shadow-lg p-4 relative lg:col-span-8 transition-all duration-500">
+  <div
+    class="bg-white rounded-2xl shadow-lg p-4 relative lg:col-span-8 transition-all duration-500"
+  >
     <div class="flex items-center justify-between mb-4">
       <h2 class="text-xl font-semibold">Floorplan</h2>
-      <button (click)="rightPanelCollapsed = !rightPanelCollapsed"
-              class="px-3 py-1 text-sm bg-orange-500 text-white rounded-lg shadow hover:bg-orange-600 transition">
-        {{ rightPanelCollapsed ? 'Expand' : 'Collapse' }}
+      <button
+        (click)="rightPanelCollapsed = !rightPanelCollapsed"
+        class="px-3 py-1 text-sm bg-orange-500 text-white rounded-lg shadow hover:bg-orange-600 transition"
+      >
+        {{ rightPanelCollapsed ? "Expand" : "Collapse" }}
       </button>
     </div>
 
     <div [class.hidden]="rightPanelCollapsed">
-      <object id="floorplanSvg"
-              data="/8FA.svg"
-              type="image/svg+xml"
-              class="w-full h-[700px] bg-gray-100 rounded-lg shadow-md">
-      </object>
+      <div *ngFor="let room of rooms$ | async">
+        <h3>{{ room.outlet }}</h3>
+        <img
+          *ngFor="let svgPath of room.svg"
+          [src]="svgPath"
+          alt="Floor Plan"
+          class="w-full h-[700px] bg-gray-100 rounded-lg shadow-md"
+        />
+      </div>
     </div>
 
-<!-- Popup -->
-<div *ngIf="showPopup && selectedRoom"
-     class="absolute bg-white border rounded-lg shadow-lg p-4 text-sm z-[9999] w-56"
-     [style.left.px]="popupX"
-     [style.top.px]="popupY"
-     (click)="$event.stopPropagation()">
-  <button class="absolute top-1 right-2 font-bold text-gray-500 hover:text-red-600"
-          (click)="closePopup()">&times;</button>
-  <h3 class="font-semibold text-orange-600 mb-2">{{ selectedRoom.name }}</h3>
-  <p><strong>Status:</strong> {{ selectedRoom.status }}</p>
-  <p><strong>Capacity:</strong> {{ selectedRoom.capacity }}</p>
-  <p><strong>Type:</strong> {{ selectedRoom.type }}</p>
-  <p><strong>Area:</strong> {{ selectedRoom.area }} sqft</p>
-  <p><strong>Price:</strong> RM {{ selectedRoom.price }}</p>
-</div>
-
+    <!-- Popup -->
+    <div
+      *ngIf="showPopup && selectedRoom"
+      class="absolute bg-white border rounded-lg shadow-lg p-4 text-sm z-[9999] w-56"
+      [style.left.px]="popupX"
+      [style.top.px]="popupY"
+      (click)="$event.stopPropagation()"
+    >
+      <button
+        class="absolute top-1 right-2 font-bold text-gray-500 hover:text-red-600"
+        (click)="closePopup()"
+      >
+        &times;
+      </button>
+      <h3 class="font-semibold text-orange-600 mb-2">
+        {{ selectedRoom.name }}
+      </h3>
+      <p><strong>Status:</strong> {{ selectedRoom.status }}</p>
+      <p><strong>Capacity:</strong> {{ selectedRoom.capacity }}</p>
+      <p><strong>Type:</strong> {{ selectedRoom.type }}</p>
+      <p><strong>Area:</strong> {{ selectedRoom.area }} sqft</p>
+      <p><strong>Price:</strong> RM {{ selectedRoom.price }}</p>
+    </div>
   </div>
 </div>

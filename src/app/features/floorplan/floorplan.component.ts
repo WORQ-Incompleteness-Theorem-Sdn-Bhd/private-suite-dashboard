@@ -338,4 +338,5 @@ downloadFloorplan() {
 refreshFloorplan() {
   window.location.reload();
 }
+
 }

@@ -9,5 +9,7 @@ export interface Room {
   price: number;
   deposit: number;
   svg: string[]; // SVG path(s) for the room
+  suite?: string;
+  pax?: any;
 }
 //data type

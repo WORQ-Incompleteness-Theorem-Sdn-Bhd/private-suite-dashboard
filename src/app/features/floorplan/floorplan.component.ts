@@ -1,9 +1,10 @@
-import { Component, OnInit, AfterViewInit } from '@angular/core';
+import { Component, OnInit, AfterViewInit, ElementRef,ViewChildren } from '@angular/core';
 import { Room } from '../../core/models/room.model';
 import { RoomService } from '../../core/services/room.service';
 import { CommonModule } from '@angular/common';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { Observable } from 'rxjs';
+
 
 type FilterKey = 'outlet' | 'status' | 'pax' | 'suite';
 
@@ -39,10 +40,10 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   ];
 
   filters = {
-    outlet: 'all',
-    status: 'all',
-    pax: 'all',
-    suite: 'all',
+    outlet: 'Select Outlet',
+    status: 'Select Status',
+    pax: 'Select Pax',
+    suite: 'Select Suite',
     svg: 'all',
   };
   outletOptions: string[] = [];
@@ -56,8 +57,8 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   popupX = 0;
   popupY = 0;
 
-  occupied = 0;
-  available = 0;
+  Occupied = 0;
+  Available = 0;
 
   safeSvgUrl!: SafeResourceUrl;
 
@@ -66,7 +67,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
 
   constructor(
     private roomService: RoomService,
-    private sanitizer: DomSanitizer
+    public sanitizer: DomSanitizer
   ) {}
 
   ngOnInit() {
@@ -86,6 +87,17 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     });
     this.roomService.fetchRooms();
   }
+  
+    private attachSvgListeners() {
+      const objectEl = document.getElementById('floorplanSvg') as HTMLObjectElement;
+      if (!objectEl) return;
+
+      const svgDoc = objectEl.contentDocument;
+      if (!svgDoc) return;
+
+      this.attachRoomListeners(svgDoc);
+      this.updateSvgColors();
+    }
 
   ngAfterViewInit() {
     const objectEl = document.getElementById(
@@ -126,7 +138,6 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       this.selectedOutletSvgs = [];
       return;
     }
-
     const set = new Set<string>();
     this.rooms
       .filter((r) => r.outlet === outlet)
@@ -135,7 +146,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     this.selectedOutletSvgs = Array.from(set);
   }
   //#endregion
-
+  
   private attachRoomListeners(svgDoc: Document) {
     this.rooms.forEach((room) => {
       const el = svgDoc.getElementById(room.id);
@@ -148,29 +159,74 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     });
   }
 
-  buildOptions() {
-    this.outletOptions = Array.from(
-      new Set(this.rooms.map((r) => r.outlet))
-    ).sort();
-    this.statusOptions = Array.from(
-      new Set(this.rooms.map((r) => r.status))
-    ).sort();
-    this.paxOptions = Array.from(
-      new Set(this.rooms.map((r) => r.capacity.toString()))
-    ).sort();
-    this.suiteOptions = Array.from(
-      new Set(this.rooms.map((r) => r.name))
-    ).sort();
+// Add a search term for suite
+suiteSearchTerm: string = '';
 
-    // keep filtersConfig options in sync
-    this.filtersConfig.find((f) => f.key === 'outlet')!.options =
-      this.outletOptions;
-    this.filtersConfig.find((f) => f.key === 'status')!.options =
-      this.statusOptions;
-    this.filtersConfig.find((f) => f.key === 'pax')!.options = this.paxOptions;
-    this.filtersConfig.find((f) => f.key === 'suite')!.options =
-      this.suiteOptions;
-  }
+buildOptions() {
+  console.log("=== Building Options ===");
+  console.log("Current filters:", this.filters);
+
+  let filteredForOutlet = this.rooms;
+  let filteredForStatus = filteredForOutlet.filter(r =>
+    this.filters.outlet === 'Select Outlet' || r.outlet === this.filters.outlet
+  );
+  console.log("After outlet filter:", filteredForStatus);
+
+  let filteredForPax = filteredForStatus.filter(r =>
+    this.filters.status === 'Select Status' || r.status === this.filters.status
+  );
+  console.log("After status filter:", filteredForPax);
+
+  let filteredForSuite = filteredForPax.filter(r =>
+    this.filters.pax === 'Select Pax' || r.capacity.toString() === this.filters.pax
+  );
+  console.log("After pax filter:", filteredForSuite);
+
+  // Outlet options: all unique outlets
+  this.outletOptions = Array.from(new Set(this.rooms.map(r => r.outlet))).sort();
+  console.log("Outlet options:", this.outletOptions);
+
+  // Status options: based on selected outlet
+  this.statusOptions = Array.from(new Set(filteredForOutlet.map(r => r.status))).sort();
+  console.log("Status options:", this.statusOptions);
+
+// Pax options: based on selected outlet & status, removing 0 or ''
+this.paxOptions = Array.from(
+  new Set(
+    this.rooms
+      .filter(r => {
+        const outletMatch = this.filters.outlet === 'Select Outlet' || r.outlet === this.filters.outlet;
+        const statusMatch = this.filters.status === 'Select Status' || r.status === this.filters.status;
+        return outletMatch && statusMatch;
+      })
+      .map(r => r.capacity?.toString().trim())
+      .filter(cap => cap && cap !== "0") // remove empty or zero
+  )
+).sort((a, b) => Number(a) - Number(b));
+
+console.log("Pax options:", this.paxOptions);
+
+// Suite options: based on outlet, status & pax + search term
+let allSuites = Array.from(
+  new Set(filteredForSuite.map(r => r.name.trim()))
+).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+if (this.suiteSearchTerm.trim()) {
+  allSuites = allSuites.filter(name =>
+    name.toLowerCase().includes(this.suiteSearchTerm.trim().toLowerCase())
+  );
+}
+
+this.suiteOptions = allSuites;
+console.log("Suite options:", this.suiteOptions);
+
+
+  // Keep filtersConfig in sync
+  this.filtersConfig.find(f => f.key === 'outlet')!.options = this.outletOptions;
+  this.filtersConfig.find(f => f.key === 'status')!.options = this.statusOptions;
+  this.filtersConfig.find(f => f.key === 'pax')!.options = this.paxOptions;
+  this.filtersConfig.find(f => f.key === 'suite')!.options = this.suiteOptions;
+}
 
   updateFilter(type: string, event: Event) {
     const key = type as keyof typeof this.filters;
@@ -178,6 +234,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     if (select) {
       this.filters[key] = select.value;
       this.updateSelectedOutletSvgs();
+      this.buildOptions(); 
       this.applyFilters();
     }
   }
@@ -185,19 +242,33 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   applyFilters() {
     this.filteredRooms = this.rooms.filter(
       (r) =>
-        (this.filters.outlet === 'all' || r.outlet === this.filters.outlet) &&
-        (this.filters.status === 'all' || r.status === this.filters.status) &&
-        (this.filters.pax === 'all' ||
+        (this.filters.outlet === 'Select Outlet' || r.outlet === this.filters.outlet) &&
+        (this.filters.status === 'Select Status' || r.status === this.filters.status) &&
+        (this.filters.pax === 'Select Pax' ||
           r.capacity.toString() === this.filters.pax) &&
-        (this.filters.suite === 'all' || r.name === this.filters.suite)
-    );
-    this.occupied = this.filteredRooms.filter(
-      (r) => r.status === 'occupied'
-    ).length;
-    this.available = this.filteredRooms.filter(
-      (r) => r.status === 'available'
-    ).length;
+        (this.filters.suite === 'Select Suite' || r.name === this.filters.suite)
+    )
 
+    .sort((a, b) => {
+    // Sort by Pax (capacity) if Pax filter is active
+    if (this.filters.pax !== 'Select Pax') {
+        return a.capacity - b.capacity;
+    }
+    // Sort by Suite name if Suite filter is active
+    if (this.filters.suite !== 'Select Suite') {
+        return a.name.localeCompare(b.name);
+    }
+    return 0; // No sorting if no filter
+  });
+    
+    this.Occupied = this.filteredRooms.filter(
+      (r) => r.status === 'Occupied'
+    ).length;
+    this.Available = this.filteredRooms.filter(
+      (r) => r.status === 'Available'
+    ).length;
+    console.log('Occupied:', this.Occupied);
+    console.log('Available:', this.Available);
     this.updateSvgColors();
   }
 
@@ -213,7 +284,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       if (el) {
         el.setAttribute(
           'fill',
-          room.status === 'occupied' ? '#ef4444' : '#22c55e'
+          room.status === 'Occupied' ? '#ef4444' : '#22c55e'
         );
         el.setAttribute(
           'opacity',
@@ -240,4 +311,31 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     this.showPopup = false;
     this.selectedRoom = null;
   }
+
+// Download current outlet's SVG
+downloadFloorplan() {
+  if (!this.selectedOutletSvgs || this.selectedOutletSvgs.length === 0) {
+    console.warn('No floorplan to download.');
+    return;
+  }
+
+  // For now, download the first SVG
+  const svgUrl = this.selectedOutletSvgs[0];
+  const sanitizedUrl = this.sanitizer.sanitize(4, this.sanitizer.bypassSecurityTrustResourceUrl(svgUrl)); // 4 = SecurityContext.RESOURCE_URL
+
+  if (!sanitizedUrl) {
+    console.error('SVG URL could not be sanitized.');
+    return;
+  }
+
+  const link = document.createElement('a');
+  link.href = sanitizedUrl;
+  link.download = 'floorplan.svg';
+  link.click();
+}
+
+// Refresh rooms and reapply filters
+refreshFloorplan() {
+  window.location.reload();
+}
 }

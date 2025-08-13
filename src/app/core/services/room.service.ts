@@ -30,7 +30,7 @@ export class RoomService {
     },
     '5db8fb7e35798d0010950a77': {
       name: 'TTDI',
-      svg: ['assets/TTDI-Level1.svg', 'assets/TTDI-Level3A.svg'],
+      svg: ['assets/TTDI-Level1.svg', 'assets/TTDIlevel3A.svg'],
     },
     '5db8fb9798549f0010df15f3': {
       name: 'STO',
@@ -43,7 +43,7 @@ export class RoomService {
     '62a9832b43c9f437e373e9dd': {
       name: 'KLS',
       svg: [
-        'assets/KLS-L20.svg',
+        'assets/KLS- L20.svg',
         'assets/KLS-ByteDance.svg',
         'assets/KLS-L21.svg',
         'assets/KLS-L28.svg',
@@ -80,6 +80,7 @@ export class RoomService {
       .get<any[]>(url)
       .pipe(
         tap((data) => {
+          console.log('Fetched rooms:', data);
           const mapped = data.map((item) => {
             const outletInfo = this.outletMap[item.outlet_id];
             const svgPath = outletInfo?.svg || []; // Get the svg from outletMap
@@ -109,6 +110,7 @@ export class RoomService {
               deposit: item.deposit,
             };
           });
+          console.log('Mapped rooms:', mapped);
           this.roomsSubject.next(mapped);
         })
       )

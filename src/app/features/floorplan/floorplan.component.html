@@ -18,7 +18,10 @@
           class="w-full p-2 border outline-none rounded-xl focus:ring-2 focus:ring-orange-500"
           (change)="updateFilter(filter.key, $event)"
         >
-          <option value="all">All</option>
+          <option value="Select Outlet" *ngIf="filter.key === 'outlet'">Select Outlet</option>
+          <option value="Select Status" *ngIf="filter.key === 'status'">Select Status</option>
+          <option value="Select Pax" *ngIf="filter.key === 'pax'">Select Pax</option>
+          <option value="Select Suite" *ngIf="filter.key === 'suite'">Select Suite</option>
           <option *ngFor="let opt of filter.options" [value]="opt">
             {{ opt }}
           </option>
@@ -31,14 +34,57 @@
       <h2 class="mb-2 text-lg font-semibold text-gray-700">Metrics</h2>
       <div class="flex justify-between text-sm">
         <span>Occupied</span>
-        <span class="font-semibold text-red-600">{{ occupied }}</span>
+        <span class="font-semibold text-red-600">{{ Occupied }}</span>
       </div>
       <div class="flex justify-between text-sm">
         <span>Available</span>
-        <span class="font-semibold text-green-600">{{ available }}</span>
+        <span class="font-semibold text-green-600">{{ Available }}</span>
       </div>
     </div>
-  </div>
+    <!-- Room Table -->
+    <div class="mt-6 bg-gray-50 rounded-xl border border-gray-200 p-4">
+      <table class="w-full border">
+        <thead class="bg-gray-100 text-gray-700">
+          <tr>
+            <th class="text-left p-2">Room Name</th>
+            <th class="text-left p-2">Details</th>
+          </tr>
+        </thead>
+      </table>
+
+      <div id="details-body" class="max-h-64 overflow-y-auto border border-t-0">
+        <table class="w-full">
+          <tbody>
+            <tr
+              *ngFor="let room of filteredRooms"
+              class="border-b hover:bg-orange-50 transition"
+            >
+              <!-- Room Name -->
+              <td class="p-2 font-semibold">{{ room.name }}</td>
+
+              <!-- Room Details -->
+              <td class="p-2 text-sm text-gray-600 min-w-[200px]">
+                <div><strong>Type:</strong> {{ room.type }}</div>
+                <div><strong>Status:</strong> {{ room.status }}</div>
+                <div><strong>Pax:</strong> {{ room.capacity }}</div>
+                <div><strong>Area:</strong> {{ room.area }} sqft</div>
+                <div><strong>Price:</strong> RM {{ room.price }}</div>
+                <div><strong>Deposit:</strong> RM {{ room.deposit }}</div>
+
+              </td>
+            </tr>
+
+            <!-- Show when no rooms match -->
+            <tr *ngIf="filteredRooms.length === 0">
+              <td colspan="2" class="p-4 text-center text-gray-500">
+                No rooms found.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+</div>
 
   <!-- Right Panel -->
   <div
@@ -46,27 +92,43 @@
   >
     <div class="flex items-center justify-between mb-4">
       <h2 class="text-xl font-semibold">Floorplan</h2>
-      <button
-        (click)="rightPanelCollapsed = !rightPanelCollapsed"
-        class="px-3 py-1 text-sm text-white transition bg-orange-500 rounded-lg shadow hover:bg-orange-600"
-      >
-        {{ rightPanelCollapsed ? "Expand" : "Collapse" }}
-      </button>
-    </div>
-    <p>Selected Outlet: {{ filters.outlet }}</p>
+      <div class="flex gap-2">
+          <!-- Download Button -->
+          <button
+            (click)="downloadFloorplan()"
+            class="bg-orange-500 text-white px-3 py-1.5 rounded-lg hover:bg-orange-600 text-sm"
+          >
+            Download
+          </button>
 
-    <div [class.hidden]="rightPanelCollapsed">
+          <!-- Refresh Button -->
+          <button
+            (click)="refreshFloorplan()"
+            class="bg-gray-100 px-3 py-1.5 rounded-lg hover:bg-gray-200 text-sm"
+          >
+            Refresh
+          </button>
+        </div>
+    </div>
+
+
+    <div class="mt-4">
       <ng-container *ngIf="filters.outlet !== 'all'; else askToPick">
-        <div *ngFor="let svgPath of selectedOutletSvgs">
-          <img
-            [src]="svgPath"
-            alt="Floor Plan"
-            class="w-full h-[700px] bg-gray-100 rounded-lg shadow-md"
-          />
+        <div>
+      <object
+        #svgObject
+        *ngFor="let svg of selectedOutletSvgs"
+        [data]="sanitizer.bypassSecurityTrustResourceUrl(svg)"
+        type="image/svg+xml"
+        width="800"
+        height="800"
+        style="max-width: 100%; height: auto;">
+      </object>
+
         </div>
       </ng-container>
 
-      <ng-template #askToPick>
+      <ng-template #askToPick>   
         <div class="p-4 text-sm text-gray-600 bg-gray-50 rounded-xl">
           Select an outlet to view its floorplan.
         </div>
@@ -95,6 +157,11 @@
       <p><strong>Type:</strong> {{ selectedRoom.type }}</p>
       <p><strong>Area:</strong> {{ selectedRoom.area }} sqft</p>
       <p><strong>Price:</strong> RM {{ selectedRoom.price }}</p>
+      <p><strong>Deposit:</strong> RM {{ selectedRoom.deposit }}</p>
+
     </div>
-  </div>
 </div>
+</div>
+
+
+

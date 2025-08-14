@@ -17,23 +17,23 @@ export class RoomService {
       svg: 'assets/8FA.svg',
     },
     '65e56bd7a24b74cef513834f': {
-      name: 'ITG',
+      name: 'ITG - WIP',
       svg: 'assets/ITG.svg',
     },
     '565748274a955c790d808c77': {
-      name: 'UBP',
+      name: 'UBP- WIP',
       svg: 'assets/UBP.svg',
     },
     '5dac63c998e930010a595016': {
-      name: 'KLG',
+      name: 'KLG- WIP',
       svg: 'assets/KLG.svg',
     },
-    '5db8fb7e35798d0010950a77': {
-      name: 'TTDI',
+    '5db8fb7e35798d0010950a77': {  
+      name: 'TTDI-WIP',
       svg: ['assets/TTDI-Level1.svg', 'assets/TTDIlevel3A.svg'],
     },
     '5db8fb9798549f0010df15f3': {
-      name: 'STO',
+      name: 'STO-WIP',
       svg: [
         'assets/STO-Level11.svg',
         'assets/STO-Level12.svg',
@@ -41,7 +41,7 @@ export class RoomService {
       ],
     },
     '62a9832b43c9f437e373e9dd': {
-      name: 'KLS',
+      name: 'KLS-WIP',
       svg: [
         'assets/KLS- L20.svg',
         'assets/KLS-ByteDance.svg',
@@ -50,7 +50,7 @@ export class RoomService {
       ],
     },
     '63f5de531f29f60007ca8209': {
-      name: 'MUB',
+      name: 'MUB-WIP',
       svg: [
         'assets/MUB-level9.svg',
         'assets/MUB-level12.svg',
@@ -58,15 +58,15 @@ export class RoomService {
       ],
     },
     '6537957cc3653d2412ab4d7e': {
-      name: 'SPM',
+      name: 'SPM-WIP',
       svg: 'assets/SPM.svg',
     },
     '66dfd21d5ec307e20a9b761c': {
-      name: 'UBP3A',
+      name: 'UBP3A-WIP',
       svg: ['assets/UBP-L13A.svg', 'assets/UBP-L13AAIRIT.svg'],
     },
     '671f3dbf0951c4dfbaaadd5d': {
-      name: 'SV2',
+      name: 'SV2-WIP',
       svg: 'assets/SV2.svg',
     },
   };

@@ -88,18 +88,27 @@
 
   <!-- Right Panel -->
   <div
+    #panelContainer
     class="relative p-4 transition-all duration-500 bg-white shadow-lg rounded-2xl lg:col-span-8"
   >
     <div class="flex items-center justify-between mb-4">
       <h2 class="text-xl font-semibold">Floorplan</h2>
       <div class="flex gap-2">
-          <!-- Download Button -->
-          <button
-            (click)="downloadFloorplan()"
-            class="bg-orange-500 text-white px-3 py-1.5 rounded-lg hover:bg-orange-600 text-sm"
-          >
-            Download
-          </button>
+          <div class="relative" (click)="$event.stopPropagation()">
+            <button
+              class="bg-orange-500 text-white px-3 py-1.5 rounded-lg hover:bg-orange-600 text-sm"
+              (click)="toggleDownloadMenu($event)"
+            >
+              Download
+            </button>
+            <div
+              *ngIf="showDownloadMenu"
+              class="absolute right-0 mt-2 w-40 bg-white border rounded shadow z-50"
+            >
+              <button class="w-full text-left px-3 py-2 hover:bg-gray-50" (click)="downloadOption('svg')">SVG</button>
+              <button class="w-full text-left px-3 py-2 hover:bg-gray-50" (click)="downloadOption('png')">PNG</button>
+            </div>
+          </div>
 
           <!-- Refresh Button -->
           <button
@@ -113,17 +122,18 @@
 
 
     <div class="mt-4">
+      <div (click)="showDownloadMenu = false"></div>
       <ng-container *ngIf="filters.outlet !== 'all'; else askToPick">
         <div>
       <object
         #svgObject
-        *ngFor="let svg of selectedOutletSvgs"
-        [data]="sanitizer.bypassSecurityTrustResourceUrl(svg)"
+        *ngFor="let svg of selectedOutletSvgs; trackBy: trackBySvgUrl"
+        [data]="getSafeUrl(svg)"
         type="image/svg+xml"
         width="800"
         height="800"
-        style="max-width: 100%; height: auto;">
-      </object>
+        style="max-width: 100%; height: auto;"
+      ></object>
 
         </div>
       </ng-container>

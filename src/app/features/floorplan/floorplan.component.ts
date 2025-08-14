@@ -379,7 +379,7 @@ console.log("Suite options:", this.suiteOptions);
           if (this.filteredRooms.includes(room)) {
             // Selected → colored
             el.setAttribute('fill', room.status === 'Occupied' ? '#ef4444' : '#22c55e');
-            el.setAttribute('opacity', '0.9');
+            el.setAttribute('opacity', '0.7');
             (el as any).style.pointerEvents = 'auto';
           } else {
             // Not selected → transparent fill but remain clickable

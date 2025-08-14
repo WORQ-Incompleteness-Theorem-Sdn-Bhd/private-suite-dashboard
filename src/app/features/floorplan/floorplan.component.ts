@@ -745,7 +745,30 @@ console.log("Suite options:", this.suiteOptions);
 
   // Refresh rooms and reapply filters
   refreshFloorplan() {
-    window.location.reload();
+    // Reset all filter selections to default values
+    this.filters = {
+      outlet: 'Select Outlet',
+      status: 'Select Status',
+      pax: 'Select Pax',
+      suite: 'Select Suite',
+      svg: 'all',
+    };
+    
+    // Reset suite search term
+    this.suiteSearchTerm = '';
+    
+    // Reset zoom to original view
+    this.resetZoom();
+    
+    // Close any open popup
+    this.closePopup();
+    
+    // Update selected outlet SVGs
+    this.updateSelectedOutletSvgs();
+    
+    // Rebuild options and apply filters
+    this.buildOptions();
+    this.applyFilters();
   }
 
   toggleDownloadMenu(event?: Event) {

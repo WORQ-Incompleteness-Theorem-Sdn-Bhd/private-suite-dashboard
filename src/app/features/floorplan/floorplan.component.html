@@ -16,6 +16,7 @@
         }}</label>
         <select
           class="w-full p-2 border outline-none rounded-xl focus:ring-2 focus:ring-orange-500"
+          [value]="filters[filter.key]"
           (change)="updateFilter(filter.key, $event)"
         >
           <option value="Select Outlet" *ngIf="filter.key === 'outlet'">Select Outlet</option>

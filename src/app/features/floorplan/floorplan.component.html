@@ -28,6 +28,21 @@
           </option>
         </select>
       </ng-container>
+
+      <!-- Floor selector: visible only when the outlet has more than 1 floor SVG -->
+      <div *ngIf="selectedOutletSvgs.length > 1" class="pt-2 border-t">
+        <label class="block font-semibold text-gray-700">Floor</label>
+        <select
+          class="w-full p-2 border outline-none rounded-xl focus:ring-2 focus:ring-orange-500"
+          [value]="selectedFloorSvg"
+          (change)="onFloorChange($event)"
+        >
+          <option value="all">All floors</option>
+          <option *ngFor="let floor of floorOptions; trackBy: trackBySvgUrl" [value]="floor">
+            {{ getFloorLabel(floor) }}
+          </option>
+        </select>
+      </div>
     </div>
 
     <!-- Metrics -->
@@ -183,7 +198,7 @@
         <div>
       <object
         #svgObject
-        *ngFor="let svg of selectedOutletSvgs; trackBy: trackBySvgUrl"
+        *ngFor="let svg of displayedSvgs; trackBy: trackBySvgUrl"
         [data]="getSafeUrl(svg)"
         type="image/svg+xml"
         width="800"

@@ -30,6 +30,9 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   filteredRooms: Room[] = [];
   svgPath: SafeResourceUrl | undefined;
   selectedOutletSvgs: string[] = [];
+  displayedSvgs: string[] = [];
+  selectedFloorSvg: string = 'all';
+  floorOptions: string[] = [];
 
   isArray(value: unknown): boolean {
     return Array.isArray(value);
@@ -90,7 +93,32 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   private safeUrlCache = new Map<string, SafeResourceUrl>();
   private roomIdIndex: Map<string, Room> = new Map();
   private objectToOriginalViewBox = new WeakMap<HTMLObjectElement, string>();
+  // Friendly labels for specific outlets/files
+  private floorLabelOverrides: Record<string, Record<string, string>> = {
+  TTDI: {
+    'TTDI-Level1.svg': 'Level 1',
+    'TTDI-Level3A.svg': 'Level 3A',
+  },
+  KLS :{
+    'KLS- L20.svg': 'Level 20',
+    'KLS-ByteDance.svg' : 'Level 21 ByteDance',
+    'KLS-L21.svg' : 'Level 21',
+    'KLS-L28.svg' : 'Level 28',
+  },
+  MUB: {
+    'MUB-level9.svg' : 'Level 9',
+    'MUB-level12.svg' : 'Level 12',
+    'MUB-level17.svg' : 'Level 17',
+  },
+  UBP3A: {
+    'UBP-L13A.svg' : 'Level 13A',
+    'UBP-L13AAIRIT.svg' : 'Level 13A AIRIT'
+  },
+};
 
+private basename(path: string): string {
+  return (path || '').split(/[\\/]/).pop() || path;
+}
   constructor(
     private roomService: RoomService,
     public sanitizer: DomSanitizer,
@@ -178,6 +206,9 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     const outlet = this.filters.outlet;
     if (!outlet || outlet === 'Select Outlet') {
       this.selectedOutletSvgs = [];
+      this.displayedSvgs = [];
+      this.selectedFloorSvg = 'all';
+      this.floorOptions = [];
       return;
     }
     const set = new Set<string>();
@@ -186,6 +217,10 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       .forEach((r) => r.svg.forEach((p) => set.add(p)));
 
     this.selectedOutletSvgs = Array.from(set);
+    this.floorOptions = this.selectedOutletSvgs.slice();
+    // default to all floors when outlet changes
+    this.selectedFloorSvg = 'all';
+    this.updateDisplayedSvgs();
   }
   //#endregion
 
@@ -334,6 +369,7 @@ console.log("Suite options:", this.suiteOptions);
       this.filters[key] = select.value;
       if (key === 'outlet') {
       this.updateSelectedOutletSvgs();
+      this.updateDisplayedSvgs();
       }
       this.buildOptions();
       this.applyFilters();
@@ -366,6 +402,28 @@ console.log("Suite options:", this.suiteOptions);
           this.closePopup();        
         }
       }
+    }
+  }
+
+  // Floor selection handler
+  onFloorChange(event: Event) {
+    const select = event.target as HTMLSelectElement | null;
+    if (select) {
+      this.selectedFloorSvg = select.value;
+      this.updateDisplayedSvgs();
+      // colors/handlers will reattach on next load event automatically
+    }
+  }
+
+  private updateDisplayedSvgs() {
+    if (!this.selectedOutletSvgs || this.selectedOutletSvgs.length === 0) {
+      this.displayedSvgs = [];
+      return;
+    }
+    if (this.selectedFloorSvg === 'all') {
+      this.displayedSvgs = this.selectedOutletSvgs.slice();
+    } else {
+      this.displayedSvgs = this.selectedOutletSvgs.filter(p => p === this.selectedFloorSvg);
     }
   }
 
@@ -807,92 +865,80 @@ console.log("Suite options:", this.suiteOptions);
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
       
-      // Add title
-      pdf.setFontSize(20);
-      pdf.setTextColor(255, 102, 0); // Orange color
-      pdf.text('Private Suite Dashboard - Floorplan', 20, 20);
-      
-      // Add filters info
-      pdf.setFontSize(12);
-      pdf.setTextColor(0, 0, 0);
-      let yPos = 35;
-      
-      if (this.filters.outlet !== 'Select Outlet') {
-        pdf.text(`Outlet: ${this.filters.outlet}`, 20, yPos);
-        yPos += 8;
-      }
-      if (this.filters.status !== 'Select Status') {
-        pdf.text(`Status: ${this.filters.status}`, 20, yPos);
-        yPos += 8;
-      }
-      if (this.filters.pax !== 'Select Pax') {
-        pdf.text(`Pax: ${this.filters.pax}`, 20, yPos);
-        yPos += 8;
-      }
-      if (this.filters.suite !== 'Select Suite') {
-        pdf.text(`Suite: ${this.filters.suite}`, 20, yPos);
-        yPos += 8;
-      }
-       
-       // Add metrics on the left side
-       const leftColumnX = 20;
-       const rightColumnX = pageWidth / 2 + 10;
-       
-       // Add floorplan SVG on the right side
-       if (this.svgObjects?.first) {
-         const objectEl = this.svgObjects.first.nativeElement as HTMLObjectElement;
-         const doc = objectEl.contentDocument as Document | null;
-         const rootSvg = doc?.querySelector('svg') as SVGSVGElement | null;
-         
-         if (rootSvg) {
-           // Clone SVG for PDF
-           const svgClone = rootSvg.cloneNode(true) as SVGSVGElement;
-           
-           // Reset to original viewBox for full view
-           const originalViewBox = this.objectToOriginalViewBox.get(objectEl);
-           if (originalViewBox) {
-             svgClone.setAttribute('viewBox', originalViewBox);
-           }
-           
-           // Convert SVG to canvas using html2canvas
-           try {
-             // Use the helper method for SVG to canvas conversion
-             const canvas = await this.svgToCanvas(svgClone);
-             
-             // Large centered layout: fit image to nearly full page width while keeping aspect ratio
-             const margin = 5; // mm (smaller margin for larger image)
-             const imgY = Math.max(yPos + 4, 24); // under metrics/title
-             const maxWidth = pageWidth - margin * 2;
-             const maxHeight = pageHeight - imgY - margin;
+      // We will iterate through rendered SVG objects (single floor or all floors)
+      const objects = this.svgObjects?.toArray?.() ?? [];
+      for (let idx = 0; idx < objects.length; idx++) {
+        const objectRef = objects[idx];
+        const objectEl = objectRef.nativeElement as HTMLObjectElement;
+        const doc = objectEl.contentDocument as Document | null;
+        const rootSvg = doc?.querySelector('svg') as SVGSVGElement | null;
 
-             // Aspect fit
-             const aspect = canvas.width / canvas.height;
-             let imgWidth = maxWidth;
-             let imgHeight = imgWidth / aspect;
-             if (imgHeight > maxHeight) {
-               imgHeight = maxHeight;
-               imgWidth = imgHeight * aspect;
-             }
+        if (!rootSvg) continue;
 
-             // Center horizontally
-             const imgX = (pageWidth - imgWidth) / 2;
+        if (idx > 0) {
+          pdf.addPage('landscape');
+        }
 
-             // Add image with JPEG compression for smaller file size
-             // Use quality settings based on user selection for optimal file size
-             const quality = this.pdfQualitySettings[this.selectedPdfQuality].quality;
-             const imgData = canvas.toDataURL('image/jpeg', quality);
-             pdf.addImage(imgData, 'JPEG', imgX, imgY, imgWidth, imgHeight, undefined, 'FAST');
-           } catch (canvasError) {
-             console.warn('Failed to convert SVG to canvas, using text fallback:', canvasError);
-             
-             // Fallback: Add text representation on the right side
-             pdf.setFontSize(14);
-             pdf.setTextColor(0, 0, 0);
-             pdf.text('Floorplan SVG (could not render image)', rightColumnX, 20);
-             pdf.text('Please refer to the SVG file for visual representation', rightColumnX, 30);
-           }
-         }
-       }
+        // Page title and filters
+        pdf.setFontSize(20);
+        pdf.setTextColor(255, 102, 0);
+        pdf.text('Private Suite Dashboard - Floorplan', 20, 20);
+        pdf.setFontSize(12);
+        pdf.setTextColor(0, 0, 0);
+        let yPos = 35;
+        if (this.filters.outlet !== 'Select Outlet') {
+          pdf.text(`Outlet: ${this.filters.outlet}`, 20, yPos);
+          yPos += 8;
+        }
+        const floorLabel = this.getFloorLabel(this.displayedSvgs[idx] || '');
+        if (floorLabel) {
+          pdf.text(`Floor: ${floorLabel}`, 20, yPos);
+          yPos += 8;
+        }
+        if (this.filters.status !== 'Select Status') {
+          pdf.text(`Status: ${this.filters.status}`, 20, yPos);
+          yPos += 8;
+        }
+        if (this.filters.pax !== 'Select Pax') {
+          pdf.text(`Pax: ${this.filters.pax}`, 20, yPos);
+          yPos += 8;
+        }
+        if (this.filters.suite !== 'Select Suite') {
+          pdf.text(`Suite: ${this.filters.suite}`, 20, yPos);
+          yPos += 8;
+        }
+
+        // Clone and reset viewBox to original
+        const svgClone = rootSvg.cloneNode(true) as SVGSVGElement;
+        const originalViewBox = this.objectToOriginalViewBox.get(objectEl);
+        if (originalViewBox) {
+          svgClone.setAttribute('viewBox', originalViewBox);
+        }
+
+        try {
+          const canvas = await this.svgToCanvas(svgClone);
+          const margin = 5;
+          const imgY = Math.max(yPos + 4, 24);
+          const maxWidth = pageWidth - margin * 2;
+          const maxHeight = pageHeight - imgY - margin;
+          const aspect = canvas.width / canvas.height;
+          let imgWidth = maxWidth;
+          let imgHeight = imgWidth / aspect;
+          if (imgHeight > maxHeight) {
+            imgHeight = maxHeight;
+            imgWidth = imgHeight * aspect;
+          }
+          const imgX = (pageWidth - imgWidth) / 2;
+          const quality = this.pdfQualitySettings[this.selectedPdfQuality].quality;
+          const imgData = canvas.toDataURL('image/jpeg', quality);
+          pdf.addImage(imgData, 'JPEG', imgX, imgY, imgWidth, imgHeight, undefined, 'FAST');
+        } catch (canvasError) {
+          console.warn('Failed to convert SVG to canvas on page', idx + 1, canvasError);
+          pdf.setFontSize(14);
+          pdf.setTextColor(0, 0, 0);
+          pdf.text('Floorplan SVG (could not render image)', 20, 20);
+        }
+      }
        
        // Save PDF with compression
        const fileName = `floorplan-${this.filters.outlet !== 'Select Outlet' ? this.filters.outlet : 'all'}-${new Date().toISOString().split('T')[0]}.pdf`;
@@ -1074,6 +1120,28 @@ console.log("Suite options:", this.suiteOptions);
     this.ngZone.run(() => {
       // This will trigger template updates
     });
+  }
+
+  getFloorLabel(path: string): string {
+    if (!path) return '';
+    const outlet = this.filters.outlet;
+    const baseWithExt = this.basename(path);
+    const base = baseWithExt.replace(/\.(svg)$/i, '');
+  
+    // 1) explicit overrides per outlet (TTDI template)
+    const override = outlet && this.floorLabelOverrides[outlet]?.[baseWithExt];
+    if (override) return override; // e.g., "Level 1", "Level 3A"
+  
+    // 2) generic parse: TTDI-Level1 / TTDI_Level_3A / Level3A / L3A
+    const m = base.match(/(?:^|[_\-\s])(?:level|lvl|l)[_\-\s]?(\d+[A-Za-z]?)/i);
+    if (m) return `Level ${m[1].toUpperCase()}`;
+  
+    // 3) fallback: any numberish token → Level X
+    const token = base.match(/(\d+[A-Za-z]?)/);
+    if (token) return `Level ${token[1].toUpperCase()}`;
+  
+    // 4) final fallback: humanize filename
+    return base.replace(/[_\-]/g, ' ').trim();
   }
 
 }

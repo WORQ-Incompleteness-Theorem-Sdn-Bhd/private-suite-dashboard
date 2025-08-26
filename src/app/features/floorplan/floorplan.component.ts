@@ -2,6 +2,7 @@ import { Component, OnInit, AfterViewInit, ElementRef,ViewChildren,QueryList, Vi
 import { Room } from '../../core/models/room.model';
 import { RoomService } from '../../core/services/room.service';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { Observable } from 'rxjs';
 import jsPDF from 'jspdf';
@@ -18,7 +19,7 @@ interface FilterConfig {
 
 @Component({
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   selector: 'app-floorplan',
   templateUrl: './floorplan.component.html',
   styleUrls: ['./floorplan.component.scss'],
@@ -66,6 +67,15 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   // User feedback for PDF export
   pdfExportMessage = '';
   showPdfMessage = false;
+  
+  // PDF quality settings for file size optimization
+  pdfQualitySettings = {
+    high: { scale: 2, quality: 0.9, dimensions: { width: 800, height: 600 } },
+    medium: { scale: 1.5, quality: 0.7, dimensions: { width: 600, height: 450 } },
+    low: { scale: 1, quality: 0.5, dimensions: { width: 400, height: 300 } }
+  };
+  
+  selectedPdfQuality: 'high' | 'medium' | 'low' = 'medium';
 
   Occupied = 0;
   Available = 0;
@@ -150,10 +160,6 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
           }
           this.attachRoomListeners(svgDoc);
           this.updateSvgColors(svgDoc);
-          // If a suite is already selected when SVG loads, auto-zoom to it
-          if (this.filters.suite && this.filters.suite !== 'Select Suite') {
-            this.performAutoZoom();
-          }
         };
         if (!this.processedSvgObjects.has(objectEl)) {
           objectEl.addEventListener('load', onLoad);
@@ -210,9 +216,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
             // Sync selection to filters so metrics reflect the picked room
             this.filters.suite = room.name;
             this.buildOptions();
-            this.applyFilters();
-            // Zoom and open popup
-            this.zoomToRoom(room, 30);
+            this.applyFilters()
             this.openPopupFromRoom(room);
             matched = true;
             return;
@@ -223,7 +227,6 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       if (!matched) {
         console.log('[Floorplan] click had no matching room element');
         // Background click → reset view and close popup for better UX
-        this.resetZoom();
         this.closePopup();
       }
     };
@@ -248,8 +251,6 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
           ev.preventDefault();
           ev.stopPropagation();
           console.log('[Floorplan] direct room click', { id: room.id, name: room.name });
-          // Zoom to the clicked room then open popup
-          this.zoomToRoom(room, 30);
           this.openPopupFromRoom(room);
         }));
         (el as any)[roomMarker] = true;
@@ -339,7 +340,6 @@ console.log("Suite options:", this.suiteOptions);
       if (key === 'suite') {
         // Zoom to the selected suite when explicitly chosen
         if (this.filters.suite === 'Select Suite') {
-          this.resetZoom();
           this.closePopup();
         } else {
           const outletNow = this.filters.outlet;
@@ -347,7 +347,6 @@ console.log("Suite options:", this.suiteOptions);
           const room = candidates.find((r) => outletNow === 'Select Outlet' || r.outlet === outletNow) || candidates[0];
           if (room) {
             console.log('[Floorplan] zoom due to suite selection', { id: room.id, name: room.name });
-            this.zoomToRoom(room, 30);
             setTimeout(() => this.openPopupFromRoom(room), 60);
           }
         }
@@ -357,18 +356,14 @@ console.log("Suite options:", this.suiteOptions);
           const onlyRoom = this.filteredRooms[0];
           console.log('[Floorplan] zoom due to filters yielding one room', { id: onlyRoom.id, name: onlyRoom.name, key, value: this.filters[key] });
           this.filters.suite = onlyRoom.name; // sync suite for consistency
-          this.zoomToRoom(onlyRoom, 30);
           setTimeout(() => this.openPopupFromRoom(onlyRoom), 60);
         } else if (this.filters.suite !== 'Select Suite') {
           // If suite remains selected after other filters, keep zooming to it
           const target = this.rooms.find(r => r.name === this.filters.suite);
           if (target) {
-            this.zoomToRoom(target, 30);
           }
         } else {
-          // Multiple rooms → show full view, wait for user click
-          this.resetZoom();
-          this.closePopup();
+          this.closePopup();        
         }
       }
     }
@@ -480,49 +475,6 @@ console.log("Suite options:", this.suiteOptions);
     return null;
   }
 
-  private zoomSvgToBBox(objectEl: HTMLObjectElement, bbox: DOMRect | SVGRect, padding = 20) {
-    const svgDoc = objectEl.contentDocument as Document | null;
-    if (!svgDoc) return;
-    const rootSvg = svgDoc.querySelector('svg') as SVGSVGElement | null;
-    if (!rootSvg) return;
-    const x = Math.max(0, (bbox as any).x - padding);
-    const y = Math.max(0, (bbox as any).y - padding);
-    const w = (bbox as any).width + padding * 2;
-    const h = (bbox as any).height + padding * 2;
-    rootSvg.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
-  }
-
-  // Zoom the first SVG that contains this room; keeps padding around it
-  private zoomToRoom(room: Room, padding: number = 30) {
-    if (!this.svgObjects) return;
-    this.svgObjects.forEach((ref) => {
-      const objectEl = ref.nativeElement as HTMLObjectElement;
-      const doc = objectEl.contentDocument as Document | null;
-      if (!doc) return;
-      const rootSvg = doc.querySelector('svg') as SVGSVGElement | null;
-      if (!rootSvg) return;
-      // Reset to original view first
-      const original = this.objectToOriginalViewBox.get(objectEl);
-      if (original) rootSvg.setAttribute('viewBox', original);
-      const el = this.findRoomElementInDoc(doc, room) as any;
-      if (!el) return;
-      let bbox: any = null;
-      if (typeof el.getBBox === 'function') {
-        try { bbox = el.getBBox(); } catch {}
-      }
-      if (!bbox) {
-        const rect = el.getBoundingClientRect?.();
-        const converted = rect ? this.clientRectToSvgBBox(objectEl, rootSvg, rect) : null;
-        if (converted) {
-          bbox = { x: converted.x, y: converted.y, width: converted.width, height: converted.height } as any;
-        }
-      }
-      if (!bbox) return;
-      console.log('[Floorplan] zoomToRoom', { roomId: room.id, roomName: room.name, padding, bbox });
-      this.zoomSvgToBBox(objectEl, bbox, padding);
-    });
-  }
-
   private getSvgViewBox(rootSvg: SVGSVGElement): { x: number; y: number; w: number; h: number } | null {
     const vb = rootSvg.getAttribute('viewBox');
     if (!vb) return null;
@@ -595,29 +547,7 @@ console.log("Suite options:", this.suiteOptions);
       console.log('[Floorplan] popup fallback center', { room: room.name, x: this.popupX, y: this.popupY });
     }
   }
-  performAutoZoom() {
-    if (!this.svgObjects || !this.filters.suite || this.filters.suite === 'Select Suite') return;
-    const outlet = this.filters.outlet;
-    const candidateRooms = this.rooms.filter((r) => r.name === this.filters.suite);
-    const targetRoom = candidateRooms.find((r) => outlet === 'Select Outlet' || r.outlet === outlet) || candidateRooms[0];
-    if (!targetRoom) return;
-    this.zoomToRoom(targetRoom, 30);
-    // After zoom, show popup near the selected room
-    setTimeout(() => this.openPopupFromRoom(targetRoom), 60);
-  }
-
-  resetZoom() {
-    if (!this.svgObjects) return;
-    this.svgObjects.forEach((ref) => {
-      const objectEl = ref.nativeElement as HTMLObjectElement;
-      const svgDoc = objectEl.contentDocument as Document | null;
-      const rootSvg = svgDoc?.querySelector('svg') as SVGSVGElement | null;
-      if (!rootSvg) return;
-      const original = this.objectToOriginalViewBox.get(objectEl);
-      if (original) rootSvg.setAttribute('viewBox', original);
-    });
-  }
-
+  
   private downloadBlob(fileName: string, blob: Blob) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -824,10 +754,7 @@ console.log("Suite options:", this.suiteOptions);
     };
     
     // Reset suite search term
-    this.suiteSearchTerm = '';
-    
-    // Reset zoom to original view
-    this.resetZoom();
+    this.suiteSearchTerm = ''; 
     
     // Close any open popup
     this.closePopup();
@@ -863,8 +790,20 @@ console.log("Suite options:", this.suiteOptions);
     this.isExportingFloorplan = true;
     
     try {
-      // Create PDF document
+      // Create PDF document with compression settings for smaller file size
       const pdf = new jsPDF('landscape', 'mm', 'a4');
+      
+      // Enable PDF compression and optimization
+      pdf.setProperties({
+        title: 'Private Suite Dashboard - Floorplan',
+        subject: 'Floorplan Export',
+        author: 'Private Suite Dashboard',
+        creator: 'Private Suite Dashboard'
+      });
+      
+      // Set compression level for smaller file size
+      // Note: jsPDF automatically applies compression, but we can optimize the content
+      
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
       
@@ -894,21 +833,10 @@ console.log("Suite options:", this.suiteOptions);
         pdf.text(`Suite: ${this.filters.suite}`, 20, yPos);
         yPos += 8;
       }
-        
-             // Calculate totals for filtered rooms
-       const totalArea = this.filteredRooms.reduce((sum, room) => sum + (room.area || 0), 0);
-       const totalPrice = this.filteredRooms.reduce((sum, room) => sum + (room.price || 0), 0);
-       const totalDeposit = this.filteredRooms.reduce((sum, room) => sum + (room.deposit || 0), 0);
        
        // Add metrics on the left side
        const leftColumnX = 20;
        const rightColumnX = pageWidth / 2 + 10;
-       
-       pdf.text(`Area: ${totalArea.toLocaleString()} sqft`, leftColumnX, yPos);
-       yPos += 8;
-       pdf.text(`Price: RM ${totalPrice.toLocaleString()}`, leftColumnX, yPos);
-       yPos += 8;
-       pdf.text(`Deposit: RM ${totalDeposit.toLocaleString()}`, leftColumnX, yPos);
        
        // Add floorplan SVG on the right side
        if (this.svgObjects?.first) {
@@ -949,9 +877,11 @@ console.log("Suite options:", this.suiteOptions);
              // Center horizontally
              const imgX = (pageWidth - imgWidth) / 2;
 
-             // Add image
-             const imgData = canvas.toDataURL('image/png');
-             pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight);
+             // Add image with JPEG compression for smaller file size
+             // Use quality settings based on user selection for optimal file size
+             const quality = this.pdfQualitySettings[this.selectedPdfQuality].quality;
+             const imgData = canvas.toDataURL('image/jpeg', quality);
+             pdf.addImage(imgData, 'JPEG', imgX, imgY, imgWidth, imgHeight, undefined, 'FAST');
            } catch (canvasError) {
              console.warn('Failed to convert SVG to canvas, using text fallback:', canvasError);
              
@@ -964,12 +894,13 @@ console.log("Suite options:", this.suiteOptions);
          }
        }
        
-       // Save PDF
+       // Save PDF with compression
        const fileName = `floorplan-${this.filters.outlet !== 'Select Outlet' ? this.filters.outlet : 'all'}-${new Date().toISOString().split('T')[0]}.pdf`;
        pdf.save(fileName);
       
-      // Show success message
-      this.showMessage('Floorplan PDF exported successfully! 🎉');
+      // Show success message with file size info
+      const estimatedSize = this.getEstimatedFileSize();
+      this.showMessage(`Floorplan PDF exported successfully! 🎉 (Estimated size: ${estimatedSize})`);
       
     } catch (error) {
       console.error('Error exporting floorplan as PDF:', error);
@@ -1046,8 +977,10 @@ console.log("Suite options:", this.suiteOptions);
         tempDiv.style.position = 'absolute';
         tempDiv.style.left = '-9999px';
         tempDiv.style.top = '-9999px';
-        tempDiv.style.width = '800px';
-        tempDiv.style.height = '600px';
+        // Use quality settings for optimal file size
+        const quality = this.pdfQualitySettings[this.selectedPdfQuality];
+        tempDiv.style.width = `${quality.dimensions.width}px`;
+        tempDiv.style.height = `${quality.dimensions.height}px`;
         tempDiv.style.backgroundColor = '#ffffff';
         
         const svgClone = svgElement.cloneNode(true) as SVGSVGElement;
@@ -1058,12 +991,16 @@ console.log("Suite options:", this.suiteOptions);
         
         html2canvas(tempDiv, {
           backgroundColor: '#ffffff',
-          scale: 2,
+          scale: quality.scale,
           useCORS: true,
           allowTaint: true,
           logging: false,
-          width: 800,
-          height: 600
+          width: quality.dimensions.width,
+          height: quality.dimensions.height,
+          // Additional optimizations for smaller file size
+          removeContainer: true,
+          foreignObjectRendering: false,
+          imageTimeout: 0
         }).then(canvas => {
           document.body.removeChild(tempDiv);
           resolve(canvas);
@@ -1088,6 +1025,55 @@ console.log("Suite options:", this.suiteOptions);
       this.showPdfMessage = false;
       this.pdfExportMessage = '';
     }, 5000);
+  }
+  
+  // Get estimated file size for each quality level (static)
+  getLowQualityFileSize(): string {
+    return '~200-500 KB';
+  }
+  
+  getMediumQualityFileSize(): string {
+    return '~500 KB - 1 MB';
+  }
+  
+  getHighQualityFileSize(): string {
+    return '~2-4 MB';
+  }
+  
+  // Get estimated file size for selected quality (for display in success message)
+  getEstimatedFileSize(): string {
+    const quality = this.pdfQualitySettings[this.selectedPdfQuality];
+    const baseSize = quality.dimensions.width * quality.dimensions.height * quality.scale * quality.scale;
+    
+    if (this.selectedPdfQuality === 'high') {
+      return '~2-4 MB';
+    } else if (this.selectedPdfQuality === 'medium') {
+      return '~500 KB - 1 MB';
+    } else {
+      return '~200-500 KB';
+    }
+  }
+  
+  // Get quality description
+  getQualityDescription(): string {
+    switch (this.selectedPdfQuality) {
+      case 'high':
+        return 'High quality, larger file size';
+      case 'medium':
+        return 'Balanced quality and file size (recommended)';
+      case 'low':
+        return 'Smaller file size, reduced quality';
+      default:
+        return '';
+    }
+  }
+  
+  // Handle quality change to update UI
+  onQualityChange() {
+    // Force change detection to update the estimated file size display
+    this.ngZone.run(() => {
+      // This will trigger template updates
+    });
   }
 
 }

@@ -52,6 +52,12 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     suite: 'Select Suite',
     svg: 'all',
   };
+
+  // New properties for multiple suite selection
+  selectedSuites: string[] = [];
+  showSuiteDropdown: boolean = false;
+  suiteSearchTerm: string = '';
+
   outletOptions: string[] = [];
   statusOptions: string[] = [];
   paxOptions: string[] = [];
@@ -63,6 +69,18 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   showDownloadMenu = false;
   popupX = 0;
   popupY = 0;
+
+  /** Does this SVG document contain any of the selected suites (for the chosen outlet)? */
+private docHasSelectedSuites(doc: Document): boolean {
+  if (!this.selectedSuites?.length) return true; // nothing selected → include
+  const wanted = new Set(this.selectedSuites);
+  return this.rooms.some(r =>
+    r.outlet === this.filters.outlet &&
+    wanted.has(r.name) &&
+    !!this.findRoomElementInDoc(doc, r)
+  );
+}
+
 
   // PDF export loading states
   isExportingFloorplan = false;
@@ -294,9 +312,6 @@ private basename(path: string): string {
     });
   }
 
-  // Add a search term for suite
-  suiteSearchTerm: string = '';
-
   buildOptions() {
   console.log("=== Building Options ===");
   console.log("Current filters:", this.filters);
@@ -435,7 +450,7 @@ console.log("Suite options:", this.suiteOptions);
         (this.filters.status === 'Select Status' || r.status === this.filters.status) &&
         (this.filters.pax === 'Select Pax' ||
           r.capacity.toString() === this.filters.pax) &&
-        (this.filters.suite === 'Select Suite' || r.name === this.filters.suite)
+        (this.filters.suite === 'Select Suite' || this.selectedSuites.length === 0 || this.selectedSuites.includes(r.name))
     )
 
       .sort((a, b) => {
@@ -812,8 +827,10 @@ console.log("Suite options:", this.suiteOptions);
       svg: 'all',
     };
     
-    // Reset suite search term
-    this.suiteSearchTerm = ''; 
+    // Reset suite search term and multiple selection
+    this.suiteSearchTerm = '';
+    this.selectedSuites = [];
+    this.showSuiteDropdown = false;
     
     // Close any open popup
     this.closePopup();
@@ -863,87 +880,103 @@ console.log("Suite options:", this.suiteOptions);
       // Set compression level for smaller file size
       // Note: jsPDF automatically applies compression, but we can optimize the content
       
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      
-      // We will iterate through rendered SVG objects (single floor or all floors)
-      const objects = this.svgObjects?.toArray?.() ?? [];
-      for (let idx = 0; idx < objects.length; idx++) {
-        const objectRef = objects[idx];
-        const objectEl = objectRef.nativeElement as HTMLObjectElement;
-        const doc = objectEl.contentDocument as Document | null;
-        const rootSvg = doc?.querySelector('svg') as SVGSVGElement | null;
+// ...
+const pageWidth = pdf.internal.pageSize.getWidth();
+const pageHeight = pdf.internal.pageSize.getHeight();
 
-        if (!rootSvg) continue;
+// Only render floors that actually contain a selected suite
+const objects = this.svgObjects?.toArray?.() ?? [];
+let wroteAnyPage = false;
 
-        if (idx > 0) {
-          pdf.addPage('landscape');
-        }
+for (let idx = 0; idx < objects.length; idx++) {
+  const objectRef = objects[idx];
+  const objectEl = objectRef.nativeElement as HTMLObjectElement;
+  const doc = objectEl.contentDocument as Document | null;
+  const rootSvg = doc?.querySelector('svg') as SVGSVGElement | null;
+  if (!rootSvg || !doc) continue;
 
-        // Page title and filters
-        pdf.setFontSize(20);
-        pdf.setTextColor(255, 102, 0);
-        pdf.text('Private Suite Dashboard - Floorplan', 20, 20);
-        pdf.setFontSize(12);
-        pdf.setTextColor(0, 0, 0);
-        let yPos = 35;
-        if (this.filters.outlet !== 'Select Outlet') {
-          pdf.text(`Outlet: ${this.filters.outlet}`, 20, yPos);
-          yPos += 8;
-        }
-        const floorLabel = this.getFloorLabel(this.displayedSvgs[idx] || '');
-        if (floorLabel) {
-          pdf.text(`Floor: ${floorLabel}`, 20, yPos);
-          yPos += 8;
-        }
-        if (this.filters.status !== 'Select Status') {
-          pdf.text(`Status: ${this.filters.status}`, 20, yPos);
-          yPos += 8;
-        }
-        if (this.filters.pax !== 'Select Pax') {
-          pdf.text(`Pax: ${this.filters.pax}`, 20, yPos);
-          yPos += 8;
-        }
-        if (this.filters.suite !== 'Select Suite') {
-          pdf.text(`Suite: ${this.filters.suite}`, 20, yPos);
-          yPos += 8;
-        }
+  // ❗ Skip this floor if none of the selected suites are on it
+  if (!this.docHasSelectedSuites(doc)) continue;
 
-        // Clone and reset viewBox to original
-        const svgClone = rootSvg.cloneNode(true) as SVGSVGElement;
-        const originalViewBox = this.objectToOriginalViewBox.get(objectEl);
-        if (originalViewBox) {
-          svgClone.setAttribute('viewBox', originalViewBox);
-        }
+  // add a new page only after we've written the first one
+  if (wroteAnyPage) {
+    pdf.addPage('landscape');
+  } else {
+    wroteAnyPage = true;
+  }
 
-        try {
-          const canvas = await this.svgToCanvas(svgClone);
-          const margin = 5;
-          const imgY = Math.max(yPos + 4, 24);
-          const maxWidth = pageWidth - margin * 2;
-          const maxHeight = pageHeight - imgY - margin;
-          const aspect = canvas.width / canvas.height;
-          let imgWidth = maxWidth;
-          let imgHeight = imgWidth / aspect;
-          if (imgHeight > maxHeight) {
-            imgHeight = maxHeight;
-            imgWidth = imgHeight * aspect;
-          }
-          const imgX = (pageWidth - imgWidth) / 2;
-          const quality = this.pdfQualitySettings[this.selectedPdfQuality].quality;
-          const imgData = canvas.toDataURL('image/jpeg', quality);
-          pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'FAST');
-        } catch (canvasError) {
-          console.warn('Failed to convert SVG to canvas on page', idx + 1, canvasError);
-          pdf.setFontSize(14);
-          pdf.setTextColor(0, 0, 0);
-          pdf.text('Floorplan SVG (could not render image)', 20, 20);
-        }
-      }
-       
-       // Save PDF with compression
-       const fileName = `floorplan-${this.filters.outlet !== 'Select Outlet' ? this.filters.outlet : 'all'}-${new Date().toISOString().split('T')[0]}.pdf`;
-       pdf.save(fileName);
+  // ----- header -----
+  pdf.setFontSize(20);
+  pdf.setTextColor(255, 102, 0);
+  pdf.text('Private Suite Dashboard - Floorplan', 20, 20);
+  pdf.setFontSize(12);
+  pdf.setTextColor(0, 0, 0);
+  let yPos = 35;
+
+  if (this.filters.outlet !== 'Select Outlet') {
+    pdf.text(`Outlet: ${this.filters.outlet}`, 20, yPos); yPos += 8;
+  }
+
+  // label for THIS floor (still fine to use displayedSvgs[idx])
+  const floorLabel = this.getFloorLabel(this.displayedSvgs[idx] || '');
+  if (floorLabel) { pdf.text(`Floor: ${floorLabel}`, 20, yPos); yPos += 8; }
+
+  if (this.filters.status !== 'Select Status') {
+    pdf.text(`Status: ${this.filters.status}`, 20, yPos); yPos += 8;
+  }
+  if (this.filters.pax !== 'Select Pax') {
+    pdf.text(`Pax: ${this.filters.pax}`, 20, yPos); yPos += 8;
+  }
+
+  // Suites (print count + names; wraps nicely)
+  const left = 20;
+  const maxWidth = pageWidth - 40;
+  if (this.selectedSuites?.length) {
+    const text = `Suites (${this.selectedSuites.length}): ${this.selectedSuites.join(', ')}`;
+    const lines = pdf.splitTextToSize(text, maxWidth);
+    lines.forEach((line: string) => { pdf.text(line, left, yPos); yPos += 6; });
+  } else if (this.filters.suite !== 'Select Suite') {
+    pdf.text(`Suite: ${this.filters.suite}`, left, yPos); yPos += 8;
+  }
+
+  // ----- image -----
+  const svgClone = rootSvg.cloneNode(true) as SVGSVGElement;
+  const originalViewBox = this.objectToOriginalViewBox.get(objectEl);
+  if (originalViewBox) svgClone.setAttribute('viewBox', originalViewBox);
+
+  try {
+    const canvas = await this.svgToCanvas(svgClone);
+    const margin = 5;
+    const imgY = Math.max(yPos + 4, 24);
+    const maxWidthImg = pageWidth - margin * 2;
+    const maxHeight = pageHeight - imgY - margin;
+    const aspect = canvas.width / canvas.height;
+    let imgWidth = maxWidthImg;
+    let imgHeight = imgWidth / aspect;
+    if (imgHeight > maxHeight) { imgHeight = maxHeight; imgWidth = imgHeight * aspect; }
+    const imgX = (pageWidth - imgWidth) / 2;
+    const quality = this.pdfQualitySettings[this.selectedPdfQuality].quality;
+    const imgData = canvas.toDataURL('image/jpeg', quality);
+    pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'FAST');
+  } catch (e) {
+    console.warn('SVG→canvas failed', e);
+    pdf.setFontSize(14); pdf.setTextColor(0, 0, 0);
+    pdf.text('Floorplan SVG (could not render image)', 20, 20);
+  }
+}
+
+// If nothing matched, tell the user
+if (!wroteAnyPage) {
+  this.showMessage('No floors matched the selected suites. Try selecting "All floors" and pick suites again.', true);
+  this.isExportingFloorplan = false;
+  return;
+}
+
+// Save as before
+const fileName = `floorplan-${this.filters.outlet !== 'Select Outlet' ? this.filters.outlet : 'all'}-${new Date().toISOString().split('T')[0]}.pdf`;
+pdf.save(fileName);
+// ...
+
       
       // Show success message with file size info
       const estimatedSize = this.getEstimatedFileSize();
@@ -1121,6 +1154,65 @@ console.log("Suite options:", this.suiteOptions);
     this.ngZone.run(() => {
       // This will trigger template updates
     });
+  }
+
+  // Methods for multiple suite selection
+  toggleSuiteSelection(suite: string) {
+    const index = this.selectedSuites.indexOf(suite);
+    if (index > -1) {
+      this.selectedSuites.splice(index, 1);
+    } else {
+      this.selectedSuites.push(suite);
+    }
+    this.updateSuiteFilter();
+  }
+
+  isSuiteSelected(suite: string): boolean {
+    return this.selectedSuites.includes(suite);
+  }
+
+  updateSuiteFilter() {
+    if (this.selectedSuites.length === 0) {
+      this.filters.suite = 'Select Suite';
+    } else if (this.selectedSuites.length === 1) {
+      this.filters.suite = this.selectedSuites[0];
+    } else {
+      this.filters.suite = `${this.selectedSuites.length} suites selected`;
+    }
+    this.applyFilters();
+  }
+
+  resetSuiteSelection() {
+    this.selectedSuites = [];
+    this.suiteSearchTerm = '';
+    this.filters.suite = 'Select Suite';
+    this.showSuiteDropdown = false;
+    this.applyFilters();
+  }
+
+  onSuiteSearchChange() {
+    this.buildOptions();
+  }
+
+  toggleSuiteDropdown() {
+    this.showSuiteDropdown = !this.showSuiteDropdown;
+  }
+
+  getFilteredSuiteOptions(): string[] {
+    if (!this.suiteSearchTerm.trim()) {
+      return this.suiteOptions;
+    }
+    return this.suiteOptions.filter(suite =>
+      suite.toLowerCase().includes(this.suiteSearchTerm.toLowerCase())
+    );
+  }
+
+  // Close dropdown when clicking outside
+  onDocumentClick(event: Event) {
+    const target = event.target as HTMLElement;
+    if (!target.closest('.suite-dropdown-container')) {
+      this.showSuiteDropdown = false;
+    }
   }
 
   getFloorLabel(path: string): string {

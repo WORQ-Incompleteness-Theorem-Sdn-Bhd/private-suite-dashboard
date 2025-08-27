@@ -9,24 +9,99 @@
     </h1>
 
     <!-- Filters -->
-    <div class="space-y-4">
+    <div class="space-y-4" (click)="onDocumentClick($event)">
       <ng-container *ngFor="let filter of filtersConfig">
         <label class="block font-semibold text-gray-700">{{
           filter.label
         }}</label>
-        <select
-          class="w-full p-2 border outline-none rounded-xl focus:ring-2 focus:ring-orange-500"
-          [value]="filters[filter.key]"
-          (change)="updateFilter(filter.key, $event)"
-        >
-          <option value="Select Outlet" *ngIf="filter.key === 'outlet'">Select Outlet</option>
-          <option value="Select Status" *ngIf="filter.key === 'status'">Select Status</option>
-          <option value="Select Pax" *ngIf="filter.key === 'pax'">Select Pax</option>
-          <option value="Select Suite" *ngIf="filter.key === 'suite'">Select Suite</option>
-          <option *ngFor="let opt of filter.options" [value]="opt">
-            {{ opt }}
-          </option>
-        </select>
+        
+        <!-- Special handling for suite filter with multi-select -->
+        <div *ngIf="filter.key === 'suite'; else regularSelect" class="suite-dropdown-container">
+          <div class="relative">
+            <button
+              type="button"
+              class="w-full p-2 border outline-none rounded-xl focus:ring-2 focus:ring-orange-500 text-left bg-white flex items-center justify-between"
+              (click)="toggleSuiteDropdown()"
+            >
+              <span class="truncate">{{ filters.suite }}</span>
+              <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+              </svg>
+            </button>
+            
+            <!-- Reset icon -->
+            <button
+              *ngIf="selectedSuites.length > 0 || suiteSearchTerm"
+              type="button"
+              class="absolute right-8 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-red-500"
+              (click)="resetSuiteSelection(); $event.stopPropagation()"
+              title="Reset selection"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+              </svg>
+            </button>
+          </div>
+          
+          <!-- Dropdown menu -->
+          <div
+            *ngIf="showSuiteDropdown"
+            class="w-full p-2 border outline-none rounded-xl focus:ring-2 focus:ring-orange-500"
+          > 
+            <!-- Search input -->
+            <div class="p-2 border-b border-gray-200">
+              <input
+                type="text"
+                placeholder="Search suites..."
+                class="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                [(ngModel)]="suiteSearchTerm"
+                (input)="onSuiteSearchChange()"
+                (click)="$event.stopPropagation()"
+              >
+            </div>
+            
+            <!-- Suite options with checkboxes -->
+            <div class="max-h-48 overflow-y-auto bg-white">
+              <label
+                *ngFor="let suite of getFilteredSuiteOptions()"
+                class="flex items-center p-2 hover:bg-gray-50 cursor-pointer"
+                (click)="toggleSuiteSelection(suite)"
+              >
+                <input
+                  type="checkbox"
+                  [checked]="isSuiteSelected(suite)"
+                  class="mr-2 text-orange-600 focus:ring-orange-500"
+                  (click)="$event.stopPropagation()"
+                >
+                <span class="text-sm">{{ suite }}</span>
+              </label>
+              
+              <!-- No results message -->
+              <div
+                *ngIf="getFilteredSuiteOptions().length === 0"
+                class="p-3 text-sm text-gray-500 text-center"
+              >
+                No suites found matching "{{ suiteSearchTerm }}"
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Regular select for other filters -->
+        <ng-template #regularSelect>
+          <select
+            class="w-full p-2 border outline-none rounded-xl focus:ring-2 focus:ring-orange-500"
+            [value]="filters[filter.key]"
+            (change)="updateFilter(filter.key, $event)"
+          >
+            <option value="Select Outlet" *ngIf="filter.key === 'outlet'">Select Outlet</option>
+            <option value="Select Status" *ngIf="filter.key === 'status'">Select Status</option>
+            <option value="Select Pax" *ngIf="filter.key === 'pax'">Select Pax</option>
+            <option *ngFor="let opt of filter.options" [value]="opt">
+              {{ opt }}
+            </option>
+          </select>
+        </ng-template>
       </ng-container>
 
       <!-- Floor selector: visible only when the outlet has more than 1 floor SVG -->

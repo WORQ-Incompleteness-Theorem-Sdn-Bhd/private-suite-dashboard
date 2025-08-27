@@ -1,3 +1,54 @@
 :host {
   display: block;
 }
+
+// Suite dropdown styles
+.suite-dropdown-container {
+  .relative {
+    position: relative;
+  }
+  
+  button {
+    transition: all 0.15s ease;
+    min-height: 36px;
+    
+    &:hover {
+      border-color: #f97316;
+    }
+    
+    &:focus {
+      border-color: #f97316;
+      box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.2);
+    }
+  }
+  
+  .absolute {
+    position: absolute;
+    z-index: 50;
+  }
+  
+  input[type="checkbox"] {
+    &:checked {
+      background-color: #f97316;
+      border-color: #f97316;
+    }
+    
+    &:focus {
+      ring-color: #f97316;
+    }
+  }
+  
+  label {
+    transition: background-color 0.1s ease;
+    min-height: 24px;
+    
+    &:hover {
+      background-color: #f9fafb;
+    }
+  }
+  
+  input[type="text"] {
+    font-size: 11px;
+    min-height: 28px;
+  }
+}

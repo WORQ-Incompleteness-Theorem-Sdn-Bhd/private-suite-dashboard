@@ -98,6 +98,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   TTDI: {
     'TTDI-Level1.svg': 'Level 1',
     'TTDI-Level3A.svg': 'Level 3A',
+    'Sibelco Office - L1.svg' : 'Sibelco Office',
   },
   KLS :{
     'KLS- L20.svg': 'Level 20',
@@ -931,7 +932,7 @@ console.log("Suite options:", this.suiteOptions);
           const imgX = (pageWidth - imgWidth) / 2;
           const quality = this.pdfQualitySettings[this.selectedPdfQuality].quality;
           const imgData = canvas.toDataURL('image/jpeg', quality);
-          pdf.addImage(imgData, 'JPEG', imgX, imgY, imgWidth, imgHeight, undefined, 'FAST');
+          pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'FAST');
         } catch (canvasError) {
           console.warn('Failed to convert SVG to canvas on page', idx + 1, canvasError);
           pdf.setFontSize(14);

@@ -3,6 +3,8 @@ import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, tap } from 'rxjs';
 import { Room } from '../models/room.model';
 
+const MM2_PER_SQFT = 92903.04;
+
 @Injectable({ providedIn: 'root' })
 export class RoomService {
   private roomsSubject = new BehaviorSubject<Room[]>([]);
@@ -30,7 +32,7 @@ export class RoomService {
     },
     '5db8fb7e35798d0010950a77': {  
       name: 'TTDI',
-      svg: ['assets/TTDI-Level1.svg', 'assets/TTDIlevel3A.svg'],
+      svg: ['assets/TTDI-Level1.svg', 'assets/TTDIlevel3A.svg' , 'assets/Sibelco Office - L1.svg'],
     },
     '5db8fb9798549f0010df15f3': {
       name: 'STO-WIP',
@@ -96,6 +98,9 @@ export class RoomService {
             } else {
               normalizedStatus = 'Occupied';
             }
+              // convert mm² → ft²
+            const areaMm2 = Number(item.area) || 0;
+            const areaSqft = areaMm2 / MM2_PER_SQFT;
 
             return {
               id: item.id,
@@ -105,7 +110,7 @@ export class RoomService {
               svg: Array.isArray(svgPath) ? svgPath : [svgPath], // Always an array
               capacity: item.capacity,
               type: item.type,
-              area: item.area,
+              area: Math.round(areaSqft),
               price: item.price,
               deposit: item.deposit,
             };

@@ -89,11 +89,11 @@ private docHasSelectedSuites(doc: Document): boolean {
   pdfExportMessage = '';
   showPdfMessage = false;
   
-  // PDF quality settings for file size optimization
+  // PDF quality settings optimized for all devices
   pdfQualitySettings = {
-    high: { scale: 2, quality: 0.9, dimensions: { width: 800, height: 600 } },
-    medium: { scale: 1.5, quality: 0.7, dimensions: { width: 600, height: 450 } },
-    low: { scale: 1, quality: 0.5, dimensions: { width: 400, height: 300 } }
+    high: { scale: 3, quality: 1.0, dimensions: { width: 1200, height: 900 }, deviceOptimized: true },
+    medium: { scale: 2.5, quality: 0.95, dimensions: { width: 1000, height: 750 }, deviceOptimized: true },
+    low: { scale: 2, quality: 0.9, dimensions: { width: 800, height: 600 }, deviceOptimized: true }
   };
   
   selectedPdfQuality: 'high' | 'medium' | 'low' = 'medium';
@@ -155,6 +155,9 @@ private basename(path: string): string {
   trackBySvgUrl = (_: number, url: string) => url;
 
   ngOnInit() {
+    // Auto-optimize PDF quality for current device
+    this.autoOptimizeQuality();
+    
     this.roomService.rooms$.subscribe((rooms) => {
       this.rooms = rooms;
       this.roomIdIndex = this.buildRoomIdIndex();
@@ -956,8 +959,10 @@ for (let idx = 0; idx < objects.length; idx++) {
     if (imgHeight > maxHeight) { imgHeight = maxHeight; imgWidth = imgHeight * aspect; }
     const imgX = (pageWidth - imgWidth) / 2;
     const quality = this.pdfQualitySettings[this.selectedPdfQuality].quality;
-    const imgData = canvas.toDataURL('image/jpeg', quality);
-    pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'FAST');
+    // Use PNG for better quality on all devices, especially tablets
+    const imgData = canvas.toDataURL('image/png', quality);
+    // Use 'MEDIUM' compression for better quality while maintaining reasonable file size
+    pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'MEDIUM');
   } catch (e) {
     console.warn('SVG→canvas failed', e);
     pdf.setFontSize(14); pdf.setTextColor(0, 0, 0);
@@ -1048,27 +1053,44 @@ pdf.save(fileName);
     }
   }
 
-  // Helper method to convert SVG to canvas more reliably
+  // Helper method to convert SVG to canvas with device-optimized quality
   private async svgToCanvas(svgElement: SVGSVGElement): Promise<HTMLCanvasElement> {
     return new Promise((resolve, reject) => {
       try {
-        // Method 1: Try using html2canvas first
+        const quality = this.pdfQualitySettings[this.selectedPdfQuality];
+        
+        // Create a temporary container with device-optimized dimensions
         const tempDiv = document.createElement('div');
         tempDiv.style.position = 'absolute';
         tempDiv.style.left = '-9999px';
         tempDiv.style.top = '-9999px';
-        // Use quality settings for optimal file size
-        const quality = this.pdfQualitySettings[this.selectedPdfQuality];
         tempDiv.style.width = `${quality.dimensions.width}px`;
         tempDiv.style.height = `${quality.dimensions.height}px`;
         tempDiv.style.backgroundColor = '#ffffff';
+        tempDiv.style.overflow = 'hidden';
         
+        // Clone and optimize SVG for better rendering
         const svgClone = svgElement.cloneNode(true) as SVGSVGElement;
         svgClone.style.width = '100%';
         svgClone.style.height = '100%';
+        svgClone.style.display = 'block';
+        
+        // Ensure SVG has proper dimensions for crisp rendering
+        if (!svgClone.getAttribute('width') || !svgClone.getAttribute('height')) {
+          const viewBox = svgClone.getAttribute('viewBox');
+          if (viewBox) {
+            const [, , w, h] = viewBox.split(/\s+/).map(Number);
+            if (!isNaN(w) && !isNaN(h)) {
+              svgClone.setAttribute('width', String(quality.dimensions.width));
+              svgClone.setAttribute('height', String(quality.dimensions.height));
+            }
+          }
+        }
+        
         tempDiv.appendChild(svgClone);
         document.body.appendChild(tempDiv);
         
+        // Enhanced html2canvas options for device compatibility
         html2canvas(tempDiv, {
           backgroundColor: '#ffffff',
           scale: quality.scale,
@@ -1077,13 +1099,46 @@ pdf.save(fileName);
           logging: false,
           width: quality.dimensions.width,
           height: quality.dimensions.height,
-          // Additional optimizations for smaller file size
+          // Device optimization settings
           removeContainer: true,
           foreignObjectRendering: false,
-          imageTimeout: 0
+          imageTimeout: 0,
+          // Ensure crisp text rendering
+          onclone: (clonedDoc) => {
+            const clonedSvg = clonedDoc.querySelector('svg');
+            if (clonedSvg) {
+              // Optimize SVG for high-DPI displays
+              clonedSvg.style.shapeRendering = 'geometricPrecision';
+              clonedSvg.style.textRendering = 'optimizeLegibility';
+            }
+          }
         }).then(canvas => {
           document.body.removeChild(tempDiv);
-          resolve(canvas);
+          
+          // Additional canvas optimization for device compatibility
+          const optimizedCanvas = document.createElement('canvas');
+          const ctx = optimizedCanvas.getContext('2d');
+          if (!ctx) {
+            resolve(canvas);
+            return;
+          }
+          
+          // Set canvas dimensions with device pixel ratio consideration
+          const devicePixelRatio = window.devicePixelRatio || 1;
+          const finalWidth = Math.round(quality.dimensions.width * quality.scale);
+          const finalHeight = Math.round(quality.dimensions.height * quality.scale);
+          
+          optimizedCanvas.width = finalWidth;
+          optimizedCanvas.height = finalHeight;
+          
+          // Enable high-quality rendering
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          
+          // Draw with crisp rendering
+          ctx.drawImage(canvas, 0, 0, finalWidth, finalHeight);
+          
+          resolve(optimizedCanvas);
         }).catch(error => {
           document.body.removeChild(tempDiv);
           reject(error);
@@ -1107,17 +1162,17 @@ pdf.save(fileName);
     }, 5000);
   }
   
-  // Get estimated file size for each quality level (static)
+  // Get estimated file size for each quality level (static) - optimized for all devices
   getLowQualityFileSize(): string {
-    return '~200-500 KB';
-  }
-  
-  getMediumQualityFileSize(): string {
     return '~500 KB - 1 MB';
   }
   
+  getMediumQualityFileSize(): string {
+    return '~1-2 MB';
+  }
+  
   getHighQualityFileSize(): string {
-    return '~2-4 MB';
+    return '~3-5 MB';
   }
   
   // Get estimated file size for selected quality (for display in success message)
@@ -1126,11 +1181,11 @@ pdf.save(fileName);
     const baseSize = quality.dimensions.width * quality.dimensions.height * quality.scale * quality.scale;
     
     if (this.selectedPdfQuality === 'high') {
-      return '~2-4 MB';
+      return '~3-5 MB';
     } else if (this.selectedPdfQuality === 'medium') {
-      return '~500 KB - 1 MB';
+      return '~1-2 MB';
     } else {
-      return '~200-500 KB';
+      return '~500 KB - 1 MB';
     }
   }
   
@@ -1138,11 +1193,11 @@ pdf.save(fileName);
   getQualityDescription(): string {
     switch (this.selectedPdfQuality) {
       case 'high':
-        return 'High quality, larger file size';
+        return 'Ultra-high quality for all devices (tablets, phones, laptops)';
       case 'medium':
-        return 'Balanced quality and file size (recommended)';
+        return 'High quality optimized for all devices (recommended)';
       case 'low':
-        return 'Smaller file size, reduced quality';
+        return 'Good quality compatible with all devices';
       default:
         return '';
     }
@@ -1154,6 +1209,65 @@ pdf.save(fileName);
     this.ngZone.run(() => {
       // This will trigger template updates
     });
+  }
+
+  // Detect device type and suggest optimal quality setting
+  detectDeviceType(): string {
+    const userAgent = navigator.userAgent.toLowerCase();
+    const isTablet = /ipad|android(?!.*mobile)|tablet/.test(userAgent);
+    const isMobile = /mobile|android|iphone|ipod/.test(userAgent);
+    const isHighDPI = window.devicePixelRatio > 1;
+    
+    if (isTablet || (isMobile && isHighDPI)) {
+      return 'tablet';
+    } else if (isMobile) {
+      return 'mobile';
+    } else if (isHighDPI) {
+      return 'high-dpi-laptop';
+    } else {
+      return 'standard-laptop';
+    }
+  }
+
+  // Get recommended quality setting based on device
+  getRecommendedQuality(): 'high' | 'medium' | 'low' {
+    const deviceType = this.detectDeviceType();
+    
+    switch (deviceType) {
+      case 'tablet':
+      case 'high-dpi-laptop':
+        return 'high';
+      case 'mobile':
+        return 'medium';
+      default:
+        return 'medium';
+    }
+  }
+
+  // Auto-optimize quality for current device
+  autoOptimizeQuality() {
+    const recommended = this.getRecommendedQuality();
+    if (this.selectedPdfQuality !== recommended) {
+      this.selectedPdfQuality = recommended;
+      this.onQualityChange();
+    }
+  }
+
+  // Get device-specific optimization info
+  getDeviceOptimizationInfo(): string {
+    const deviceType = this.detectDeviceType();
+    const quality = this.selectedPdfQuality;
+    
+    switch (deviceType) {
+      case 'tablet':
+        return `Optimized for ${deviceType}: High-resolution rendering for crisp floorplan display on tablets and iPads`;
+      case 'mobile':
+        return `Optimized for ${deviceType}: Balanced quality for mobile devices with good readability`;
+      case 'high-dpi-laptop':
+        return `Optimized for ${deviceType}: High-DPI display optimization for sharp text and graphics`;
+      default:
+        return `Optimized for ${deviceType}: Standard quality for desktop displays`;
+    }
   }
 
   // Methods for multiple suite selection

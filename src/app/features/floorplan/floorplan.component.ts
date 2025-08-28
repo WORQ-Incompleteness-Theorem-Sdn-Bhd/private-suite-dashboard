@@ -969,48 +969,37 @@ for (let idx = 0; idx < objects.length; idx++) {
   if (originalViewBox) svgClone.setAttribute('viewBox', originalViewBox);
 
       try {
-      const canvas = await this.svgToCanvas(svgClone);
-      const margin = 5;
-      const imgY = Math.max(yPos + 4, 24);
-      const maxWidthImg = pageWidth - margin * 2;
-      const maxHeight = pageHeight - imgY - margin;
-      const aspect = canvas.width / canvas.height;
-      let imgWidth = maxWidthImg;
-      let imgHeight = imgWidth / aspect;
-      if (imgHeight > maxHeight) { imgHeight = maxHeight; imgWidth = imgHeight * aspect; }
-      const imgX = (pageWidth - imgWidth) / 2;
-      const quality = this.pdfQualitySettings[this.selectedPdfQuality].quality;
-      
-      // Use PNG for better quality on all devices, especially tablets
-      const imgData = canvas.toDataURL('image/png', quality);
-      
-      // Use 'MEDIUM' compression for better quality while maintaining reasonable file size
-      pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'MEDIUM');
-    } catch (e) {
-      console.warn('SVG→canvas failed, trying fallback method', e);
-      
-      // Fallback: Try with simpler settings for iPad compatibility
-      try {
-        const fallbackCanvas = await this.svgToCanvasFallback(svgClone);
+        // Try direct SVG to canvas first for better shape preservation
+        let canvas: HTMLCanvasElement;
+        try {
+          canvas = await this.svgToCanvasDirect(svgClone);
+        } catch (directError) {
+          console.warn('Direct SVG conversion failed, trying html2canvas', directError);
+          canvas = await this.svgToCanvas(svgClone);
+        }
+        
         const margin = 5;
         const imgY = Math.max(yPos + 4, 24);
         const maxWidthImg = pageWidth - margin * 2;
         const maxHeight = pageHeight - imgY - margin;
-        const aspect = fallbackCanvas.width / fallbackCanvas.height;
+        const aspect = canvas.width / canvas.height;
         let imgWidth = maxWidthImg;
         let imgHeight = imgWidth / aspect;
         if (imgHeight > maxHeight) { imgHeight = maxHeight; imgWidth = imgHeight * aspect; }
         const imgX = (pageWidth - imgWidth) / 2;
+        const quality = this.pdfQualitySettings[this.selectedPdfQuality].quality;
         
-        const imgData = fallbackCanvas.toDataURL('image/png', 0.8);
+        // Use PNG for better quality on all devices, especially tablets
+        const imgData = canvas.toDataURL('image/png', quality);
+        
+        // Use 'MEDIUM' compression for better quality while maintaining reasonable file size
         pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'MEDIUM');
-      } catch (fallbackError) {
-        console.warn('Fallback method also failed', fallbackError);
+      } catch (e) {
+        console.warn('All SVG→canvas methods failed', e);
         pdf.setFontSize(14); 
         pdf.setTextColor(0, 0, 0);
         pdf.text('Floorplan SVG (could not render image)', 20, 20);
       }
-    }
 }
 
 // If nothing matched, tell the user
@@ -1192,6 +1181,56 @@ pdf.save(fileName);
           document.body.removeChild(tempDiv);
           reject(error);
         });
+        
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  // Alternative method: Direct SVG to canvas conversion for better shape preservation
+  private async svgToCanvasDirect(svgElement: SVGSVGElement): Promise<HTMLCanvasElement> {
+    return new Promise((resolve, reject) => {
+      try {
+        const quality = this.pdfQualitySettings[this.selectedPdfQuality];
+        
+        // Create canvas with proper dimensions
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Could not get canvas context'));
+          return;
+        }
+        
+        const width = quality.dimensions.width;
+        const height = quality.dimensions.height;
+        canvas.width = width;
+        canvas.height = height;
+        
+        // Set white background
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+        
+        // Convert SVG to data URL
+        const svgString = new XMLSerializer().serializeToString(svgElement);
+        const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(svgBlob);
+        
+        // Create image from SVG
+        const img = new Image();
+        img.onload = () => {
+          // Draw the SVG image to canvas
+          ctx.drawImage(img, 0, 0, width, height);
+          URL.revokeObjectURL(url);
+          resolve(canvas);
+        };
+        
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          reject(new Error('Failed to load SVG as image'));
+        };
+        
+        img.src = url;
         
       } catch (error) {
         reject(error);

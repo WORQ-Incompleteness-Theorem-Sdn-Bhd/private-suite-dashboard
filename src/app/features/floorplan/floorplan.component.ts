@@ -7,6 +7,8 @@ import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { Observable } from 'rxjs';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
 
 
 type FilterKey = 'outlet' | 'status' | 'pax' | 'suite';
@@ -145,7 +147,8 @@ private basename(path: string): string {
   constructor(
     private roomService: RoomService,
     public sanitizer: DomSanitizer,
-    private ngZone: NgZone
+    private ngZone: NgZone,
+    private http: HttpClient
   ) {}
 
   getSafeUrl(url: string): SafeResourceUrl {
@@ -901,119 +904,139 @@ console.log("Suite options:", this.suiteOptions);
         creator: 'Private Suite Dashboard'
       });
       
-      // Set compression level for smaller file size
-      // Note: jsPDF automatically applies compression, but we can optimize the content
-      
-// ...
-const pageWidth = pdf.internal.pageSize.getWidth();
-const pageHeight = pdf.internal.pageSize.getHeight();
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
 
-// Only render floors that actually contain a selected suite
-const objects = this.svgObjects?.toArray?.() ?? [];
-let wroteAnyPage = false;
+      const objects = this.svgObjects?.toArray?.() ?? [];
+      let wroteAnyPage = false;
 
-for (let idx = 0; idx < objects.length; idx++) {
-  const objectRef = objects[idx];
-  const objectEl = objectRef.nativeElement as HTMLObjectElement;
-  const doc = objectEl.contentDocument as Document | null;
-  const rootSvg = doc?.querySelector('svg') as SVGSVGElement | null;
-  if (!rootSvg || !doc) continue;
+      for (let idx = 0; idx < objects.length; idx++) {
+        const objectRef = objects[idx];
+        const objectEl = objectRef.nativeElement as HTMLObjectElement;
 
-  // ❗ Skip this floor if none of the selected suites are on it
-  if (!this.docHasSelectedSuites(doc)) continue;
+        // Skip floors that don't contain selected suites
+        const doc = objectEl.contentDocument as Document | null;
+        if (this.selectedSuites.length && (!doc || !this.docHasSelectedSuites(doc))) continue;
 
-  // add a new page only after we've written the first one
-  if (wroteAnyPage) {
-    pdf.addPage('landscape');
-  } else {
-    wroteAnyPage = true;
-  }
-
-  // ----- header -----
-  pdf.setFontSize(20);
-  pdf.setTextColor(255, 102, 0);
-  pdf.text('Private Suite Dashboard - Floorplan', 20, 20);
-  pdf.setFontSize(12);
-  pdf.setTextColor(0, 0, 0);
-  let yPos = 35;
-
-  if (this.filters.outlet !== 'Select Outlet') {
-    pdf.text(`Outlet: ${this.filters.outlet}`, 20, yPos); yPos += 8;
-  }
-
-  // label for THIS floor (still fine to use displayedSvgs[idx])
-  const floorLabel = this.getFloorLabel(this.displayedSvgs[idx] || '');
-  if (floorLabel) { pdf.text(`Floor: ${floorLabel}`, 20, yPos); yPos += 8; }
-
-  if (this.filters.status !== 'Select Status') {
-    pdf.text(`Status: ${this.filters.status}`, 20, yPos); yPos += 8;
-  }
-  if (this.filters.pax !== 'Select Pax') {
-    pdf.text(`Pax: ${this.filters.pax}`, 20, yPos); yPos += 8;
-  }
-
-  // Suites (print count + names; wraps nicely)
-  const left = 20;
-  const maxWidth = pageWidth - 40;
-  if (this.selectedSuites?.length) {
-    const text = `Suites (${this.selectedSuites.length}): ${this.selectedSuites.join(', ')}`;
-    const lines = pdf.splitTextToSize(text, maxWidth);
-    lines.forEach((line: string) => { pdf.text(line, left, yPos); yPos += 6; });
-  } else if (this.filters.suite !== 'Select Suite') {
-    pdf.text(`Suite: ${this.filters.suite}`, left, yPos); yPos += 8;
-  }
-
-  // ----- image -----
-  const svgClone = rootSvg.cloneNode(true) as SVGSVGElement;
-  const originalViewBox = this.objectToOriginalViewBox.get(objectEl);
-  if (originalViewBox) svgClone.setAttribute('viewBox', originalViewBox);
-
-      try {
-        // Try direct SVG to canvas first for better shape preservation
-        let canvas: HTMLCanvasElement;
-        try {
-          canvas = await this.svgToCanvasDirect(svgClone);
-        } catch (directError) {
-          console.warn('Direct SVG conversion failed, trying html2canvas', directError);
-          canvas = await this.svgToCanvas(svgClone);
+        // Load SVG (from <object> or via HTTP fallback for Safari)
+        let rootSvg = doc?.querySelector('svg') as SVGSVGElement | null;
+        if (!rootSvg) {
+          const url = this.displayedSvgs[idx];
+          rootSvg = url ? await this.fetchSvgElement(url) : null;
+          if (!rootSvg) continue;
         }
-        
+
+        // New page handling
+        if (wroteAnyPage) pdf.addPage('landscape');
+        wroteAnyPage = true;
+
+        // --- header (keep yours; shortened here) ---
+        pdf.setFontSize(20); 
+        pdf.setTextColor(255,102,0);
+        pdf.text('Private Suite Dashboard - Floorplan', 20, 20);
+        pdf.setFontSize(12); 
+        pdf.setTextColor(0,0,0);
+        let yPos = 35;
+        if (this.filters.outlet !== 'Select Outlet') { 
+          pdf.text(`Outlet: ${this.filters.outlet}`, 20, yPos); 
+          yPos += 8; 
+        }
+        const floorLabel = this.getFloorLabel(this.displayedSvgs[idx] || '');
+        if (floorLabel) { 
+          pdf.text(`Floor: ${floorLabel}`, 20, yPos); 
+          yPos += 8; 
+        }
+        if (this.filters.status !== 'Select Status') { 
+          pdf.text(`Status: ${this.filters.status}`, 20, yPos); 
+          yPos += 8; 
+        }
+        if (this.filters.pax !== 'Select Pax') { 
+          pdf.text(`Pax: ${this.filters.pax}`, 20, yPos); 
+          yPos += 8; 
+        }
+        // Suites (print count + names; wraps nicely)
+        const left = 20; 
+        const usableWidth = pageWidth - 40;
+        if (this.selectedSuites?.length) {
+          const text = `Suites (${this.selectedSuites.length}): ${this.selectedSuites.join(', ')}`;
+          const lines = pdf.splitTextToSize(text, usableWidth);
+          lines.forEach((line: string) => { 
+            pdf.text(line, left, yPos); 
+            yPos += 6; 
+          });
+        } else if (this.filters.suite !== 'Select Suite') {
+          pdf.text(`Suite: ${this.filters.suite}`, left, yPos); 
+          yPos += 8; 
+        }
+
+        // --- image/vector area ---
+        const originalViewBox = this.objectToOriginalViewBox.get(objectEl);
+        const svgClone = rootSvg.cloneNode(true) as SVGSVGElement;
+        if (originalViewBox) svgClone.setAttribute('viewBox', originalViewBox);
+
+        // Compute target rect
         const margin = 5;
         const imgY = Math.max(yPos + 4, 24);
-        const maxWidthImg = pageWidth - margin * 2;
-        const maxHeight = pageHeight - imgY - margin;
-        const aspect = canvas.width / canvas.height;
-        let imgWidth = maxWidthImg;
-        let imgHeight = imgWidth / aspect;
-        if (imgHeight > maxHeight) { imgHeight = maxHeight; imgWidth = imgHeight * aspect; }
-        const imgX = (pageWidth - imgWidth) / 2;
-        const quality = this.pdfQualitySettings[this.selectedPdfQuality].quality;
-        
-        // Use PNG for better quality on all devices, especially tablets
-        const imgData = canvas.toDataURL('image/png', quality);
-        
-        // Use 'MEDIUM' compression for better quality while maintaining reasonable file size
-        pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'MEDIUM');
-      } catch (e) {
-        console.warn('All SVG→canvas methods failed', e);
-        pdf.setFontSize(14); 
-        pdf.setTextColor(0, 0, 0);
-        pdf.text('Floorplan SVG (could not render image)', 20, 20);
+        const maxW = pageWidth - margin * 2;
+        const maxH = pageHeight - imgY - margin;
+
+        // Try vector export first (best on all devices)
+        const vb = svgClone.getAttribute('viewBox') || '0 0 1000 1000';
+        const [, , vwStr, vhStr] = vb.split(/\s+/);
+        const aspect = (Number(vwStr) || 1000) / (Number(vhStr) || 1000);
+        let imgW = maxW, imgH = imgW / aspect;
+        if (imgH > maxH) { 
+          imgH = maxH; 
+          imgW = imgH * aspect; 
+        }
+        const imgX = (pageWidth - imgW) / 2;
+
+        const drewVector = await this.tryAddSvgVector(pdf, svgClone, imgX, imgY, imgW, imgH);
+        if (drewVector) continue; // vector success → next page
+
+        // Raster fallback (uses reduced dimensions on mobile/tablet)
+        try {
+          const dims = this.getDeviceRenderDims();
+          // temporarily override your quality settings for this pass
+          this.pdfQualitySettings.medium = {
+            scale: dims.scale, 
+            quality: dims.quality,
+            dimensions: { width: dims.width, height: dims.height }, 
+            deviceOptimized: true, 
+            description: ''
+          } as any;
+
+          let canvas: HTMLCanvasElement;
+          try {
+            canvas = await this.svgToCanvasDirect(svgClone);  // draw via <img src=blob>
+          } catch {
+            canvas = await this.svgToCanvas(svgClone);        // html2canvas fallback
+          }
+
+          const imgData = canvas.toDataURL('image/png');      // PNG works best on iOS
+          pdf.addImage(imgData, 'PNG', imgX, imgY, imgW, imgH);  // avoid compression arg for Safari
+        } catch (e) {
+          pdf.setFontSize(14); 
+          pdf.setTextColor(0,0,0);
+          pdf.text('Floorplan SVG (could not render image)', 20, 20);
+        }
       }
-}
 
-// If nothing matched, tell the user
-if (!wroteAnyPage) {
-  this.showMessage('No floors matched the selected suites. Try selecting "All floors" and pick suites again.', true);
-  this.isExportingFloorplan = false;
-  return;
-}
+      if (!wroteAnyPage) {
+        this.showMessage('No floors matched the selected suites. Try selecting "All floors" and pick suites again.', true);
+        this.isExportingFloorplan = false;
+        return;
+      }
 
-// Save as before
-const fileName = `floorplan-${this.filters.outlet !== 'Select Outlet' ? this.filters.outlet : 'all'}-${new Date().toISOString().split('T')[0]}.pdf`;
-pdf.save(fileName);
-// ...
-
+      // ✅ iOS-friendly save
+      const fileName = `floorplan-${this.filters.outlet !== 'Select Outlet' ? this.filters.outlet : 'all'}-${new Date().toISOString().split('T')[0]}.pdf`;
+      if (this.isIOS()) {
+        const blob = pdf.output('blob');
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank'); // iOS: opens Share/Save dialog
+      } else {
+        pdf.save(fileName);
+      }
       
       // Show success message with device-specific info
       const estimatedSize = this.getEstimatedFileSize();
@@ -1098,92 +1121,48 @@ pdf.save(fileName);
   private async svgToCanvas(svgElement: SVGSVGElement): Promise<HTMLCanvasElement> {
     return new Promise((resolve, reject) => {
       try {
-        const quality = this.pdfQualitySettings[this.selectedPdfQuality];
-        const deviceType = this.detectDeviceType();
-        
-        // Create a temporary container with optimized dimensions
+        const dims = this.getDeviceRenderDims();
         const tempDiv = document.createElement('div');
         tempDiv.style.position = 'absolute';
         tempDiv.style.left = '-9999px';
         tempDiv.style.top = '-9999px';
-        tempDiv.style.width = `${quality.dimensions.width}px`;
-        tempDiv.style.height = `${quality.dimensions.height}px`;
+        tempDiv.style.width = `${dims.width}px`;
+        tempDiv.style.height = `${dims.height}px`;
         tempDiv.style.backgroundColor = '#ffffff';
         tempDiv.style.overflow = 'hidden';
-        
-        // Clone SVG for rendering
+
         const svgClone = svgElement.cloneNode(true) as SVGSVGElement;
         svgClone.style.width = '100%';
         svgClone.style.height = '100%';
         svgClone.style.display = 'block';
-        
-        // Ensure SVG has proper dimensions
         if (!svgClone.getAttribute('width') || !svgClone.getAttribute('height')) {
-          const viewBox = svgClone.getAttribute('viewBox');
-          if (viewBox) {
-            const [, , w, h] = viewBox.split(/\s+/).map(Number);
-            if (!isNaN(w) && !isNaN(h)) {
-              svgClone.setAttribute('width', String(quality.dimensions.width));
-              svgClone.setAttribute('height', String(quality.dimensions.height));
-            }
-          }
+          svgClone.setAttribute('width', String(dims.width));
+          svgClone.setAttribute('height', String(dims.height));
         }
-        
+
         tempDiv.appendChild(svgClone);
         document.body.appendChild(tempDiv);
-        
-        // Simplified html2canvas options for better iPad compatibility
+
         html2canvas(tempDiv, {
           backgroundColor: '#ffffff',
-          scale: quality.scale,
+          scale: dims.scale,
           useCORS: true,
           allowTaint: true,
           logging: false,
-          width: quality.dimensions.width,
-          height: quality.dimensions.height,
+          width: dims.width,
+          height: dims.height,
           removeContainer: true,
           foreignObjectRendering: false,
-          imageTimeout: 30000, // Increased timeout for iPads
-          onclone: (clonedDoc) => {
-            const clonedSvg = clonedDoc.querySelector('svg');
-            if (clonedSvg) {
-              // Basic SVG optimization
-              clonedSvg.style.shapeRendering = 'geometricPrecision';
-              clonedSvg.style.textRendering = 'optimizeLegibility';
-            }
-          }
+          imageTimeout: 30000
         }).then(canvas => {
           document.body.removeChild(tempDiv);
-          
-          // Simple canvas optimization
-          const optimizedCanvas = document.createElement('canvas');
-          const ctx = optimizedCanvas.getContext('2d');
-          if (!ctx) {
-            resolve(canvas);
-            return;
-          }
-          
-          const finalWidth = Math.round(quality.dimensions.width * quality.scale);
-          const finalHeight = Math.round(quality.dimensions.height * quality.scale);
-          
-          optimizedCanvas.width = finalWidth;
-          optimizedCanvas.height = finalHeight;
-          
-          // Enable high-quality rendering
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-          
-          // Draw with crisp rendering
-          ctx.drawImage(canvas, 0, 0, finalWidth, finalHeight);
-          
-          resolve(optimizedCanvas);
-        }).catch(error => {
+          resolve(canvas);
+        }).catch(err => {
           document.body.removeChild(tempDiv);
-          reject(error);
+          reject(err);
         });
-        
-      } catch (error) {
-        reject(error);
+      } catch (error) { 
+        reject(error); 
       }
     });
   }
@@ -1448,6 +1427,51 @@ pdf.save(fileName);
       default:
         return 'Standard Laptop/Desktop';
     }
+  }
+
+  // Detect iOS/iPadOS
+  private isIOS(): boolean {
+    const ua = navigator.userAgent.toLowerCase();
+    return /ipad|iphone|ipod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  }
+
+  // Try vector-first export using svg2pdf
+  private async tryAddSvgVector(
+    pdf: jsPDF,
+    svg: SVGSVGElement,
+    x: number,
+    y: number,
+    w: number,
+    h: number
+  ): Promise<boolean> {
+    try {
+      const mod = await import('svg2pdf.js');
+      const svg2pdf = (mod as any).svg2pdf ?? (mod as any).default ?? (mod as any);
+      svg2pdf(svg, pdf, { x, y, width: w, height: h, preserveAspectRatio: 'xMidYMid meet' });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Fallback when <object>.contentDocument is null (Safari): fetch SVG text
+  private async fetchSvgElement(url: string): Promise<SVGSVGElement | null> {
+    try {
+      const text = await firstValueFrom(this.http.get(url, { responseType: 'text' }));
+      const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+      return doc.documentElement as unknown as SVGSVGElement;
+    } catch {
+      return null;
+    }
+  }
+
+  // Smaller render targets on mobile/tablet to avoid OOM
+  private getDeviceRenderDims() {
+    const t = this.detectDeviceType();
+    if (t === 'mobile')   return { width: 900,  height: 675, scale: 2, quality: 0.92 };
+    if (t === 'ipad' || t === 'tablet')
+                          return { width: 1100, height: 825, scale: 2, quality: 0.93 };
+    return {               width: 1200, height: 900, scale: 3, quality: 0.95 };
   }
 
 }

@@ -1,8 +1,6 @@
 <div class="grid grid-cols-1 gap-6 py-6 mx-auto lg:grid-cols-12 max-w-7xl">
   <!-- Left Panel -->
-  <div
-    class="flex flex-col p-6 transition-all duration-500 bg-white shadow-lg rounded-2xl lg:col-span-4"
-  >
+  <div class="flex flex-col p-6 transition-all duration-500 bg-white shadow-lg rounded-2xl lg:col-span-4">
     <h1 class="mb-4 text-2xl font-bold text-orange-600">
       PS Occupancy
       <span class="block mt-1 text-sm text-gray-500">Floorplan Dashboard</span>
@@ -13,12 +11,9 @@
       <ng-container *ngFor="let filter of filtersConfig">
         <label class="block font-semibold text-gray-700">{{
           filter.label
-        }}</label>
-        <select
-          class="w-full p-2 border outline-none rounded-xl focus:ring-2 focus:ring-orange-500"
-          [value]="filters[filter.key]"
-          (change)="updateFilter(filter.key, $event)"
-        >
+          }}</label>
+        <select class="w-full p-2 border outline-none rounded-xl focus:ring-2 focus:ring-orange-500"
+          [value]="filters[filter.key]" (change)="updateFilter(filter.key, $event)">
           <option value="Select Outlet" *ngIf="filter.key === 'outlet'">Select Outlet</option>
           <option value="Select Status" *ngIf="filter.key === 'status'">Select Status</option>
           <option value="Select Pax" *ngIf="filter.key === 'pax'">Select Pax</option>
@@ -32,11 +27,8 @@
       <!-- Floor selector: visible only when the outlet has more than 1 floor SVG -->
       <div *ngIf="selectedOutletSvgs.length > 1" class="pt-2 border-t">
         <label class="block font-semibold text-gray-700">Floor</label>
-        <select
-          class="w-full p-2 border outline-none rounded-xl focus:ring-2 focus:ring-orange-500"
-          [value]="selectedFloorSvg"
-          (change)="onFloorChange($event)"
-        >
+        <select class="w-full p-2 border outline-none rounded-xl focus:ring-2 focus:ring-orange-500"
+          [value]="selectedFloorSvg" (change)="onFloorChange($event)">
           <option value="all">All floors</option>
           <option *ngFor="let floor of floorOptions; trackBy: trackBySvgUrl" [value]="floor">
             {{ getFloorLabel(floor) }}
@@ -58,23 +50,20 @@
       </div>
     </div>
     <!-- Room Table -->
-    <div class="mt-6 bg-gray-50 rounded-xl border border-gray-200 p-4">
+    <div class="p-4 mt-6 border border-gray-200 bg-gray-50 rounded-xl">
       <table class="w-full border">
-        <thead class="bg-gray-100 text-gray-700">
+        <thead class="text-gray-700 bg-gray-100">
           <tr>
-            <th class="text-left p-2">Room Name</th>
-            <th class="text-left p-2">Details</th>
+            <th class="p-2 text-left">Room Name</th>
+            <th class="p-2 text-left">Details</th>
           </tr>
         </thead>
       </table>
 
-      <div id="details-body" class="max-h-64 overflow-y-auto border border-t-0">
+      <div id="details-body" class="overflow-y-auto border border-t-0 max-h-64">
         <table class="w-full">
           <tbody>
-            <tr
-              *ngFor="let room of filteredRooms"
-              class="border-b hover:bg-orange-50 transition"
-            >
+            <tr *ngFor="let room of filteredRooms" class="transition border-b hover:bg-orange-50">
               <!-- Room Name -->
               <td class="p-2 font-semibold">{{ room.name }}</td>
 
@@ -102,66 +91,42 @@
     </div>
 
     <!-- PDF Export Section -->
-    <div class="mt-6 bg-orange-50 rounded-xl border border-orange-200 p-4">
+    <div class="p-4 mt-6 border border-orange-200 bg-orange-50 rounded-xl">
       <!-- User Feedback Message -->
-      <div 
-        *ngIf="showPdfMessage" 
-        class="mb-3 p-3 rounded-lg text-sm font-medium"
-        [class]="pdfExportMessage.includes('Failed') ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-green-100 text-green-700 border border-green-200'"
-      >
+      <div *ngIf="showPdfMessage" class="p-3 mb-3 text-sm font-medium rounded-lg"
+        [class]="pdfExportMessage.includes('Failed') ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-green-100 text-green-700 border border-green-200'">
         {{ pdfExportMessage }}
       </div>
-      
+
       <h2 class="mb-3 text-lg font-semibold text-orange-700">Export Reports</h2>
-      
-             <!-- PDF Quality Selection -->
-       <div class="mb-3">
-         <label class="block text-sm font-medium text-orange-700 mb-2">PDF Quality</label>
-         <div class="space-y-2">
-           <label class="flex items-center space-x-2 cursor-pointer">
-             <input 
-               type="radio" 
-               name="pdfQuality" 
-               value="low" 
-               [(ngModel)]="selectedPdfQuality"
-               (change)="onQualityChange()"
-               class="text-orange-600 focus:ring-orange-500"
-             >
-             <span class="text-sm text-gray-700">Low ({{ getLowQualityFileSize() }})</span>
-           </label>
-           <label class="flex items-center space-x-2 cursor-pointer">
-             <input 
-               type="radio" 
-               name="pdfQuality" 
-               value="medium" 
-               [(ngModel)]="selectedPdfQuality"
-               (change)="onQualityChange()"
-               class="text-orange-600 focus:ring-orange-500"
-               checked
-             >
-             <span class="text-sm text-gray-700">Medium ({{ getMediumQualityFileSize() }})</span>
-           </label>
-           <label class="flex items-center space-x-2 cursor-pointer">
-             <input 
-               type="radio" 
-               name="pdfQuality" 
-               value="high" 
-               [(ngModel)]="selectedPdfQuality"
-               (change)="onQualityChange()"
-               class="text-orange-600 focus:ring-orange-500"
-             >
-             <span class="text-sm text-gray-700">High ({{ getHighQualityFileSize() }})</span>
-           </label>
-         </div>
-         <p class="mt-1 text-xs text-orange-600">{{ getQualityDescription() }}</p>
-       </div>
-      
+
+      <!-- PDF Quality Selection -->
+      <div class="mb-3">
+        <label class="block mb-2 text-sm font-medium text-orange-700">PDF Quality</label>
+        <div class="space-y-2">
+          <label class="flex items-center space-x-2 cursor-pointer">
+            <input type="radio" name="pdfQuality" value="low" [(ngModel)]="selectedPdfQuality"
+              (change)="onQualityChange()" class="text-orange-600 focus:ring-orange-500">
+            <span class="text-sm text-gray-700">Low ({{ getLowQualityFileSize() }})</span>
+          </label>
+          <label class="flex items-center space-x-2 cursor-pointer">
+            <input type="radio" name="pdfQuality" value="medium" [(ngModel)]="selectedPdfQuality"
+              (change)="onQualityChange()" class="text-orange-600 focus:ring-orange-500" checked>
+            <span class="text-sm text-gray-700">Medium ({{ getMediumQualityFileSize() }})</span>
+          </label>
+          <label class="flex items-center space-x-2 cursor-pointer">
+            <input type="radio" name="pdfQuality" value="high" [(ngModel)]="selectedPdfQuality"
+              (change)="onQualityChange()" class="text-orange-600 focus:ring-orange-500">
+            <span class="text-sm text-gray-700">High ({{ getHighQualityFileSize() }})</span>
+          </label>
+        </div>
+        <p class="mt-1 text-xs text-orange-600">{{ getQualityDescription() }}</p>
+      </div>
+
       <div class="space-y-2">
-        <button
-          (click)="exportFloorplanAsPdf()"
-          class="w-full bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          [disabled]="!selectedOutletSvgs || selectedOutletSvgs.length === 0 || isExportingFloorplan"
-        >
+        <button (click)="exportFloorplanAsPdf()"
+          class="w-full px-4 py-2 text-sm font-medium text-white transition-colors bg-orange-600 rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          [disabled]="!selectedOutletSvgs || selectedOutletSvgs.length === 0 || isExportingFloorplan">
           <span *ngIf="!isExportingFloorplan">🏢 Export Floorplan</span>
           <span *ngIf="isExportingFloorplan">⏳ Exporting...</span>
         </button>
@@ -170,25 +135,19 @@
         Generate comprehensive PDF reports with current filters and data
       </p>
     </div>
-</div>
+  </div>
 
   <!-- Right Panel -->
-  <div
-    #panelContainer
-    class="relative p-4 transition-all duration-500 bg-white shadow-lg rounded-2xl lg:col-span-8"
-  >
+  <div #panelContainer class="relative p-4 transition-all duration-500 bg-white shadow-lg rounded-2xl lg:col-span-8">
     <div class="flex items-center justify-between mb-4">
       <h2 class="text-xl font-semibold">Floorplan</h2>
       <div class="flex gap-2">
 
-          <!-- Refresh Button -->
-          <button
-            (click)="refreshFloorplan()"
-            class="bg-gray-100 px-3 py-1.5 rounded-lg hover:bg-gray-200 text-sm"
-          >
-            Refresh
-          </button>
-        </div>
+        <!-- Refresh Button -->
+        <button (click)="refreshFloorplan()" class="bg-gray-100 px-3 py-1.5 rounded-lg hover:bg-gray-200 text-sm">
+          Refresh
+        </button>
+      </div>
     </div>
 
 
@@ -196,20 +155,13 @@
       <div (click)="showDownloadMenu = false"></div>
       <ng-container *ngIf="filters.outlet !== 'all'; else askToPick">
         <div>
-      <object
-        #svgObject
-        *ngFor="let svg of displayedSvgs; trackBy: trackBySvgUrl"
-        [data]="getSafeUrl(svg)"
-        type="image/svg+xml"
-        width="800"
-        height="800"
-        style="max-width: 100%; height: auto;"
-      ></object>
+          <object #svgObject *ngFor="let svg of displayedSvgs; trackBy: trackBySvgUrl" [data]="getSafeUrl(svg)"
+            type="image/svg+xml" width="800" height="800" style="max-width: 100%; height: auto;"></object>
 
         </div>
       </ng-container>
 
-      <ng-template #askToPick>   
+      <ng-template #askToPick>
         <div class="p-4 text-sm text-gray-600 bg-gray-50 rounded-xl">
           Select an outlet to view its floorplan.
         </div>
@@ -217,17 +169,10 @@
     </div>
 
     <!-- Popup -->
-    <div
-      *ngIf="showPopup && selectedRoom"
-      class="absolute bg-white border rounded-lg shadow-lg p-4 text-sm z-[9999] w-56"
-      [style.left.px]="popupX"
-      [style.top.px]="popupY"
-      (click)="$event.stopPropagation()"
-    >
-      <button
-        class="absolute font-bold text-gray-500 top-1 right-2 hover:text-red-600"
-        (click)="closePopup()"
-      >
+    <div *ngIf="showPopup && selectedRoom"
+      class="absolute bg-white border rounded-lg shadow-lg p-4 text-sm z-[9999] w-56" [style.left.px]="popupX"
+      [style.top.px]="popupY" (click)="$event.stopPropagation()">
+      <button class="absolute font-bold text-gray-500 top-1 right-2 hover:text-red-600" (click)="closePopup()">
         &times;
       </button>
       <h3 class="mb-2 font-semibold text-orange-600">
@@ -241,8 +186,5 @@
       <p><strong>Deposit:</strong> RM {{ selectedRoom.deposit }}</p>
 
     </div>
+  </div>
 </div>
-</div>
-
-
-

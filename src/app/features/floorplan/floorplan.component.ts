@@ -1,4 +1,13 @@
-import { Component, OnInit, AfterViewInit, ElementRef,ViewChildren,QueryList, ViewChild, NgZone } from '@angular/core';
+import {
+  Component,
+  OnInit,
+  AfterViewInit,
+  ElementRef,
+  ViewChildren,
+  QueryList,
+  ViewChild,
+  NgZone,
+} from '@angular/core';
 import { Room } from '../../core/models/room.model';
 import { RoomService } from '../../core/services/room.service';
 import { CommonModule } from '@angular/common';
@@ -7,7 +16,6 @@ import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { Observable } from 'rxjs';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-
 
 type FilterKey = 'outlet' | 'status' | 'pax' | 'suite';
 
@@ -70,14 +78,18 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   // User feedback for PDF export
   pdfExportMessage = '';
   showPdfMessage = false;
-  
+
   // PDF quality settings for file size optimization
   pdfQualitySettings = {
     high: { scale: 2, quality: 0.9, dimensions: { width: 800, height: 600 } },
-    medium: { scale: 1.5, quality: 0.7, dimensions: { width: 600, height: 450 } },
-    low: { scale: 1, quality: 0.5, dimensions: { width: 400, height: 300 } }
+    medium: {
+      scale: 1.5,
+      quality: 0.7,
+      dimensions: { width: 600, height: 450 },
+    },
+    low: { scale: 1, quality: 0.5, dimensions: { width: 400, height: 300 } },
   };
-  
+
   selectedPdfQuality: 'high' | 'medium' | 'low' = 'medium';
 
   Occupied = 0;
@@ -87,39 +99,42 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
 
   // 👉 for collapse toggle
   rightPanel: boolean = false;
-  @ViewChildren('svgObject') svgObjects!: QueryList<ElementRef<HTMLObjectElement>>;
-  @ViewChild('panelContainer', { static: false }) panelContainer!: ElementRef<HTMLDivElement>;
+  @ViewChildren('svgObject') svgObjects!: QueryList<
+    ElementRef<HTMLObjectElement>
+  >;
+  @ViewChild('panelContainer', { static: false })
+  panelContainer!: ElementRef<HTMLDivElement>;
   private processedSvgObjects = new WeakSet<HTMLObjectElement>();
   private safeUrlCache = new Map<string, SafeResourceUrl>();
   private roomIdIndex: Map<string, Room> = new Map();
   private objectToOriginalViewBox = new WeakMap<HTMLObjectElement, string>();
   // Friendly labels for specific outlets/files
   private floorLabelOverrides: Record<string, Record<string, string>> = {
-  TTDI: {
-    'TTDI-Level1.svg': 'Level 1',
-    'TTDI-Level3A.svg': 'Level 3A',
-    'Sibelco Office - L1.svg' : 'Sibelco Office',
-  },
-  KLS :{
-    'KLS- L20.svg': 'Level 20',
-    'KLS-ByteDance.svg' : 'Level 21 ByteDance',
-    'KLS-L21.svg' : 'Level 21',
-    'KLS-L28.svg' : 'Level 28',
-  },
-  MUB: {
-    'MUB-level9.svg' : 'Level 9',
-    'MUB-level12.svg' : 'Level 12',
-    'MUB-level17.svg' : 'Level 17',
-  },
-  UBP3A: {
-    'UBP-L13A.svg' : 'Level 13A',
-    'UBP-L13AAIRIT.svg' : 'Level 13A AIRIT'
-  },
-};
+    TTDI: {
+      'TTDI-Level1.svg': 'Level 1',
+      'TTDI-Level3A.svg': 'Level 3A',
+      'Sibelco Office - L1.svg': 'Sibelco Office',
+    },
+    KLS: {
+      'KLS- L20.svg': 'Level 20',
+      'KLS-ByteDance.svg': 'Level 21 ByteDance',
+      'KLS-L21.svg': 'Level 21',
+      'KLS-L28.svg': 'Level 28',
+    },
+    MUB: {
+      'MUB-level9.svg': 'Level 9',
+      'MUB-level12.svg': 'Level 12',
+      'MUB-level17.svg': 'Level 17',
+    },
+    UBP3A: {
+      'UBP-L13A.svg': 'Level 13A',
+      'UBP-L13AAIRIT.svg': 'Level 13A AIRIT',
+    },
+  };
 
-private basename(path: string): string {
-  return (path || '').split(/[\\/]/).pop() || path;
-}
+  private basename(path: string): string {
+    return (path || '').split(/[\\/]/).pop() || path;
+  }
   constructor(
     private roomService: RoomService,
     public sanitizer: DomSanitizer,
@@ -154,10 +169,11 @@ private basename(path: string): string {
     });
     this.roomService.fetchRooms();
   }
-  
 
   private attachSvgListeners() {
-    const objectEl = document.getElementById('floorplanSvg') as HTMLObjectElement;
+    const objectEl = document.getElementById(
+      'floorplanSvg'
+    ) as HTMLObjectElement;
     if (!objectEl) return;
 
     const svgDoc = objectEl.contentDocument;
@@ -228,8 +244,10 @@ private basename(path: string): string {
   private attachRoomListeners(svgDoc: Document) {
     // Delegate a single click handler per SVG document
     const handleClick = (event: MouseEvent) => {
-      const pageX = (event as MouseEvent).pageX ?? (event.clientX + window.scrollX);
-      const pageY = (event as MouseEvent).pageY ?? (event.clientY + window.scrollY);
+      const pageX =
+        (event as MouseEvent).pageX ?? event.clientX + window.scrollX;
+      const pageY =
+        (event as MouseEvent).pageY ?? event.clientY + window.scrollY;
       console.log('[Floorplan] SVG click', { pageX, pageY });
 
       let target = event.target as Element | null;
@@ -237,28 +255,40 @@ private basename(path: string): string {
       let matched = false;
       while (target && target !== root) {
         const el = target as HTMLElement;
-        let candidate = el.id || el.getAttribute?.('data-id') || el.getAttribute?.('data-room') || '';
+        let candidate =
+          el.id ||
+          el.getAttribute?.('data-id') ||
+          el.getAttribute?.('data-room') ||
+          '';
         // Support <use href="#id"> patterns
         if (!candidate) {
-          const href = el.getAttribute?.('href') || el.getAttribute?.('xlink:href') || '';
+          const href =
+            el.getAttribute?.('href') || el.getAttribute?.('xlink:href') || '';
           if (href && href.startsWith('#')) candidate = href.slice(1);
         }
         if (candidate) {
           const normalized = this.normalizeId(candidate);
-          console.log('[Floorplan] candidate', { candidate, normalized, tag: el.tagName });
+          console.log('[Floorplan] candidate', {
+            candidate,
+            normalized,
+            tag: el.tagName,
+          });
           const room = this.roomIdIndex.get(normalized);
           if (room) {
-            console.log('[Floorplan] matched room', { id: room.id, name: room.name });
+            console.log('[Floorplan] matched room', {
+              id: room.id,
+              name: room.name,
+            });
             // Sync selection to filters so metrics reflect the picked room
             this.filters.suite = room.name;
             this.buildOptions();
-            this.applyFilters()
+            this.applyFilters();
             this.openPopupFromRoom(room);
             matched = true;
             return;
           }
         }
-        target = (target.parentNode as Element | null);
+        target = target.parentNode as Element | null;
       }
       if (!matched) {
         console.log('[Floorplan] click had no matching room element');
@@ -271,7 +301,9 @@ private basename(path: string): string {
     const marker = '__ps_click_bound__';
     if (!(svgDoc as any)[marker]) {
       // Bind inside Angular zone so change detection runs after click
-      svgDoc.addEventListener('click', (ev: Event) => this.ngZone.run(() => handleClick(ev as MouseEvent)));
+      svgDoc.addEventListener('click', (ev: Event) =>
+        this.ngZone.run(() => handleClick(ev as MouseEvent))
+      );
       (svgDoc as any)[marker] = true;
     }
 
@@ -283,12 +315,17 @@ private basename(path: string): string {
       (el as any).style.pointerEvents = 'auto';
       const roomMarker = '__ps_room_bound__';
       if (!(el as any)[roomMarker]) {
-        el.addEventListener('click', (ev: MouseEvent) => this.ngZone.run(() => {
-          ev.preventDefault();
-          ev.stopPropagation();
-          console.log('[Floorplan] direct room click', { id: room.id, name: room.name });
-          this.openPopupFromRoom(room);
-        }));
+        el.addEventListener('click', (ev: MouseEvent) =>
+          this.ngZone.run(() => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            console.log('[Floorplan] direct room click', {
+              id: room.id,
+              name: room.name,
+            });
+            this.openPopupFromRoom(room);
+          })
+        );
         (el as any)[roomMarker] = true;
       }
     });
@@ -298,70 +335,86 @@ private basename(path: string): string {
   suiteSearchTerm: string = '';
 
   buildOptions() {
-  console.log("=== Building Options ===");
-  console.log("Current filters:", this.filters);
+    console.log('=== Building Options ===');
+    console.log('Current filters:', this.filters);
 
-  let filteredForOutlet = this.rooms;
-  let filteredForStatus = filteredForOutlet.filter(r =>
-    this.filters.outlet === 'Select Outlet' || r.outlet === this.filters.outlet
-  );
-  console.log("After outlet filter:", filteredForStatus);
+    let filteredForOutlet = this.rooms;
+    let filteredForStatus = filteredForOutlet.filter(
+      (r) =>
+        this.filters.outlet === 'Select Outlet' ||
+        r.outlet === this.filters.outlet
+    );
+    console.log('After outlet filter:', filteredForStatus);
 
-  let filteredForPax = filteredForStatus.filter(r =>
-    this.filters.status === 'Select Status' || r.status === this.filters.status
-  );
-  console.log("After status filter:", filteredForPax);
+    let filteredForPax = filteredForStatus.filter(
+      (r) =>
+        this.filters.status === 'Select Status' ||
+        r.status === this.filters.status
+    );
+    console.log('After status filter:', filteredForPax);
 
-  let filteredForSuite = filteredForPax.filter(r =>
-    this.filters.pax === 'Select Pax' || r.capacity.toString() === this.filters.pax
-  );
-  console.log("After pax filter:", filteredForSuite);
+    let filteredForSuite = filteredForPax.filter(
+      (r) =>
+        this.filters.pax === 'Select Pax' ||
+        r.capacity.toString() === this.filters.pax
+    );
+    console.log('After pax filter:', filteredForSuite);
 
-  // Outlet options: all unique outlets
-    this.outletOptions = Array.from(new Set(this.rooms.map(r => r.outlet))).sort();
-  console.log("Outlet options:", this.outletOptions);
+    // Outlet options: all unique outlets
+    this.outletOptions = Array.from(
+      new Set(this.rooms.map((r) => r.outlet))
+    ).sort();
+    console.log('Outlet options:', this.outletOptions);
 
-  // Status options: based on selected outlet
-  this.statusOptions = Array.from(new Set(filteredForOutlet.map(r => r.status))).sort();
-  console.log("Status options:", this.statusOptions);
+    // Status options: based on selected outlet
+    this.statusOptions = Array.from(
+      new Set(filteredForOutlet.map((r) => r.status))
+    ).sort();
+    console.log('Status options:', this.statusOptions);
 
-// Pax options: based on selected outlet & status, removing 0 or ''
-this.paxOptions = Array.from(
-  new Set(
-    this.rooms
-      .filter(r => {
-        const outletMatch = this.filters.outlet === 'Select Outlet' || r.outlet === this.filters.outlet;
-        const statusMatch = this.filters.status === 'Select Status' || r.status === this.filters.status;
-        return outletMatch && statusMatch;
-      })
-      .map(r => r.capacity?.toString().trim())
-      .filter(cap => cap && cap !== "0") // remove empty or zero
-  )
-).sort((a, b) => Number(a) - Number(b));
+    // Pax options: based on selected outlet & status, removing 0 or ''
+    this.paxOptions = Array.from(
+      new Set(
+        this.rooms
+          .filter((r) => {
+            const outletMatch =
+              this.filters.outlet === 'Select Outlet' ||
+              r.outlet === this.filters.outlet;
+            const statusMatch =
+              this.filters.status === 'Select Status' ||
+              r.status === this.filters.status;
+            return outletMatch && statusMatch;
+          })
+          .map((r) => r.capacity?.toString().trim())
+          .filter((cap) => cap && cap !== '0') // remove empty or zero
+      )
+    ).sort((a, b) => Number(a) - Number(b));
 
-console.log("Pax options:", this.paxOptions);
+    console.log('Pax options:', this.paxOptions);
 
-// Suite options: based on outlet, status & pax + search term
-let allSuites = Array.from(
-  new Set(filteredForSuite.map(r => r.name.trim()))
-).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    // Suite options: based on outlet, status & pax + search term
+    let allSuites = Array.from(
+      new Set(filteredForSuite.map((r) => r.name.trim()))
+    ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
-if (this.suiteSearchTerm.trim()) {
-  allSuites = allSuites.filter(name =>
-    name.toLowerCase().includes(this.suiteSearchTerm.trim().toLowerCase())
-  );
-}
+    if (this.suiteSearchTerm.trim()) {
+      allSuites = allSuites.filter((name) =>
+        name.toLowerCase().includes(this.suiteSearchTerm.trim().toLowerCase())
+      );
+    }
 
-this.suiteOptions = allSuites;
-console.log("Suite options:", this.suiteOptions);
+    this.suiteOptions = allSuites;
+    console.log('Suite options:', this.suiteOptions);
 
-
-  // Keep filtersConfig in sync
-  this.filtersConfig.find(f => f.key === 'outlet')!.options = this.outletOptions;
-  this.filtersConfig.find(f => f.key === 'status')!.options = this.statusOptions;
-  this.filtersConfig.find(f => f.key === 'pax')!.options = this.paxOptions;
-  this.filtersConfig.find(f => f.key === 'suite')!.options = this.suiteOptions;
-}
+    // Keep filtersConfig in sync
+    this.filtersConfig.find((f) => f.key === 'outlet')!.options =
+      this.outletOptions;
+    this.filtersConfig.find((f) => f.key === 'status')!.options =
+      this.statusOptions;
+    this.filtersConfig.find((f) => f.key === 'pax')!.options = this.paxOptions;
+    this.filtersConfig.find((f) => f.key === 'suite')!.options =
+      this.suiteOptions;
+  }
 
   updateFilter(type: string, event: Event) {
     const key = type as keyof typeof this.filters;
@@ -369,8 +422,8 @@ console.log("Suite options:", this.suiteOptions);
     if (select) {
       this.filters[key] = select.value;
       if (key === 'outlet') {
-      this.updateSelectedOutletSvgs();
-      this.updateDisplayedSvgs();
+        this.updateSelectedOutletSvgs();
+        this.updateDisplayedSvgs();
       }
       this.buildOptions();
       this.applyFilters();
@@ -380,10 +433,18 @@ console.log("Suite options:", this.suiteOptions);
           this.closePopup();
         } else {
           const outletNow = this.filters.outlet;
-          const candidates = this.rooms.filter((r) => r.name === this.filters.suite);
-          const room = candidates.find((r) => outletNow === 'Select Outlet' || r.outlet === outletNow) || candidates[0];
+          const candidates = this.rooms.filter(
+            (r) => r.name === this.filters.suite
+          );
+          const room =
+            candidates.find(
+              (r) => outletNow === 'Select Outlet' || r.outlet === outletNow
+            ) || candidates[0];
           if (room) {
-            console.log('[Floorplan] zoom due to suite selection', { id: room.id, name: room.name });
+            console.log('[Floorplan] zoom due to suite selection', {
+              id: room.id,
+              name: room.name,
+            });
             setTimeout(() => this.openPopupFromRoom(room), 60);
           }
         }
@@ -391,16 +452,21 @@ console.log("Suite options:", this.suiteOptions);
         // Only auto-zoom if filtering yields exactly one room
         if (this.filteredRooms.length === 1) {
           const onlyRoom = this.filteredRooms[0];
-          console.log('[Floorplan] zoom due to filters yielding one room', { id: onlyRoom.id, name: onlyRoom.name, key, value: this.filters[key] });
+          console.log('[Floorplan] zoom due to filters yielding one room', {
+            id: onlyRoom.id,
+            name: onlyRoom.name,
+            key,
+            value: this.filters[key],
+          });
           this.filters.suite = onlyRoom.name; // sync suite for consistency
           setTimeout(() => this.openPopupFromRoom(onlyRoom), 60);
         } else if (this.filters.suite !== 'Select Suite') {
           // If suite remains selected after other filters, keep zooming to it
-          const target = this.rooms.find(r => r.name === this.filters.suite);
+          const target = this.rooms.find((r) => r.name === this.filters.suite);
           if (target) {
           }
         } else {
-          this.closePopup();        
+          this.closePopup();
         }
       }
     }
@@ -424,19 +490,25 @@ console.log("Suite options:", this.suiteOptions);
     if (this.selectedFloorSvg === 'all') {
       this.displayedSvgs = this.selectedOutletSvgs.slice();
     } else {
-      this.displayedSvgs = this.selectedOutletSvgs.filter(p => p === this.selectedFloorSvg);
+      this.displayedSvgs = this.selectedOutletSvgs.filter(
+        (p) => p === this.selectedFloorSvg
+      );
     }
   }
 
   applyFilters() {
-    this.filteredRooms = this.rooms.filter(
-      (r) =>
-        (this.filters.outlet === 'Select Outlet' || r.outlet === this.filters.outlet) &&
-        (this.filters.status === 'Select Status' || r.status === this.filters.status) &&
-        (this.filters.pax === 'Select Pax' ||
-          r.capacity.toString() === this.filters.pax) &&
-        (this.filters.suite === 'Select Suite' || r.name === this.filters.suite)
-    )
+    this.filteredRooms = this.rooms
+      .filter(
+        (r) =>
+          (this.filters.outlet === 'Select Outlet' ||
+            r.outlet === this.filters.outlet) &&
+          (this.filters.status === 'Select Status' ||
+            r.status === this.filters.status) &&
+          (this.filters.pax === 'Select Pax' ||
+            r.capacity.toString() === this.filters.pax) &&
+          (this.filters.suite === 'Select Suite' ||
+            r.name === this.filters.suite)
+      )
 
       .sort((a, b) => {
         // Sort by Pax (capacity) if Pax filter is active
@@ -463,12 +535,15 @@ console.log("Suite options:", this.suiteOptions);
 
   updateSvgColors(svgDoc?: Document) {
     const applyColors = (doc: Document) => {
-    this.rooms.forEach((room) => {
+      this.rooms.forEach((room) => {
         const el = doc.getElementById(room.id);
-      if (el) {
+        if (el) {
           if (this.filteredRooms.includes(room)) {
             // Selected → colored
-            el.setAttribute('fill', room.status === 'Occupied' ? '#ef4444' : '#22c55e');
+            el.setAttribute(
+              'fill',
+              room.status === 'Occupied' ? '#ef4444' : '#22c55e'
+            );
             el.setAttribute('opacity', '0.7');
             (el as any).style.pointerEvents = 'auto';
           } else {
@@ -481,22 +556,26 @@ console.log("Suite options:", this.suiteOptions);
         }
       });
     };
-  
+
     if (svgDoc) {
       applyColors(svgDoc);
     } else {
-      const objectEls = document.querySelectorAll<HTMLObjectElement>('object[type="image/svg+xml"]');
+      const objectEls = document.querySelectorAll<HTMLObjectElement>(
+        'object[type="image/svg+xml"]'
+      );
       objectEls.forEach((objectEl) => {
         const doc = objectEl.contentDocument;
         if (doc) applyColors(doc);
       });
     }
   }
-  
 
   private normalizeId(value: string | undefined | null): string {
     if (!value) return '';
-    return value.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+    return value
+      .toString()
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
   }
 
   private buildRoomIdIndex(): Map<string, Room> {
@@ -534,7 +613,9 @@ console.log("Suite options:", this.suiteOptions);
     return null;
   }
 
-  private getSvgViewBox(rootSvg: SVGSVGElement): { x: number; y: number; w: number; h: number } | null {
+  private getSvgViewBox(
+    rootSvg: SVGSVGElement
+  ): { x: number; y: number; w: number; h: number } | null {
     const vb = rootSvg.getAttribute('viewBox');
     if (!vb) return null;
     const [x, y, w, h] = vb.split(/\s+/).map(Number);
@@ -543,7 +624,11 @@ console.log("Suite options:", this.suiteOptions);
   }
 
   // Convert a DOM client rect to SVG viewBox units
-  private clientRectToSvgBBox(objectEl: HTMLObjectElement, rootSvg: SVGSVGElement, rect: DOMRect): { x: number; y: number; width: number; height: number } | null {
+  private clientRectToSvgBBox(
+    objectEl: HTMLObjectElement,
+    rootSvg: SVGSVGElement,
+    rect: DOMRect
+  ): { x: number; y: number; width: number; height: number } | null {
     const objectRect = objectEl.getBoundingClientRect();
     const vb = this.getSvgViewBox(rootSvg);
     if (!vb || objectRect.width === 0 || objectRect.height === 0) return null;
@@ -586,7 +671,8 @@ console.log("Suite options:", this.suiteOptions);
         if (pageY + popupHeight > vh) pageY = vh - popupHeight - 8;
         this.selectedRoom = room;
         this.showPopup = true;
-        const containerRect = this.panelContainer?.nativeElement?.getBoundingClientRect?.();
+        const containerRect =
+          this.panelContainer?.nativeElement?.getBoundingClientRect?.();
         if (containerRect) {
           this.popupX = pageX - containerRect.left;
           this.popupY = pageY - containerRect.top;
@@ -594,7 +680,13 @@ console.log("Suite options:", this.suiteOptions);
           this.popupX = pageX;
           this.popupY = pageY;
         }
-        console.log('[Floorplan] popup positioned', { OutletID:room.outlet,ID:room.id, room: room.name, x: this.popupX, y: this.popupY });
+        console.log('[Floorplan] popup positioned', {
+          OutletID: room.outlet,
+          ID: room.id,
+          room: room.name,
+          x: this.popupX,
+          y: this.popupY,
+        });
         positioned = true;
       });
     }
@@ -603,10 +695,14 @@ console.log("Suite options:", this.suiteOptions);
       this.showPopup = true;
       this.popupX = Math.max(16, window.innerWidth / 2 - 130);
       this.popupY = Math.max(16, window.innerHeight / 2 - 100);
-      console.log('[Floorplan] popup fallback center', { room: room.name, x: this.popupX, y: this.popupY });
+      console.log('[Floorplan] popup fallback center', {
+        room: room.name,
+        x: this.popupX,
+        y: this.popupY,
+      });
     }
   }
-  
+
   private downloadBlob(fileName: string, blob: Blob) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -621,7 +717,9 @@ console.log("Suite options:", this.suiteOptions);
       console.warn('No floorplan to download.');
       return;
     }
-    const first = this.svgObjects?.first?.nativeElement as HTMLObjectElement | undefined;
+    const first = this.svgObjects?.first?.nativeElement as
+      | HTMLObjectElement
+      | undefined;
     const doc = first?.contentDocument as Document | null;
     const rootSvg = doc?.querySelector('svg') as SVGSVGElement | null;
     if (!doc || !rootSvg) return;
@@ -630,7 +728,9 @@ console.log("Suite options:", this.suiteOptions);
     const svgClone = rootSvg.cloneNode(true) as SVGSVGElement;
 
     // Ensure the download uses the original full viewBox, not the current zoomed one
-    const originalViewBox = first ? this.objectToOriginalViewBox.get(first) : null;
+    const originalViewBox = first
+      ? this.objectToOriginalViewBox.get(first)
+      : null;
     if (originalViewBox) {
       svgClone.setAttribute('viewBox', originalViewBox);
     }
@@ -640,7 +740,10 @@ console.log("Suite options:", this.suiteOptions);
       const el = this.findRoomElementInDoc(doc, this.selectedRoom);
       if (el && (el as any).getBBox) {
         const bbox = (el as any).getBBox();
-        const overlayGroup = doc.createElementNS('http://www.w3.org/2000/svg', 'g');
+        const overlayGroup = doc.createElementNS(
+          'http://www.w3.org/2000/svg',
+          'g'
+        );
         const rect = doc.createElementNS('http://www.w3.org/2000/svg', 'rect');
         const text = doc.createElementNS('http://www.w3.org/2000/svg', 'text');
         const lines = [
@@ -689,7 +792,10 @@ console.log("Suite options:", this.suiteOptions);
         text.setAttribute('font-family', 'Arial, Helvetica, sans-serif');
 
         lines.forEach((line, idx) => {
-          const tspan = doc.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+          const tspan = doc.createElementNS(
+            'http://www.w3.org/2000/svg',
+            'tspan'
+          );
           tspan.setAttribute('x', String(boxX + pad));
           tspan.setAttribute('dy', idx === 0 ? '0' : String(lineHeight));
           tspan.textContent = line;
@@ -705,7 +811,9 @@ console.log("Suite options:", this.suiteOptions);
     if (format === 'svg') {
       const serializer = new XMLSerializer();
       const svgString = serializer.serializeToString(svgClone);
-      const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+      const blob = new Blob([svgString], {
+        type: 'image/svg+xml;charset=utf-8',
+      });
       this.downloadBlob('floorplan-with-details.svg', blob);
       return;
     }
@@ -726,7 +834,9 @@ console.log("Suite options:", this.suiteOptions);
 
     const svgData = new XMLSerializer().serializeToString(svgClone);
     const img = new Image();
-    const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+    const svgBlob = new Blob([svgData], {
+      type: 'image/svg+xml;charset=utf-8',
+    });
     const svgUrl = URL.createObjectURL(svgBlob);
     await new Promise<void>((resolve) => {
       img.onload = () => {
@@ -738,7 +848,9 @@ console.log("Suite options:", this.suiteOptions);
     });
 
     if (format === 'png') {
-      const pngBlob: Blob | null = await new Promise((res) => canvas.toBlob(res as any, 'image/png'));
+      const pngBlob: Blob | null = await new Promise((res) =>
+        canvas.toBlob(res as any, 'image/png')
+      );
       if (pngBlob) this.downloadBlob('floorplan-with-details.png', pngBlob);
       return;
     }
@@ -748,8 +860,8 @@ console.log("Suite options:", this.suiteOptions);
     this.showPopup = true;
 
     // Position relative to page mouse coordinates (like vanilla example)
-    const pageX = (event as MouseEvent).pageX ?? (event.clientX + window.scrollX);
-    const pageY = (event as MouseEvent).pageY ?? (event.clientY + window.scrollY);
+    const pageX = (event as MouseEvent).pageX ?? event.clientX + window.scrollX;
+    const pageY = (event as MouseEvent).pageY ?? event.clientY + window.scrollY;
     this.popupX = pageX + 15;
     this.popupY = pageY - 30;
 
@@ -788,7 +900,10 @@ console.log("Suite options:", this.suiteOptions);
 
     // For now, download the first SVG
     const svgUrl = this.selectedOutletSvgs[0];
-    const sanitizedUrl = this.sanitizer.sanitize(4, this.sanitizer.bypassSecurityTrustResourceUrl(svgUrl)); // 4 = SecurityContext.RESOURCE_URL
+    const sanitizedUrl = this.sanitizer.sanitize(
+      4,
+      this.sanitizer.bypassSecurityTrustResourceUrl(svgUrl)
+    ); // 4 = SecurityContext.RESOURCE_URL
 
     if (!sanitizedUrl) {
       console.error('SVG URL could not be sanitized.');
@@ -811,16 +926,16 @@ console.log("Suite options:", this.suiteOptions);
       suite: 'Select Suite',
       svg: 'all',
     };
-    
+
     // Reset suite search term
-    this.suiteSearchTerm = ''; 
-    
+    this.suiteSearchTerm = '';
+
     // Close any open popup
     this.closePopup();
-    
+
     // Update selected outlet SVGs
     this.updateSelectedOutletSvgs();
-    
+
     // Rebuild options and apply filters
     this.buildOptions();
     this.applyFilters();
@@ -840,32 +955,32 @@ console.log("Suite options:", this.suiteOptions);
   async exportFloorplanAsPdf() {
     // Close download menu
     this.showDownloadMenu = false;
-    
+
     if (!this.selectedOutletSvgs || this.selectedOutletSvgs.length === 0) {
       console.warn('No floorplan to export.');
       return;
     }
 
     this.isExportingFloorplan = true;
-    
+
     try {
       // Create PDF document with compression settings for smaller file size
       const pdf = new jsPDF('landscape', 'mm', 'a4');
-      
+
       // Enable PDF compression and optimization
       pdf.setProperties({
         title: 'Private Suite Dashboard - Floorplan',
         subject: 'Floorplan Export',
         author: 'Private Suite Dashboard',
-        creator: 'Private Suite Dashboard'
+        creator: 'Private Suite Dashboard',
       });
-      
+
       // Set compression level for smaller file size
       // Note: jsPDF automatically applies compression, but we can optimize the content
-      
+
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
-      
+
       // We will iterate through rendered SVG objects (single floor or all floors)
       const objects = this.svgObjects?.toArray?.() ?? [];
       for (let idx = 0; idx < objects.length; idx++) {
@@ -930,28 +1045,48 @@ console.log("Suite options:", this.suiteOptions);
             imgWidth = imgHeight * aspect;
           }
           const imgX = (pageWidth - imgWidth) / 2;
-          const quality = this.pdfQualitySettings[this.selectedPdfQuality].quality;
+          const quality =
+            this.pdfQualitySettings[this.selectedPdfQuality].quality;
           const imgData = canvas.toDataURL('image/jpeg', quality);
-          pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'FAST');
+          pdf.addImage(
+            imgData,
+            'PNG',
+            imgX,
+            imgY,
+            imgWidth,
+            imgHeight,
+            undefined,
+            'FAST'
+          );
         } catch (canvasError) {
-          console.warn('Failed to convert SVG to canvas on page', idx + 1, canvasError);
+          console.warn(
+            'Failed to convert SVG to canvas on page',
+            idx + 1,
+            canvasError
+          );
           pdf.setFontSize(14);
           pdf.setTextColor(0, 0, 0);
           pdf.text('Floorplan SVG (could not render image)', 20, 20);
         }
       }
-       
-       // Save PDF with compression
-       const fileName = `floorplan-${this.filters.outlet !== 'Select Outlet' ? this.filters.outlet : 'all'}-${new Date().toISOString().split('T')[0]}.pdf`;
-       pdf.save(fileName);
-      
+
+      // Save PDF with compression
+      const fileName = `floorplan-${
+        this.filters.outlet !== 'Select Outlet' ? this.filters.outlet : 'all'
+      }-${new Date().toISOString().split('T')[0]}.pdf`;
+      pdf.save(fileName);
+
       // Show success message with file size info
       const estimatedSize = this.getEstimatedFileSize();
-      this.showMessage(`Floorplan PDF exported successfully! 🎉 (Estimated size: ${estimatedSize})`);
-      
+      this.showMessage(
+        `Floorplan PDF exported successfully! 🎉 (Estimated size: ${estimatedSize})`
+      );
     } catch (error) {
       console.error('Error exporting floorplan as PDF:', error);
-      this.showMessage('Failed to export floorplan PDF. Please try again.', true);
+      this.showMessage(
+        'Failed to export floorplan PDF. Please try again.',
+        true
+      );
     } finally {
       this.isExportingFloorplan = false;
     }
@@ -961,35 +1096,35 @@ console.log("Suite options:", this.suiteOptions);
   private addRoomTableToPdf(pdf: jsPDF, startY: number) {
     const pageWidth = pdf.internal.pageSize.getWidth();
     const margin = 20;
-    const tableWidth = pageWidth - (margin * 2);
+    const tableWidth = pageWidth - margin * 2;
     const colWidths = [tableWidth * 0.3, tableWidth * 0.7]; // Room name: 30%, Details: 70%
-    
+
     // Table headers
     pdf.setFillColor(243, 244, 246); // Light gray background
     pdf.rect(margin, startY, tableWidth, 12, 'F');
     pdf.setTextColor(0, 0, 0);
     pdf.setFontSize(12);
     pdf.setFont('helvetica', 'bold');
-    
+
     pdf.text('Room Name', margin + 5, startY + 8);
     pdf.text('Details', margin + colWidths[0] + 5, startY + 8);
-    
+
     // Table rows
     let currentY = startY + 12;
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(10);
-    
+
     for (const room of this.filteredRooms) {
       // Check if we need a new page
       if (currentY > pdf.internal.pageSize.getHeight() - 40) {
         pdf.addPage();
         currentY = 20;
       }
-      
+
       // Room name
       pdf.setTextColor(0, 0, 0);
       pdf.text(room.name, margin + 5, currentY + 6);
-      
+
       // Room details
       const details = [
         `Type: ${room.type}`,
@@ -997,16 +1132,16 @@ console.log("Suite options:", this.suiteOptions);
         `Pax: ${room.capacity}`,
         `Area: ${room.area} sqft`,
         `Price: RM ${room.price}`,
-        `Deposit: RM ${room.deposit}`
+        `Deposit: RM ${room.deposit}`,
       ];
-      
+
       let detailY = currentY;
       for (const detail of details) {
         pdf.setTextColor(75, 85, 99); // Gray text
         pdf.text(detail, margin + colWidths[0] + 5, detailY + 6);
         detailY += 4;
       }
-      
+
       // Row separator
       currentY = Math.max(currentY + 12, detailY + 4);
       pdf.setDrawColor(229, 231, 235); // Light gray border
@@ -1016,7 +1151,9 @@ console.log("Suite options:", this.suiteOptions);
   }
 
   // Helper method to convert SVG to canvas more reliably
-  private async svgToCanvas(svgElement: SVGSVGElement): Promise<HTMLCanvasElement> {
+  private async svgToCanvas(
+    svgElement: SVGSVGElement
+  ): Promise<HTMLCanvasElement> {
     return new Promise((resolve, reject) => {
       try {
         // Method 1: Try using html2canvas first
@@ -1029,13 +1166,13 @@ console.log("Suite options:", this.suiteOptions);
         tempDiv.style.width = `${quality.dimensions.width}px`;
         tempDiv.style.height = `${quality.dimensions.height}px`;
         tempDiv.style.backgroundColor = '#ffffff';
-        
+
         const svgClone = svgElement.cloneNode(true) as SVGSVGElement;
         svgClone.style.width = '100%';
         svgClone.style.height = '100%';
         tempDiv.appendChild(svgClone);
         document.body.appendChild(tempDiv);
-        
+
         html2canvas(tempDiv, {
           backgroundColor: '#ffffff',
           scale: quality.scale,
@@ -1047,15 +1184,16 @@ console.log("Suite options:", this.suiteOptions);
           // Additional optimizations for smaller file size
           removeContainer: true,
           foreignObjectRendering: false,
-          imageTimeout: 0
-        }).then(canvas => {
-          document.body.removeChild(tempDiv);
-          resolve(canvas);
-        }).catch(error => {
-          document.body.removeChild(tempDiv);
-          reject(error);
-        });
-        
+          imageTimeout: 0,
+        })
+          .then((canvas) => {
+            document.body.removeChild(tempDiv);
+            resolve(canvas);
+          })
+          .catch((error) => {
+            document.body.removeChild(tempDiv);
+            reject(error);
+          });
       } catch (error) {
         reject(error);
       }
@@ -1066,32 +1204,36 @@ console.log("Suite options:", this.suiteOptions);
   private showMessage(message: string, isError: boolean = false) {
     this.pdfExportMessage = message;
     this.showPdfMessage = true;
-    
+
     // Auto-hide after 5 seconds
     setTimeout(() => {
       this.showPdfMessage = false;
       this.pdfExportMessage = '';
     }, 5000);
   }
-  
+
   // Get estimated file size for each quality level (static)
   getLowQualityFileSize(): string {
     return '~200-500 KB';
   }
-  
+
   getMediumQualityFileSize(): string {
     return '~500 KB - 1 MB';
   }
-  
+
   getHighQualityFileSize(): string {
     return '~2-4 MB';
   }
-  
+
   // Get estimated file size for selected quality (for display in success message)
   getEstimatedFileSize(): string {
     const quality = this.pdfQualitySettings[this.selectedPdfQuality];
-    const baseSize = quality.dimensions.width * quality.dimensions.height * quality.scale * quality.scale;
-    
+    const baseSize =
+      quality.dimensions.width *
+      quality.dimensions.height *
+      quality.scale *
+      quality.scale;
+
     if (this.selectedPdfQuality === 'high') {
       return '~2-4 MB';
     } else if (this.selectedPdfQuality === 'medium') {
@@ -1100,7 +1242,7 @@ console.log("Suite options:", this.suiteOptions);
       return '~200-500 KB';
     }
   }
-  
+
   // Get quality description
   getQualityDescription(): string {
     switch (this.selectedPdfQuality) {
@@ -1114,7 +1256,7 @@ console.log("Suite options:", this.suiteOptions);
         return '';
     }
   }
-  
+
   // Handle quality change to update UI
   onQualityChange() {
     // Force change detection to update the estimated file size display
@@ -1128,21 +1270,20 @@ console.log("Suite options:", this.suiteOptions);
     const outlet = this.filters.outlet;
     const baseWithExt = this.basename(path);
     const base = baseWithExt.replace(/\.(svg)$/i, '');
-  
+
     // 1) explicit overrides per outlet (TTDI template)
     const override = outlet && this.floorLabelOverrides[outlet]?.[baseWithExt];
     if (override) return override; // e.g., "Level 1", "Level 3A"
-  
+
     // 2) generic parse: TTDI-Level1 / TTDI_Level_3A / Level3A / L3A
     const m = base.match(/(?:^|[_\-\s])(?:level|lvl|l)[_\-\s]?(\d+[A-Za-z]?)/i);
     if (m) return `Level ${m[1].toUpperCase()}`;
-  
+
     // 3) fallback: any numberish token → Level X
     const token = base.match(/(\d+[A-Za-z]?)/);
     if (token) return `Level ${token[1].toUpperCase()}`;
-  
+
     // 4) final fallback: humanize filename
     return base.replace(/[_\-]/g, ' ').trim();
   }
-
 }

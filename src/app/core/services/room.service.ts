@@ -75,9 +75,29 @@ export class RoomService {
 
   constructor(private http: HttpClient) {}
 
+  private toYoutubeEmbed(url: string): string | null {
+    if (!url) return null;
+    try {
+      // watch?v=
+      const watch = url.match(/[?&]v=([^&]+)/);
+      if (watch && watch[1]) return `https://www.youtube.com/embed/${watch[1]}?rel=0`;
+  
+      // youtu.be/
+      const short = url.match(/youtu\.be\/([^?&#]+)/);
+      if (short && short[1]) return `https://www.youtube.com/embed/${short[1]}?rel=0`;
+  
+      // already embed
+      if (/youtube\.com\/embed\//.test(url)) return url;
+  
+      return url;
+    } catch {
+      return null;
+    }
+  }
+
   fetchRooms() {
     const url =
-      'https://script.google.com/macros/s/AKfycbxKhih7njEt3fiRMvbJnHOTYUCeHlENVMK7i5EosmE65lZE_K7esXdNJ7tAjIHRNwEg/exec';
+      'https://script.google.com/macros/s/AKfycbzZvjTnQGb4Aecn1_nNLMCgAtsPKhwteG6fDsWrqDjBDd7It8GsVAdsLIbvZiErBBc-/exec';
     this.http
       .get<any[]>(url)
       .pipe(
@@ -113,7 +133,9 @@ export class RoomService {
               area: Math.round(areaSqft),
               price: item.price,
               deposit: item.deposit,
-            };
+              video: item.video || undefined,
+              videoEmbed: this.toYoutubeEmbed(item.video) || undefined
+            } as Room;
           });
           console.log('Mapped rooms:', mapped);
           this.roomsSubject.next(mapped);

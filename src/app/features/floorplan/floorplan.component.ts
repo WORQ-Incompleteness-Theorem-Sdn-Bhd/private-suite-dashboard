@@ -152,6 +152,23 @@ private basename(path: string): string {
     return safe;
   }
 
+  // Check if room has a valid video
+  hasVideo(room: Room): boolean {
+    return !!(room.video || room.videoEmbed);
+  }
+
+  // Get video display type
+  getVideoDisplayType(room: Room): 'embed' | 'link' | 'none' {
+    if (room.videoEmbed) return 'embed';
+    if (room.video) return 'link';
+    return 'none';
+  }
+
+  // Get safe video URL for iframe embedding
+  getSafeVideoUrl(videoUrl: string): SafeResourceUrl {
+    return this.sanitizer.bypassSecurityTrustResourceUrl(videoUrl);
+  }
+
   trackBySvgUrl = (_: number, url: string) => url;
 
   ngOnInit() {
@@ -1253,22 +1270,6 @@ pdf.save(fileName);
     }
   }
 
-  // Get device-specific optimization info
-  getDeviceOptimizationInfo(): string {
-    const deviceType = this.detectDeviceType();
-    const quality = this.selectedPdfQuality;
-    
-    switch (deviceType) {
-      case 'tablet':
-        return `Optimized for ${deviceType}: High-resolution rendering for crisp floorplan display on tablets and iPads`;
-      case 'mobile':
-        return `Optimized for ${deviceType}: Balanced quality for mobile devices with good readability`;
-      case 'high-dpi-laptop':
-        return `Optimized for ${deviceType}: High-DPI display optimization for sharp text and graphics`;
-      default:
-        return `Optimized for ${deviceType}: Standard quality for desktop displays`;
-    }
-  }
 
   // Methods for multiple suite selection
   toggleSuiteSelection(suite: string) {

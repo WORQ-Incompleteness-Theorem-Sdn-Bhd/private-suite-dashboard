@@ -89,32 +89,18 @@ private docHasSelectedSuites(doc: Document): boolean {
   pdfExportMessage = '';
   showPdfMessage = false;
   
-  // PDF quality settings optimized for all devices
+  // PDF quality settings - medium quality only
   pdfQualitySettings = {
-    high: { 
-      scale: 4, 
-      quality: 1.0, 
-      dimensions: { width: 1600, height: 1200 }, 
-      deviceOptimized: true,
-      description: 'Ultra-high quality for tablets and high-DPI devices'
-    },
     medium: { 
       scale: 3, 
       quality: 0.95, 
       dimensions: { width: 1200, height: 900 }, 
       deviceOptimized: true,
-      description: 'High quality optimized for all devices (recommended)'
-    },
-    low: { 
-      scale: 2, 
-      quality: 0.9, 
-      dimensions: { width: 800, height: 600 }, 
-      deviceOptimized: true,
-      description: 'Good quality compatible with all devices'
+      description: 'High quality optimized for all devices'
     }
   };
   
-  selectedPdfQuality: 'high' | 'medium' | 'low' = 'medium';
+  selectedPdfQuality: 'medium' = 'medium';
 
   Occupied = 0;
   Available = 0;
@@ -982,27 +968,49 @@ for (let idx = 0; idx < objects.length; idx++) {
   const originalViewBox = this.objectToOriginalViewBox.get(objectEl);
   if (originalViewBox) svgClone.setAttribute('viewBox', originalViewBox);
 
-  try {
-    const canvas = await this.svgToCanvas(svgClone);
-    const margin = 5;
-    const imgY = Math.max(yPos + 4, 24);
-    const maxWidthImg = pageWidth - margin * 2;
-    const maxHeight = pageHeight - imgY - margin;
-    const aspect = canvas.width / canvas.height;
-    let imgWidth = maxWidthImg;
-    let imgHeight = imgWidth / aspect;
-    if (imgHeight > maxHeight) { imgHeight = maxHeight; imgWidth = imgHeight * aspect; }
-    const imgX = (pageWidth - imgWidth) / 2;
-    const quality = this.pdfQualitySettings[this.selectedPdfQuality].quality;
-    // Use PNG for better quality on all devices, especially tablets
-    const imgData = canvas.toDataURL('image/png', quality);
-    // Use 'MEDIUM' compression for better quality while maintaining reasonable file size
-    pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'MEDIUM');
-  } catch (e) {
-    console.warn('SVG→canvas failed', e);
-    pdf.setFontSize(14); pdf.setTextColor(0, 0, 0);
-    pdf.text('Floorplan SVG (could not render image)', 20, 20);
-  }
+      try {
+      const canvas = await this.svgToCanvas(svgClone);
+      const margin = 5;
+      const imgY = Math.max(yPos + 4, 24);
+      const maxWidthImg = pageWidth - margin * 2;
+      const maxHeight = pageHeight - imgY - margin;
+      const aspect = canvas.width / canvas.height;
+      let imgWidth = maxWidthImg;
+      let imgHeight = imgWidth / aspect;
+      if (imgHeight > maxHeight) { imgHeight = maxHeight; imgWidth = imgHeight * aspect; }
+      const imgX = (pageWidth - imgWidth) / 2;
+      const quality = this.pdfQualitySettings[this.selectedPdfQuality].quality;
+      
+      // Use PNG for better quality on all devices, especially tablets
+      const imgData = canvas.toDataURL('image/png', quality);
+      
+      // Use 'MEDIUM' compression for better quality while maintaining reasonable file size
+      pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'MEDIUM');
+    } catch (e) {
+      console.warn('SVG→canvas failed, trying fallback method', e);
+      
+      // Fallback: Try with simpler settings for iPad compatibility
+      try {
+        const fallbackCanvas = await this.svgToCanvasFallback(svgClone);
+        const margin = 5;
+        const imgY = Math.max(yPos + 4, 24);
+        const maxWidthImg = pageWidth - margin * 2;
+        const maxHeight = pageHeight - imgY - margin;
+        const aspect = fallbackCanvas.width / fallbackCanvas.height;
+        let imgWidth = maxWidthImg;
+        let imgHeight = imgWidth / aspect;
+        if (imgHeight > maxHeight) { imgHeight = maxHeight; imgWidth = imgHeight * aspect; }
+        const imgX = (pageWidth - imgWidth) / 2;
+        
+        const imgData = fallbackCanvas.toDataURL('image/png', 0.8);
+        pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'MEDIUM');
+      } catch (fallbackError) {
+        console.warn('Fallback method also failed', fallbackError);
+        pdf.setFontSize(14); 
+        pdf.setTextColor(0, 0, 0);
+        pdf.text('Floorplan SVG (could not render image)', 20, 20);
+      }
+    }
 }
 
 // If nothing matched, tell the user
@@ -1100,86 +1108,65 @@ pdf.save(fileName);
   // Helper method to convert SVG to canvas with device-optimized quality
   private async svgToCanvas(svgElement: SVGSVGElement): Promise<HTMLCanvasElement> {
     return new Promise((resolve, reject) => {
-              try {
-          const quality = this.pdfQualitySettings[this.selectedPdfQuality];
-          const deviceType = this.detectDeviceType();
-          
-          // Enhanced dimensions for tablets and high-DPI devices
-          let finalDimensions = { ...quality.dimensions };
-          if (deviceType === 'ipad' || deviceType === 'tablet' || deviceType === 'retina-laptop') {
-            finalDimensions.width = Math.round(finalDimensions.width * 1.5);
-            finalDimensions.height = Math.round(finalDimensions.height * 1.5);
-          }
-          
-          // Create a temporary container with device-optimized dimensions
-          const tempDiv = document.createElement('div');
-          tempDiv.style.position = 'absolute';
-          tempDiv.style.left = '-9999px';
-          tempDiv.style.top = '-9999px';
-          tempDiv.style.width = `${finalDimensions.width}px`;
-          tempDiv.style.height = `${finalDimensions.height}px`;
-          tempDiv.style.backgroundColor = '#ffffff';
-          tempDiv.style.overflow = 'hidden';
+      try {
+        const quality = this.pdfQualitySettings[this.selectedPdfQuality];
+        const deviceType = this.detectDeviceType();
         
-        // Clone and optimize SVG for better rendering
+        // Create a temporary container with optimized dimensions
+        const tempDiv = document.createElement('div');
+        tempDiv.style.position = 'absolute';
+        tempDiv.style.left = '-9999px';
+        tempDiv.style.top = '-9999px';
+        tempDiv.style.width = `${quality.dimensions.width}px`;
+        tempDiv.style.height = `${quality.dimensions.height}px`;
+        tempDiv.style.backgroundColor = '#ffffff';
+        tempDiv.style.overflow = 'hidden';
+        
+        // Clone SVG for rendering
         const svgClone = svgElement.cloneNode(true) as SVGSVGElement;
         svgClone.style.width = '100%';
         svgClone.style.height = '100%';
         svgClone.style.display = 'block';
         
-                  // Ensure SVG has proper dimensions for crisp rendering
-          if (!svgClone.getAttribute('width') || !svgClone.getAttribute('height')) {
-            const viewBox = svgClone.getAttribute('viewBox');
-            if (viewBox) {
-              const [, , w, h] = viewBox.split(/\s+/).map(Number);
-              if (!isNaN(w) && !isNaN(h)) {
-                svgClone.setAttribute('width', String(finalDimensions.width));
-                svgClone.setAttribute('height', String(finalDimensions.height));
-              }
+        // Ensure SVG has proper dimensions
+        if (!svgClone.getAttribute('width') || !svgClone.getAttribute('height')) {
+          const viewBox = svgClone.getAttribute('viewBox');
+          if (viewBox) {
+            const [, , w, h] = viewBox.split(/\s+/).map(Number);
+            if (!isNaN(w) && !isNaN(h)) {
+              svgClone.setAttribute('width', String(quality.dimensions.width));
+              svgClone.setAttribute('height', String(quality.dimensions.height));
             }
           }
-          
-          // Optimize SVG attributes for better rendering on all devices
-          svgClone.setAttribute('shape-rendering', 'geometricPrecision');
-          svgClone.setAttribute('text-rendering', 'optimizeLegibility');
-          svgClone.setAttribute('image-rendering', 'optimizeQuality');
+        }
         
         tempDiv.appendChild(svgClone);
         document.body.appendChild(tempDiv);
         
-                  // Enhanced html2canvas options for device compatibility
-          html2canvas(tempDiv, {
-            backgroundColor: '#ffffff',
-            scale: quality.scale,
-            useCORS: true,
-            allowTaint: true,
-            logging: false,
-            width: finalDimensions.width,
-            height: finalDimensions.height,
-            // Device optimization settings
-            removeContainer: true,
-            foreignObjectRendering: false,
-            imageTimeout: 0,
-            // Ensure crisp text rendering
-            onclone: (clonedDoc) => {
-              const clonedSvg = clonedDoc.querySelector('svg');
-              if (clonedSvg) {
-                // Optimize SVG for high-DPI displays
-                clonedSvg.style.shapeRendering = 'geometricPrecision';
-                clonedSvg.style.textRendering = 'optimizeLegibility';
-                clonedSvg.style.imageRendering = 'optimizeQuality';
-                
-                // Additional optimization for tablets
-                if (deviceType === 'ipad' || deviceType === 'tablet') {
-                  (clonedSvg.style as any).fontSmoothing = 'antialiased';
-                  (clonedSvg.style as any).webkitFontSmoothing = 'antialiased';
-                }
-              }
+        // Simplified html2canvas options for better iPad compatibility
+        html2canvas(tempDiv, {
+          backgroundColor: '#ffffff',
+          scale: quality.scale,
+          useCORS: true,
+          allowTaint: true,
+          logging: false,
+          width: quality.dimensions.width,
+          height: quality.dimensions.height,
+          removeContainer: true,
+          foreignObjectRendering: false,
+          imageTimeout: 30000, // Increased timeout for iPads
+          onclone: (clonedDoc) => {
+            const clonedSvg = clonedDoc.querySelector('svg');
+            if (clonedSvg) {
+              // Basic SVG optimization
+              clonedSvg.style.shapeRendering = 'geometricPrecision';
+              clonedSvg.style.textRendering = 'optimizeLegibility';
             }
-          }).then(canvas => {
+          }
+        }).then(canvas => {
           document.body.removeChild(tempDiv);
           
-          // Additional canvas optimization for device compatibility
+          // Simple canvas optimization
           const optimizedCanvas = document.createElement('canvas');
           const ctx = optimizedCanvas.getContext('2d');
           if (!ctx) {
@@ -1187,10 +1174,8 @@ pdf.save(fileName);
             return;
           }
           
-          // Set canvas dimensions with device pixel ratio consideration
-          const devicePixelRatio = window.devicePixelRatio || 1;
-          const finalWidth = Math.round(finalDimensions.width * quality.scale);
-          const finalHeight = Math.round(finalDimensions.height * quality.scale);
+          const finalWidth = Math.round(quality.dimensions.width * quality.scale);
+          const finalHeight = Math.round(quality.dimensions.height * quality.scale);
           
           optimizedCanvas.width = finalWidth;
           optimizedCanvas.height = finalHeight;
@@ -1199,15 +1184,63 @@ pdf.save(fileName);
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = 'high';
           
-          // Additional optimization for tablets and high-DPI devices
-          if (deviceType === 'ipad' || deviceType === 'tablet' || deviceType === 'retina-laptop') {
-            ctx.filter = 'contrast(1.1) brightness(1.05)';
-          }
-          
           // Draw with crisp rendering
           ctx.drawImage(canvas, 0, 0, finalWidth, finalHeight);
           
           resolve(optimizedCanvas);
+        }).catch(error => {
+          document.body.removeChild(tempDiv);
+          reject(error);
+        });
+        
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  // Fallback method for SVG to canvas conversion with minimal settings for iPad compatibility
+  private async svgToCanvasFallback(svgElement: SVGSVGElement): Promise<HTMLCanvasElement> {
+    return new Promise((resolve, reject) => {
+      try {
+        // Use minimal dimensions for better compatibility
+        const width = 800;
+        const height = 600;
+        
+        // Create a simple temporary container
+        const tempDiv = document.createElement('div');
+        tempDiv.style.position = 'absolute';
+        tempDiv.style.left = '-9999px';
+        tempDiv.style.top = '-9999px';
+        tempDiv.style.width = `${width}px`;
+        tempDiv.style.height = `${height}px`;
+        tempDiv.style.backgroundColor = '#ffffff';
+        tempDiv.style.overflow = 'hidden';
+        
+        // Simple SVG clone
+        const svgClone = svgElement.cloneNode(true) as SVGSVGElement;
+        svgClone.style.width = '100%';
+        svgClone.style.height = '100%';
+        svgClone.style.display = 'block';
+        
+        tempDiv.appendChild(svgClone);
+        document.body.appendChild(tempDiv);
+        
+        // Minimal html2canvas options for maximum compatibility
+        html2canvas(tempDiv, {
+          backgroundColor: '#ffffff',
+          scale: 1, // Use scale 1 for compatibility
+          useCORS: true,
+          allowTaint: true,
+          logging: false,
+          width: width,
+          height: height,
+          removeContainer: true,
+          foreignObjectRendering: false,
+          imageTimeout: 60000, // Very long timeout for iPads
+        }).then(canvas => {
+          document.body.removeChild(tempDiv);
+          resolve(canvas);
         }).catch(error => {
           document.body.removeChild(tempDiv);
           reject(error);
@@ -1231,61 +1264,17 @@ pdf.save(fileName);
     }, 5000);
   }
   
-  // Get estimated file size for each quality level (static) - optimized for all devices
-  getLowQualityFileSize(): string {
-    return '~500 KB - 1 MB';
-  }
-  
-  getMediumQualityFileSize(): string {
-    return '~1-2 MB';
-  }
-  
-  getHighQualityFileSize(): string {
-    return '~3-5 MB';
-  }
-  
-  // Get estimated file size for selected quality (for display in success message)
+  // Get estimated file size for medium quality
   getEstimatedFileSize(): string {
-    const quality = this.pdfQualitySettings[this.selectedPdfQuality];
-    const baseSize = quality.dimensions.width * quality.dimensions.height * quality.scale * quality.scale;
-    
-    if (this.selectedPdfQuality === 'high') {
-      return '~3-5 MB';
-    } else if (this.selectedPdfQuality === 'medium') {
-      return '~1-2 MB';
-    } else {
-      return '~500 KB - 1 MB';
-    }
+    return '~1-2 MB';
   }
   
   // Get quality description
   getQualityDescription(): string {
-    const deviceType = this.detectDeviceType();
-    const isTablet = deviceType === 'ipad' || deviceType === 'tablet';
-    
-    switch (this.selectedPdfQuality) {
-      case 'high':
-        return isTablet ? 
-          'Ultra-high quality optimized for tablets and iPads' : 
-          'Ultra-high quality for all devices (tablets, phones, laptops)';
-      case 'medium':
-        return isTablet ? 
-          'High quality optimized for tablets and iPads (recommended)' : 
-          'High quality optimized for all devices (recommended)';
-      case 'low':
-        return 'Good quality compatible with all devices';
-      default:
-        return '';
-    }
+    return 'High quality optimized for all devices';
   }
   
-  // Handle quality change to update UI
-  onQualityChange() {
-    // Force change detection to update the estimated file size display
-    this.ngZone.run(() => {
-      // This will trigger template updates
-    });
-  }
+
 
   // Detect device type and suggest optimal quality setting
   detectDeviceType(): string {
@@ -1312,30 +1301,10 @@ pdf.save(fileName);
     }
   }
 
-  // Get recommended quality setting based on device
-  getRecommendedQuality(): 'high' | 'medium' | 'low' {
-    const deviceType = this.detectDeviceType();
-    
-          switch (deviceType) {
-        case 'ipad':
-        case 'tablet':
-        case 'retina-laptop':
-        case 'high-dpi-laptop':
-          return 'high';
-        case 'mobile':
-          return 'medium';
-        default:
-          return 'medium';
-      }
-  }
-
-  // Auto-optimize quality for current device
+    // Auto-optimize quality for current device
   autoOptimizeQuality() {
-    const recommended = this.getRecommendedQuality();
-    if (this.selectedPdfQuality !== recommended) {
-      this.selectedPdfQuality = recommended;
-      this.onQualityChange();
-    }
+    // Always use medium quality
+    this.selectedPdfQuality = 'medium';
   }
 
 

@@ -199,48 +199,6 @@
         </div>
       </div>
       
-             <!-- PDF Quality Selection -->
-       <div class="mb-3">
-         <label class="block text-sm font-medium text-orange-700 mb-2">PDF Quality</label>
-         <div class="space-y-2">
-           <label class="flex items-center space-x-2 cursor-pointer">
-             <input 
-               type="radio" 
-               name="pdfQuality" 
-               value="low" 
-               [(ngModel)]="selectedPdfQuality"
-               (change)="onQualityChange()"
-               class="text-orange-600 focus:ring-orange-500"
-             >
-             <span class="text-sm text-gray-700">Low ({{ getLowQualityFileSize() }})</span>
-           </label>
-           <label class="flex items-center space-x-2 cursor-pointer">
-             <input 
-               type="radio" 
-               name="pdfQuality" 
-               value="medium" 
-               [(ngModel)]="selectedPdfQuality"
-               (change)="onQualityChange()"
-               class="text-orange-600 focus:ring-orange-500"
-               checked
-             >
-             <span class="text-sm text-gray-700">Medium ({{ getMediumQualityFileSize() }})</span>
-           </label>
-           <label class="flex items-center space-x-2 cursor-pointer">
-             <input 
-               type="radio" 
-               name="pdfQuality" 
-               value="high" 
-               [(ngModel)]="selectedPdfQuality"
-               (change)="onQualityChange()"
-               class="text-orange-600 focus:ring-orange-500"
-             >
-             <span class="text-sm text-gray-700">High ({{ getHighQualityFileSize() }})</span>
-           </label>
-         </div>
-         <p class="mt-1 text-xs text-orange-600">{{ getQualityDescription() }}</p>
-       </div>
-      
       <div class="space-y-2">
         <button
           (click)="exportFloorplanAsPdf()"

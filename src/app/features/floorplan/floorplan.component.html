@@ -368,10 +368,12 @@
       </h3>
       <p><strong>Status:</strong> {{ selectedRoom.status }}</p>
       <p><strong>Capacity:</strong> {{ selectedRoom.capacity }}</p>
-      <p><strong>Type:</strong> {{ selectedRoom.type }}</p>
       <p><strong>Area:</strong> {{ selectedRoom.area }} sqft</p>
+      <!--
+      <p><strong>Type:</strong> {{ selectedRoom.type }}</p>
       <p><strong>Price:</strong> RM {{ selectedRoom.price }}</p>
       <p><strong>Deposit:</strong> RM {{ selectedRoom.deposit }}</p>
+      -->
       
       <!-- Video Section - Only show when room has video -->
       <div *ngIf="selectedRoom.video || selectedRoom.videoEmbed" class="mt-3 pt-3 border-t border-gray-200">

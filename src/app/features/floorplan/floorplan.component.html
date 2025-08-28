@@ -189,6 +189,16 @@
       
       <h2 class="mb-3 text-lg font-semibold text-orange-700">Export Reports</h2>
       
+      <!-- Device Detection & Quality Selection -->
+      <div class="mb-3">
+        <!-- Device Info -->
+        <div class="mb-2 p-2 bg-blue-50 rounded-lg border border-blue-200">
+          <p class="text-xs text-blue-700">
+            <strong>Device:</strong> {{ getCurrentDeviceType() }}
+          </p>
+        </div>
+      </div>
+      
              <!-- PDF Quality Selection -->
        <div class="mb-3">
          <label class="block text-sm font-medium text-orange-700 mb-2">PDF Quality</label>

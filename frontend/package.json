@@ -1,12 +1,13 @@
 {
-  "name": "private-suite-dashboard",
+  "name": "frontend",
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
     "start": "ng serve -o",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "deploy": "ng build && firebase deploy"
   },
   "private": true,
   "dependencies": {

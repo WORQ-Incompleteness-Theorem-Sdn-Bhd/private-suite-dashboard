@@ -11,5 +11,5 @@ export const routes: Routes = [
         (m) => m.FLOORPLAN_ROUTES
       ),
   },
-  { path: '**', redirectTo: 'login' },
+  { path: '**', redirectTo: 'login', pathMatch: 'full' },
 ];

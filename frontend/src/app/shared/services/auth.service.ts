@@ -1,4 +1,4 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Router } from '@angular/router';
 import {
@@ -7,6 +7,8 @@ import {
   signInWithPopup,
   GoogleAuthProvider,
 } from '@angular/fire/auth';
+import { environment } from '../../environments/environment.prod';
+import { Observable } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -34,66 +36,62 @@ export class AuthService {
 
       if (!userEmail.endsWith(allowedDomain)) {
         alert('You are not part of WORQ!');
+        this.handleNonInternalUser(user);
       } else {
-        this.router.navigate(['/floorplan']);
+        this.handleInternalUser(user, user.uid);
       }
     } catch (error: any) {
       console.error('An error occured while signing in');
     }
   }
 
-  // private async handleNonInternalUser(userDetail: Users) {
-  //   sessionStorage.removeItem('accessToken');
-  //   sessionStorage.removeItem('refreshToken');
+  private async handleNonInternalUser(userDetail: any) {
+    sessionStorage.removeItem('accessToken');
+    sessionStorage.removeItem('refreshToken');
 
-  //   try {
-  //     const tokenResponse = await this.getUserToken(
-  //       userDetail.uid,
-  //       userDetail.email
-  //     ).toPromise();
-  //     sessionStorage.setItem('userAccessToken', tokenResponse.token);
-  //     await this.http
-  //       .delete(environment.userUrl + `/${userDetail.uid}`)
-  //       .toPromise();
-  //     sessionStorage.removeItem('userAccessToken');
-  //     await this.logout();
-  //     this.toast.show('warning', 'You are not a Worq employee');
-  //   } catch (err) {
-  //     this.toast.show('error', 'Error processing user');
-  //   }
-  // }
+    try {
+      const tokenResponse = await this.getUserToken(userDetail.uid).toPromise();
+      sessionStorage.setItem('userAccessToken', tokenResponse.token);
+      // await this.http
+      //   .delete(environment.userUrl + `/${userDetail.uid}`)
+      //   .toPromise();
+      sessionStorage.removeItem('userAccessToken');
+      await this.logout();
+      // this.toast.show('warning', 'You are not a Worq employee');
+    } catch (err) {
+      //  this.toast.show('error', 'Error processing user');
+    }
+  }
 
-  // private async handleInternalUser(user: object, uid: string, email: string) {
-  //   try {
-  //     // Step 1: Get JWT token first
-  //     const tokenResponse = await this.getUserToken(uid, email).toPromise();
+  private async handleInternalUser(user: object, uid: string) {
+    try {
+      const tokenResponse = await this.getUserToken(uid).toPromise();
 
-  //     if (!tokenResponse?.token) {
-  //       await this.router.navigate(['/unauthorized']);
-  //       return;
-  //     }
+      if (!tokenResponse?.token) {
+        await this.router.navigate(['/unauthorized']);
+        return;
+      }
 
-  //     // Step 2: Store token securely
-  //     sessionStorage.setItem('userAccessToken', tokenResponse.token);
+      sessionStorage.setItem('userAccessToken', tokenResponse.token);
 
-  //     // Step 3: Use the token to fetch user details securely
-  //     const userDetail = await this.userService.getUserById(uid).toPromise();
+      // Step 3: Use the token to fetch user details securely
+      // const userDetail = await this.userService.getUserById(uid).toPromise();
 
-  //     if (!userDetail) {
-  //       await this.router.navigate(['/unauthorized']);
-  //       return;
-  //     }
+      // if (!userDetail) {
+      //   await this.router.navigate(['/unauthorized']);
+      //   return;
+      // }
 
-  //     sessionStorage.setItem('user', JSON.stringify(userDetail));
+      // sessionStorage.setItem('user', JSON.stringify(userDetail));
 
-  //     this.toast.show('success', `Welcome ${userDetail.name}`);
-  //     await this.router.navigate(['/dashboard']);
-  //   } catch (error) {
-  //     console.error('Error in handleInternalUser:', error);
-  //     this.toast.show('error', 'Login failed');
-  //     throw error;
-  //   }
-  // }
+      // this.toast.show('success', `Welcome ${userDetail.name}`);
+      await this.router.navigate(['/floorplan']);
+    } catch (error) {
+      console.error('Error in handleInternalUser:', error);
+      // this.toast.show('error', 'Login failed');
+      throw error;
+    }
+  }
 
   // private handleSignInError(error: any) {
   //   console.error('Sign-in error:', error);
@@ -160,18 +158,17 @@ export class AuthService {
   //   return this.http.get<Users>(`${this.userUrl}/${uid}`);
   // }
 
-  // getUserToken(uid: any, email: any): Observable<any> {
-  //   const headers = new HttpHeaders({ 'Content-Type': 'application/json' });
+  getUserToken(uid: any): Observable<any> {
+    const headers = new HttpHeaders({ 'Content-Type': 'application/json' });
 
-  //   const body = {
-  //     uid: uid,
-  //     email: email,
-  //   };
+    const body = {
+      uid: uid,
+    };
 
-  //   return this.http.post<any>(`${environment.userUrl}/token`, body, {
-  //     headers,
-  //   });
-  // }
+    return this.http.post<any>(`${environment.authUrl}`, body, {
+      headers,
+    });
+  }
 
   // getLoggedInUserId(): string | null {
   //   const userData = sessionStorage.getItem('user');

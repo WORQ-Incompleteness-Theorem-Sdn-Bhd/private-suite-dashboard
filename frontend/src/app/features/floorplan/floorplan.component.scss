@@ -51,4 +51,104 @@
     font-size: 11px;
     min-height: 28px;
   }
+  
+  // Dropdown styling
+  .suite-dropdown {
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    background: white;
+    
+    .suite-option {
+      cursor: pointer;
+      padding: 0.5rem;
+      transition: background-color 0.15s ease;
+      
+      &:hover {
+        background-color: #f9fafb;
+      }
+      
+      &.selected {
+        background-color: #fef3c7;
+      }
+    }
+  }
+  
+  // Checkbox styling
+  input[type="checkbox"] {
+    cursor: pointer;
+    
+    &:checked {
+      background-color: #f97316;
+      border-color: #f97316;
+    }
+  }
+  
+  // Action buttons
+  .action-buttons {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    border-top: 1px solid #e5e7eb;
+    background-color: #f9fafb;
+    
+    button {
+      padding: 0.25rem 0.75rem;
+      font-size: 0.75rem;
+      border-radius: 0.25rem;
+      transition: all 0.15s ease;
+      
+      &.clear-btn {
+        color: #6b7280;
+        
+        &:hover {
+          color: #374151;
+          background-color: #e5e7eb;
+        }
+      }
+      
+      &.done-btn {
+        background-color: #f97316;
+        color: white;
+        
+        &:hover {
+          background-color: #ea580c;
+        }
+      }
+    }
+  }
+  
+  // Selected suites summary
+  .selected-suites-summary {
+    .suite-tag {
+      transition: all 0.15s ease;
+      
+      &:hover {
+        background-color: #fed7aa;
+      }
+      
+      .remove-btn {
+        transition: all 0.15s ease;
+        
+        &:hover {
+          background-color: #f97316;
+          color: white;
+        }
+      }
+    }
+  }
+}
+
+// Floor container styling
+.floor-container {
+  .bg-gray-50 {
+    background-color: #f9fafb;
+    border-color: #e5e7eb;
+    
+    h3 {
+      color: #374151;
+      font-weight: 600;
+      margin: 0;
+    }
+  }
 }

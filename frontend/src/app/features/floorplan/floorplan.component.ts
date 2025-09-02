@@ -7,6 +7,7 @@ import {
   QueryList,
   ViewChild,
   NgZone,
+  HostListener,
 } from '@angular/core';
 import { Room } from '../../core/models/room.model';
 import { RoomService } from '../../core/services/room.service';
@@ -99,16 +100,10 @@ private docHasSelectedSuites(doc: Document): boolean {
 
   // PDF quality settings for file size optimization
   pdfQualitySettings = {
-    high: { scale: 2, quality: 0.9, dimensions: { width: 800, height: 600 } },
-    medium: {
-      scale: 1.5,
-      quality: 0.7,
-      dimensions: { width: 600, height: 450 },
-    },
-    low: { scale: 1, quality: 0.5, dimensions: { width: 400, height: 300 } },
+    medium: { scale: 1.5, quality: 0.85, dimensions: { width: 2200, height: 1450 } },
   };
 
-  selectedPdfQuality: 'high' | 'medium' | 'low' = 'medium';
+  selectedPdfQuality:  'medium' = 'medium';
 
   Occupied = 0;
   Available = 0;
@@ -128,25 +123,43 @@ private docHasSelectedSuites(doc: Document): boolean {
   private objectToOriginalViewBox = new WeakMap<HTMLObjectElement, string>();
   // Friendly labels for specific outlets/files
   private floorLabelOverrides: Record<string, Record<string, string>> = {
-    TTDI: {
+    'TTDI': {
       'TTDI-Level1.svg': 'Level 1',
       'TTDI-Level3A.svg': 'Level 3A',
       'Sibelco Office - L1.svg': 'Sibelco Office',
     },
-    KLS: {
+    'KLS': {
       'KLS- L20.svg': 'Level 20',
       'KLS-ByteDance.svg': 'Level 21 ByteDance',
       'KLS-L21.svg': 'Level 21',
       'KLS-L28.svg': 'Level 28',
     },
-    MUB: {
+    'MUB': {
       'MUB-level9.svg': 'Level 9',
       'MUB-level12.svg': 'Level 12',
       'MUB-level17.svg': 'Level 17',
     },
-    UBP3A: {
+    'UBP3A': {
       'UBP-L13A.svg': 'Level 13A',
       'UBP-L13AAIRIT.svg': 'Level 13A AIRIT',
+    },
+    '8FA': {
+      '8FA.svg': 'Level 15',
+    },
+    'ITG': {
+      'ITG.svg': 'Level 9',
+    },
+    'UBP': {
+      'UBP.svg': 'Level 2',
+    },
+    'KLG': {
+      'KLG.svg': 'Level 3',
+    },
+    'SPM': {
+      'SPM.svg': 'Level 4',
+    },
+    'SV2': {
+      'SV2.svg': 'Level 12',
     },
   };
 
@@ -462,8 +475,10 @@ private docHasSelectedSuites(doc: Document): boolean {
       }
       this.buildOptions();
       this.applyFilters();
+      
+      // Handle suite selection differently since it's now multiple selection
       if (key === 'suite') {
-        // Zoom to the selected suite when explicitly chosen
+        // For single suite selection (when not using multiple selection)
         if (this.filters.suite === 'Select Suite') {
           this.closePopup();
         } else {
@@ -541,8 +556,10 @@ private docHasSelectedSuites(doc: Document): boolean {
             r.status === this.filters.status) &&
           (this.filters.pax === 'Select Pax' ||
             r.capacity.toString() === this.filters.pax) &&
+          // Handle multiple suite selection
           (this.filters.suite === 'Select Suite' ||
-            r.name === this.filters.suite)
+            this.selectedSuites.length === 0 ||
+            this.selectedSuites.includes(r.name))
       )
 
       .sort((a, b) => {
@@ -962,8 +979,10 @@ private docHasSelectedSuites(doc: Document): boolean {
       svg: 'all',
     };
 
-    // Reset suite search term
+    // Reset multiple suite selection
+    this.selectedSuites = [];
     this.suiteSearchTerm = '';
+    this.showSuiteDropdown = false;
 
     // Close any open popup
     this.closePopup();
@@ -1133,7 +1152,9 @@ private docHasSelectedSuites(doc: Document): boolean {
       pdf.save(fileName);
 
       // Show success message with file size info
-      const estimatedSize = this.getEstimatedFileSize();
+      const estimatedSize = this. getEstimatedFileSize();
+      
+
       this.showMessage(
         `Floorplan PDF exported successfully! 🎉 (Estimated size: ${estimatedSize})`
       );
@@ -1290,11 +1311,11 @@ private docHasSelectedSuites(doc: Document): boolean {
   }
 
   getMediumQualityFileSize(): string {
-    return '~500 KB - 1 MB';
+    return '~3-5 MB';
   }
 
   getHighQualityFileSize(): string {
-    return '~2-4 MB';
+    return '~6-10 MB';
   }
 
   // Get estimated file size for selected quality (for display in success message)
@@ -1306,13 +1327,11 @@ private docHasSelectedSuites(doc: Document): boolean {
       quality.scale *
       quality.scale;
 
-    if (this.selectedPdfQuality === 'high') {
-      return '~2-4 MB';
-    } else if (this.selectedPdfQuality === 'medium') {
-      return '~500 KB - 1 MB';
-    } else {
-      return '~200-500 KB';
+    if (this.selectedPdfQuality === 'medium') {
+      return '~3-5 MB';
     }
+    
+    return '~3-5 MB'; // Default fallback
   }
 
   // Get quality description
@@ -1375,6 +1394,11 @@ private docHasSelectedSuites(doc: Document): boolean {
       this.filters.suite = `${this.selectedSuites.length} suites selected`;
     }
     this.applyFilters();
+    
+    // Close popup when no suites are selected
+    if (this.selectedSuites.length === 0) {
+      this.closePopup();
+    }
   }
 
   resetSuiteSelection() {
@@ -1408,6 +1432,12 @@ private docHasSelectedSuites(doc: Document): boolean {
     if (!target.closest('.suite-dropdown-container')) {
       this.showSuiteDropdown = false;
     }
+  }
+
+  // Close dropdown when pressing Escape key
+  @HostListener('document:keydown.escape')
+  onEscapeKey() {
+    this.showSuiteDropdown = false;
   }
 
   // Handle quality change to update UI
@@ -1458,6 +1488,48 @@ private docHasSelectedSuites(doc: Document): boolean {
         default:
         return 'Standard Laptop/Desktop';
     }
+  }
+
+  // Get display text for suite filter button
+  getSuiteFilterDisplayText(): string {
+    if (this.selectedSuites.length === 0) {
+      return 'Select Suite';
+    } else if (this.selectedSuites.length === 1) {
+      return this.selectedSuites[0];
+    } else {
+      return `${this.selectedSuites.length} suites selected`;
+    }
+  }
+
+  // Get current floor display text
+  getCurrentFloorDisplay(): string {
+    if (this.filters.outlet === 'Select Outlet') {
+      return 'No outlet selected';
+    }
+    
+    if (this.selectedFloorSvg === 'all') {
+      return `All floors (${this.selectedOutletSvgs.length} total)`;
+    }
+    
+    const floorLabel = this.getFloorLabel(this.selectedFloorSvg);
+    return floorLabel || this.selectedFloorSvg;
+  }
+
+  // Get list of configured outlets
+  getConfiguredOutlets(): string[] {
+    return Object.keys(this.floorLabelOverrides);
+  }
+
+  // Get floor mappings for a specific outlet
+  getFloorMappingsForOutlet(outlet: string): string {
+    const mappings = this.floorLabelOverrides[outlet];
+    if (!mappings) return 'No mappings configured';
+    
+    const mappingList = Object.entries(mappings)
+      .map(([filename, label]) => `${label} (${filename})`)
+      .join(', ');
+    
+    return mappingList || 'No mappings configured';
   }
 
 }

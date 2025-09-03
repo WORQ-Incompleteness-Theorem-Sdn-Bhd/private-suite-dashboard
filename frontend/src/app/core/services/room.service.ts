@@ -1,7 +1,16 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { BehaviorSubject, tap } from 'rxjs';
+import { HttpClient, HttpParams, HttpHeaders } from '@angular/common/http';
+import { BehaviorSubject, Observable, tap } from 'rxjs';
 import { Room } from '../models/room.model';
+import { environment } from '../../environments/environment.prod';
+
+export interface ResourceParams {
+  officeId: string;           // location → office.id
+  status?: string;            // optional
+  pax?: number;               // optional
+  suites?: string[];          // optional (multi-select)
+  floor?: string;             // optional (if backend supports)
+}
 
 const MM2_PER_SQFT = 92903.04;
 
@@ -9,6 +18,9 @@ const MM2_PER_SQFT = 92903.04;
 export class RoomService {
   private roomsSubject = new BehaviorSubject<Room[]>([]);
   rooms$ = this.roomsSubject.asObservable();
+
+  private loadingSubject = new BehaviorSubject<boolean>(false);
+  loading$ = this.loadingSubject.asObservable();
 
   private readonly outletMap: Record<
     string,
@@ -75,6 +87,14 @@ export class RoomService {
 
   constructor(private http: HttpClient) {}
 
+  private getAuthHeaders(): HttpHeaders {
+    const token = sessionStorage.getItem('userAccessToken');
+    return new HttpHeaders({
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    });
+  }
+
   private toYoutubeEmbed(url: string): string | null {
     if (!url) return null;
     try {
@@ -95,52 +115,78 @@ export class RoomService {
     }
   }
 
-  fetchRooms() {
-    const url =
-      'https://script.google.com/macros/s/AKfycbzZvjTnQGb4Aecn1_nNLMCgAtsPKhwteG6fDsWrqDjBDd7It8GsVAdsLIbvZiErBBc-/exec';
-    this.http
-      .get<any[]>(url)
-      .pipe(
-        tap((data) => {
-          console.log('Fetched rooms:', data);
-          const mapped = data.map((item) => {
-            const outletInfo = this.outletMap[item.outlet_id];
-            const svgPath = outletInfo?.svg || []; // Get the svg from outletMap
 
-            //grouping status
-            let normalizedStatus: 'Available' | 'Occupied';
-            if (
-              ['available', 'available_soon'].includes(
-                item.status.toLowerCase()
-              )
-            ) {
-              normalizedStatus = 'Available';
-            } else {
-              normalizedStatus = 'Occupied';
-            }
-              // convert mm² → ft²
-            const areaMm2 = Number(item.area) || 0;
-            const areaSqft = areaMm2 / MM2_PER_SQFT;
+//Populate filters from backend data
+  getResources(params: ResourceParams): Observable<any> {
+    this.loadingSubject.next(true);
+    const url = environment.baseUrl + '/api/resources';
+    
+    // Build query parameters
+    let httpParams = new HttpParams();
+    httpParams = httpParams.set('office_id', params.officeId);
+    
+    if (params.status) {
+      httpParams = httpParams.set('status', params.status);
+    }
+    if (params.pax) {
+      httpParams = httpParams.set('pax_size', params.pax.toString());
+    }
+    if (params.suites && params.suites.length > 0) {
+      // For multiple suites, we'll send them as comma-separated values
+      httpParams = httpParams.set('resource_name', params.suites.join(','));
+    }
+    if (params.floor) {
+      httpParams = httpParams.set('floor_id', params.floor);
+    }
+    
+    return this.http.get<any>(url, { 
+      params: httpParams,
+      headers: this.getAuthHeaders()
+    }).pipe(
+      tap((response) => {
+        console.log('Fetched resources from backend:', response);
+        const data = response.data || [];
+        
+        const mapped = data.map((item: any) => {
+          const outletInfo = this.outletMap[item.office_id];
+          const svgPath = outletInfo?.svg || [];
 
-            return {
-              id: item.id,
-              name: item.name,
-              status: normalizedStatus,
-              outlet: outletInfo?.name || '',
-              svg: Array.isArray(svgPath) ? svgPath : [svgPath], // Always an array
-              capacity: item.capacity,
-              type: item.type,
-              area: Math.round(areaSqft),
-              price: item.price,
-              deposit: item.deposit,
-              video: item.video || undefined,
-              videoEmbed: this.toYoutubeEmbed(item.video) || undefined
-            } as Room;
-          });
-          console.log('Mapped rooms:', mapped);
-          this.roomsSubject.next(mapped);
-        })
-      )
-      .subscribe();
+          // Normalize status from backend data
+          let normalizedStatus: 'Available' | 'Occupied';
+          if (
+            ['available', 'available_soon'].includes(
+              item.status.toLowerCase()
+            )
+          ) {
+            normalizedStatus = 'Available';
+          } else {
+            normalizedStatus = 'Occupied';
+          }
+
+          // Convert mm² → ft²
+          const areaMm2 = Number(item.area_in_sqmm) || 0;
+          const areaSqft = areaMm2 / MM2_PER_SQFT;
+
+          return {
+            id: item.resource_id,
+            name: item.resource_name,
+            status: normalizedStatus,
+            outlet: outletInfo?.name || '',
+            svg: Array.isArray(svgPath) ? svgPath : [svgPath],
+            capacity: item.pax_size,
+            type: item.resource_type,
+            area: Math.round(areaSqft),
+            price: item.price,
+            deposit: item.deposit,
+            video: item.youtube_link || undefined,
+            videoEmbed: this.toYoutubeEmbed(item.youtube_link) || undefined
+          } as Room;
+        });
+        
+        console.log('Mapped resources:', mapped);
+        this.roomsSubject.next(mapped);
+        this.loadingSubject.next(false);
+      })
+    );
   }
 }

@@ -1,4 +1,7 @@
 
+<!-- Toast notifications -->
+<app-toast></app-toast>
+
 <div class="grid grid-cols-1 gap-6 py-6 mx-auto lg:grid-cols-12 max-w-7xl">
   <!-- Left Panel -->
   <div class="flex flex-col p-6 transition-all duration-500 bg-white shadow-lg rounded-2xl lg:col-span-4">
@@ -9,21 +12,64 @@
 
     <!-- Filters -->
     <div class="space-y-4">
+      <!-- Loading overlay for offices -->
+      <div *ngIf="isLoadingOffices" class="flex items-center justify-center p-4 bg-gray-100 rounded-xl">
+        <div class="flex items-center space-x-2">
+          <div class="w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+          <span class="text-sm text-gray-600">Loading offices...</span>
+        </div>
+      </div>
+
       <ng-container *ngFor="let filter of filtersConfig">
         <label class="block font-semibold text-gray-700">{{
           filter.label
           }}</label>
         <select class="w-full p-2 border outline-none rounded-xl focus:ring-2 focus:ring-orange-500"
-          [value]="filters[filter.key]" (change)="updateFilter(filter.key, $event)">
+          [value]="filters[filter.key]" (change)="updateFilter(filter.key, $event)"
+          [disabled]="isLoadingOffices || (filter.key === 'outlet' && isLoadingOffices)">
           <option value="Select Outlet" *ngIf="filter.key === 'outlet'">Select Outlet</option>
           <option value="Select Status" *ngIf="filter.key === 'status'">Select Status</option>
           <option value="Select Pax" *ngIf="filter.key === 'pax'">Select Pax</option>
-          <option value="Select Suite" *ngIf="filter.key === 'suite'">Select Suite</option>
           <option *ngFor="let opt of filter.options" [value]="opt">
             {{ opt }}
           </option>
         </select>
       </ng-container>
+
+      <!-- Multi-select Suite with checkboxes -->
+      <div *ngIf="filters.outlet !== 'Select Outlet' && suiteOptions.length > 0" class="pt-2 border-t">
+        <div class="flex items-center justify-between mb-2">
+          <label class="block font-semibold text-gray-700">Suites</label>
+          <button 
+            *ngIf="selectedSuites.length > 0"
+            (click)="clearSuiteSelection()"
+            class="text-xs text-orange-600 hover:text-orange-700 underline"
+          >
+            Reset ({{ selectedSuites.length }} selected)
+          </button>
+        </div>
+        
+        <!-- Search box for suites -->
+        <input 
+          type="text" 
+          [(ngModel)]="suiteSearchTerm" 
+          placeholder="Search suites..."
+          class="w-full p-2 mb-2 border outline-none rounded-xl focus:ring-2 focus:ring-orange-500"
+        />
+        
+        <!-- Suite checkboxes -->
+        <div class="max-h-32 overflow-y-auto border rounded-xl p-2 space-y-1">
+          <label *ngFor="let suite of suiteOptions" class="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-1 rounded">
+            <input 
+              type="checkbox" 
+              [checked]="isSuiteSelected(suite)"
+              (change)="toggleSuiteSelection(suite)"
+              class="text-orange-600 focus:ring-orange-500"
+            />
+            <span class="text-sm">{{ suite }}</span>
+          </label>
+        </div>
+      </div>
 
       <!-- Floor selector: visible only when the outlet has more than 1 floor SVG -->
       <div *ngIf="selectedOutletSvgs.length > 1" class="pt-2 border-t">
@@ -50,6 +96,7 @@
         <span class="font-semibold text-green-600">{{ Available }}</span>
       </div>
     </div>
+
     <!-- Room Table -->
     <div class="p-4 mt-6 border border-gray-200 bg-gray-50 rounded-xl">
       <table class="w-full border">
@@ -76,6 +123,11 @@
                 <div><strong>Area:</strong> {{ room.area }} sqft</div>
                 <div><strong>Price:</strong> RM {{ room.price }}</div>
                 <div><strong>Deposit:</strong> RM {{ room.deposit }}</div>
+                <div *ngIf="room.video"><strong>Video:</strong> 
+                  <a [href]="room.video" target="_blank" class="text-blue-600 hover:underline text-xs">
+                    {{ room.video }}
+                  </a>
+                </div>
 
               </td>
             </tr>
@@ -151,20 +203,41 @@
       </div>
     </div>
 
+    <!-- Pax Color Legend - Right Panel -->
+    <div *ngIf="filters.outlet !== 'Select Outlet' && filters.status === 'Available' && filteredRooms.length > 0" class="mb-4 p-3 border bg-blue-50 rounded-xl">
+      <h3 class="mb-2 text-sm font-semibold text-blue-700">Pax Capacity Colors</h3>
+      <div class="grid grid-cols-2 gap-2">
+        <div *ngFor="let bucket of paxBuckets; let i = index" class="flex items-center space-x-2 text-xs">
+          <div class="w-3 h-3 rounded" [style.background-color]="paxPalette[i]"></div>
+          <span class="text-gray-600">{{ bucket.label }}</span>
+        </div>
+      </div>
+    </div>
+
 
     <div class="mt-4">
       <div (click)="showDownloadMenu = false"></div>
-      <ng-container *ngIf="filters.outlet !== 'all'; else askToPick">
+      
+      <!-- Loading state for resources -->
+      <div *ngIf="isLoadingResources" class="flex items-center justify-center p-8 bg-gray-50 rounded-xl">
+        <div class="flex items-center space-x-2">
+          <div class="w-6 h-6 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+          <span class="text-gray-600">Loading resources...</span>
+        </div>
+      </div>
+
+      <ng-container *ngIf="filters.outlet !== 'Select Outlet' && !isLoadingResources; else askToPick">
         <div>
           <object #svgObject *ngFor="let svg of displayedSvgs; trackBy: trackBySvgUrl" [data]="getSafeUrl(svg)"
             type="image/svg+xml" width="800" height="800" style="max-width: 100%; height: auto;"></object>
-
         </div>
       </ng-container>
 
       <ng-template #askToPick>
         <div class="p-4 text-sm text-gray-600 bg-gray-50 rounded-xl">
-          Select an outlet to view its floorplan.
+          <div *ngIf="!isLoadingOffices && !isLoadingResources">
+            Select an outlet to view its floorplan.
+          </div>
         </div>
       </ng-template>
     </div>
@@ -185,6 +258,11 @@
       <p><strong>Area:</strong> {{ selectedRoom.area }} sqft</p>
       <p><strong>Price:</strong> RM {{ selectedRoom.price }}</p>
       <p><strong>Deposit:</strong> RM {{ selectedRoom.deposit }}</p>
+      <p *ngIf="selectedRoom.video"><strong>Video:</strong> 
+        <a [href]="selectedRoom.video" target="_blank" class="text-blue-600 hover:underline">
+          {{ selectedRoom.video }}
+        </a>
+      </p>
 
     </div>
   </div>

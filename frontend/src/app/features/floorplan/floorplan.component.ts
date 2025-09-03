@@ -9,15 +9,19 @@ import {
   NgZone,
 } from '@angular/core';
 import { Room } from '../../core/models/room.model';
-import { RoomService } from '../../core/services/room.service';
+import { RoomService, ResourceParams } from '../../core/services/room.service';
+import { OfficeService } from '../../core/services/office.service';
+import { ToastService } from '../../shared/services/toast.service';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
-import { Observable } from 'rxjs';
+import { Observable, of } from 'rxjs'; 
+import { catchError, finalize } from 'rxjs/operators';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import { ToastComponent } from '../../shared/components/toast.component';
 
-type FilterKey = 'outlet' | 'status' | 'pax' | 'suite';
+type FilterKey = 'outlet' | 'status' | 'pax';
 
 interface FilterConfig {
   key: FilterKey;
@@ -27,7 +31,7 @@ interface FilterConfig {
 
 @Component({
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, ToastComponent],
   selector: 'app-floorplan',
   templateUrl: './floorplan.component.html',
   styleUrls: ['./floorplan.component.scss'],
@@ -42,6 +46,26 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   selectedFloorSvg: string = 'all';
   floorOptions: string[] = [];
 
+  // Loading states
+  isLoadingOffices = false;
+  isLoadingResources = false;
+  isLoading = false;
+
+  // Pax-based color palette
+  paxPalette = ['#003f5c','#444e86','#955196','#dd5182','#ff6e54','#ffa600'] as const;
+  paxBuckets = [
+    { max: 4,        label: '≤4'   }, // -> #003f5c
+    { max: 6,        label: '5–6'  }, // -> #444e86
+    { max: 8,        label: '7–8'  }, // -> #955196
+    { max: 12,       label: '9–12' }, // -> #dd5182
+    { max: 20,       label: '13–20'}, // -> #ff6e54
+    { max: Infinity, label: '21+'  }, // -> #ffa600
+  ];
+
+  // Multi-select suite functionality
+  selectedSuites: string[] = [];
+  suiteSearchTerm: string = '';
+
   isArray(value: unknown): boolean {
     return Array.isArray(value);
   }
@@ -50,14 +74,12 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     { key: 'outlet', label: 'Outlet', options: [] },
     { key: 'status', label: 'Status', options: [] },
     { key: 'pax', label: 'Pax', options: [] },
-    { key: 'suite', label: 'Suite', options: [] },
   ];
 
   filters = {
     outlet: 'Select Outlet',
     status: 'Select Status',
     pax: 'Select Pax',
-    suite: 'Select Suite',
     svg: 'all',
   };
   outletOptions: string[] = [];
@@ -130,6 +152,24 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       'UBP-L13A.svg': 'Level 13A',
       'UBP-L13AAIRIT.svg': 'Level 13A AIRIT',
     },
+    '8FA': {
+      '8FA.svg': 'Floor 15',
+    },
+    ITG: {
+      'ITG.svg': 'Floor 9',
+    },
+    UBP: {
+      'UBP.svg': 'Floor 2',
+    },
+    KLG: {
+      'KLG.svg': 'Floor 3',
+    },
+    SV2: {
+      'SV2.svg': 'Floor 12',
+    },
+    SPM: {
+      'SPM.svg': 'Floor 4',
+    },
   };
 
   private basename(path: string): string {
@@ -137,6 +177,8 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   }
   constructor(
     private roomService: RoomService,
+    private officeService: OfficeService,
+    private toastService: ToastService,
     public sanitizer: DomSanitizer,
     private ngZone: NgZone
   ) {}
@@ -152,6 +194,10 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   trackBySvgUrl = (_: number, url: string) => url;
 
   ngOnInit() {
+    // 1) Load outlets first
+    this.loadOffices();
+
+    // 2) Subscribe to rooms changes
     this.roomService.rooms$.subscribe((rooms) => {
       this.rooms = rooms;
       this.roomIdIndex = this.buildRoomIdIndex();
@@ -167,7 +213,80 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       this.buildOptions();
       this.applyFilters();
     });
-    this.roomService.fetchRooms();
+  }
+
+  // Load offices on app start
+  loadOffices() {
+    this.isLoadingOffices = true;
+    this.officeService.loadOffices().pipe(
+      catchError((error) => {
+        console.error('Error loading outlet:', error);
+        this.toastService.error('Failed to load outlet. Please try again.');
+        return of(null);
+      }),
+      finalize(() => {
+        this.isLoadingOffices = false;
+      })
+    ).subscribe((response) => {
+      if (response && response.success) {
+        this.toastService.success('Offices loaded successfully');
+        this.buildOptions();
+      }
+    });
+  }
+
+  // When user selects an outlet
+  onOutletChange(outletDisplayName: string) {
+    if (!outletDisplayName || outletDisplayName === 'Select Outlet') {
+      this.rooms = [];
+      this.filteredRooms = [];
+      this.selectedOutletSvgs = [];
+      this.displayedSvgs = [];
+      this.buildOptions();
+      this.applyFilters();
+      return;
+    }
+
+    // Get the office ID from the display name
+    const officeId = this.getOfficeIdFromOutletName(outletDisplayName);
+    if (!officeId) {
+      console.error('Office ID not found for outlet:', outletDisplayName);
+      this.toastService.error('Invalid outlet selected');
+      return;
+    }
+
+    // 3) Fetch resources for this outlet using office.id
+    this.loadResources({ officeId });
+  }
+
+  // Fetch resources for selected outlet
+  loadResources(params: ResourceParams) {
+    this.isLoadingResources = true;
+    this.roomService.getResources(params).pipe(
+      catchError((error) => {
+        console.error('Error loading resources:', error);
+        this.toastService.error('Failed to load resources. Please try again.');
+        return of(null);
+      }),
+      finalize(() => {
+        this.isLoadingResources = false;
+      })
+    ).subscribe((response) => {
+      if (response) {
+        this.toastService.success('Resources loaded successfully');
+        // Update selected outlet SVGs and build filters from backend data
+        this.updateSelectedOutletSvgs();
+        this.buildFiltersFromBackend();
+        // Force SVG color updates after data is loaded
+        setTimeout(() => this.updateSvgColors(), 100);
+      }
+    });
+  }
+
+  // Build filters from backend data
+  buildFiltersFromBackend() {
+    this.buildOptions();
+    this.applyFilters();
   }
 
   private attachSvgListeners() {
@@ -279,8 +398,10 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
               id: room.id,
               name: room.name,
             });
-            // Sync selection to filters so metrics reflect the picked room
-            this.filters.suite = room.name;
+            // Auto-select the room in multi-select suites
+            if (!this.selectedSuites.includes(room.name)) {
+              this.selectedSuites = [room.name];
+            }
             this.buildOptions();
             this.applyFilters();
             this.openPopupFromRoom(room);
@@ -331,9 +452,6 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     });
   }
 
-  // Add a search term for suite
-  suiteSearchTerm: string = '';
-
   buildOptions() {
     console.log('=== Building Options ===');
     console.log('Current filters:', this.filters);
@@ -360,10 +478,8 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     );
     console.log('After pax filter:', filteredForSuite);
 
-    // Outlet options: all unique outlets
-    this.outletOptions = Array.from(
-      new Set(this.rooms.map((r) => r.outlet))
-    ).sort();
+    // Outlet options: from office service
+    this.outletOptions = this.officeService.getOffices().map(office => office.displayName).sort();
     console.log('Outlet options:', this.outletOptions);
 
     // Status options: based on selected outlet
@@ -412,8 +528,6 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     this.filtersConfig.find((f) => f.key === 'status')!.options =
       this.statusOptions;
     this.filtersConfig.find((f) => f.key === 'pax')!.options = this.paxOptions;
-    this.filtersConfig.find((f) => f.key === 'suite')!.options =
-      this.suiteOptions;
   }
 
   updateFilter(type: string, event: Event) {
@@ -422,33 +536,19 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     if (select) {
       this.filters[key] = select.value;
       if (key === 'outlet') {
+        // When outlet changes, load resources for that outlet
+        this.onOutletChange(select.value);
         this.updateSelectedOutletSvgs();
         this.updateDisplayedSvgs();
+      } else {
+        // For other filters, apply client-side filtering
+        this.buildOptions();
+        this.applyFilters();
+        // Update SVG colors after filter changes
+        setTimeout(() => this.updateSvgColors(), 50);
       }
-      this.buildOptions();
-      this.applyFilters();
-      if (key === 'suite') {
-        // Zoom to the selected suite when explicitly chosen
-        if (this.filters.suite === 'Select Suite') {
-          this.closePopup();
-        } else {
-          const outletNow = this.filters.outlet;
-          const candidates = this.rooms.filter(
-            (r) => r.name === this.filters.suite
-          );
-          const room =
-            candidates.find(
-              (r) => outletNow === 'Select Outlet' || r.outlet === outletNow
-            ) || candidates[0];
-          if (room) {
-            console.log('[Floorplan] zoom due to suite selection', {
-              id: room.id,
-              name: room.name,
-            });
-            setTimeout(() => this.openPopupFromRoom(room), 60);
-          }
-        }
-      } else if (key === 'status' || key === 'pax' || key === 'outlet') {
+      
+      if (key === 'status' || key === 'pax' || key === 'outlet') {
         // Only auto-zoom if filtering yields exactly one room
         if (this.filteredRooms.length === 1) {
           const onlyRoom = this.filteredRooms[0];
@@ -458,13 +558,11 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
             key,
             value: this.filters[key],
           });
-          this.filters.suite = onlyRoom.name; // sync suite for consistency
-          setTimeout(() => this.openPopupFromRoom(onlyRoom), 60);
-        } else if (this.filters.suite !== 'Select Suite') {
-          // If suite remains selected after other filters, keep zooming to it
-          const target = this.rooms.find((r) => r.name === this.filters.suite);
-          if (target) {
+          // Auto-select the single room in multi-select suites
+          if (this.selectedSuites.length === 0) {
+            this.selectedSuites = [onlyRoom.name];
           }
+          setTimeout(() => this.openPopupFromRoom(onlyRoom), 60);
         } else {
           this.closePopup();
         }
@@ -506,8 +604,9 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
             r.status === this.filters.status) &&
           (this.filters.pax === 'Select Pax' ||
             r.capacity.toString() === this.filters.pax) &&
-          (this.filters.suite === 'Select Suite' ||
-            r.name === this.filters.suite)
+
+          (this.selectedSuites.length === 0 ||
+            this.selectedSuites.includes(r.name))
       )
 
       .sort((a, b) => {
@@ -516,7 +615,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
           return a.capacity - b.capacity;
         }
         // Sort by Suite name if Suite filter is active
-        if (this.filters.suite !== 'Select Suite') {
+        if (this.selectedSuites.length > 0) {
           return a.name.localeCompare(b.name);
         }
         return 0; // No sorting if no filter
@@ -528,8 +627,11 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     this.Available = this.filteredRooms.filter(
       (r) => r.status === 'Available'
     ).length;
+    console.log('Filtered rooms:', this.filteredRooms.length);
     console.log('Occupied:', this.Occupied);
     console.log('Available:', this.Available);
+    
+    // Update SVG colors after filtering
     this.updateSvgColors();
   }
 
@@ -539,11 +641,18 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         const el = doc.getElementById(room.id);
         if (el) {
           if (this.filteredRooms.includes(room)) {
-            // Selected → colored
-            el.setAttribute(
-              'fill',
-              room.status === 'Occupied' ? '#ef4444' : '#22c55e'
-            );
+            // Selected → colored with pax-based palette for available rooms
+            let color: string;
+            if (room.status === 'Occupied') {
+              color = '#ef4444'; // Red for occupied
+            } else if (this.filters.status === 'Available') {
+              // Use pax-based palette for available rooms
+              color = this.getPaxColor(room.capacity);
+            } else {
+              color = '#22c55e'; // Green for available (default)
+            }
+            
+            el.setAttribute('fill', color);
             el.setAttribute('opacity', '0.7');
             (el as any).style.pointerEvents = 'auto';
           } else {
@@ -568,6 +677,42 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         if (doc) applyColors(doc);
       });
     }
+  }
+
+  // Get color based on pax capacity
+  getPaxColor(capacity: number): string {
+    for (let i = 0; i < this.paxBuckets.length; i++) {
+      if (capacity <= this.paxBuckets[i].max) {
+        return this.paxPalette[i];
+      }
+    }
+    return this.paxPalette[this.paxPalette.length - 1]; // Fallback to last color
+  }
+
+  // Multi-select suite functionality
+  toggleSuiteSelection(suiteName: string) {
+    const index = this.selectedSuites.indexOf(suiteName);
+    if (index > -1) {
+      this.selectedSuites.splice(index, 1);
+    } else {
+      this.selectedSuites.push(suiteName);
+    }
+    this.applyFilters();
+  }
+
+  isSuiteSelected(suiteName: string): boolean {
+    return this.selectedSuites.includes(suiteName);
+  }
+
+  clearSuiteSelection() {
+    this.selectedSuites = [];
+    this.applyFilters();
+  }
+
+  // Get office ID from outlet name
+  getOfficeIdFromOutletName(outletName: string): string | undefined {
+    const office = this.officeService.getOffices().find(o => o.displayName === outletName);
+    return office?.id;
   }
 
   private normalizeId(value: string | undefined | null): string {
@@ -756,6 +901,11 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
           `Deposit: RM ${this.selectedRoom.deposit}`,
         ];
 
+        // Add YouTube link if available
+        if (this.selectedRoom.video) {
+          lines.push(`Video: ${this.selectedRoom.video}`);
+        }
+
         const pad = 10;
         const lineHeight = 18;
         const boxWidth = 320;
@@ -923,7 +1073,6 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       outlet: 'Select Outlet',
       status: 'Select Status',
       pax: 'Select Pax',
-      suite: 'Select Suite',
       svg: 'all',
     };
 
@@ -1019,8 +1168,8 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
           pdf.text(`Pax: ${this.filters.pax}`, 20, yPos);
           yPos += 8;
         }
-        if (this.filters.suite !== 'Select Suite') {
-          pdf.text(`Suite: ${this.filters.suite}`, 20, yPos);
+        if (this.selectedSuites.length > 0) {
+          pdf.text(`Suites: ${this.selectedSuites.join(', ')}`, 20, yPos);
           yPos += 8;
         }
 

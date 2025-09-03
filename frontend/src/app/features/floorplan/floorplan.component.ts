@@ -60,12 +60,6 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     suite: 'Select Suite',
     svg: 'all',
   };
-
-  // New properties for multiple suite selection
-  selectedSuites: string[] = [];
-  showSuiteDropdown: boolean = false;
-  suiteSearchTerm: string = '';
-
   outletOptions: string[] = [];
   statusOptions: string[] = [];
   paxOptions: string[] = [];
@@ -77,18 +71,6 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   showDownloadMenu = false;
   popupX = 0;
   popupY = 0;
-
-  /** Does this SVG document contain any of the selected suites (for the chosen outlet)? */
-private docHasSelectedSuites(doc: Document): boolean {
-  if (!this.selectedSuites?.length) return true; // nothing selected → include
-  const wanted = new Set(this.selectedSuites);
-  return this.rooms.some(r =>
-    r.outlet === this.filters.outlet &&
-    wanted.has(r.name) &&
-    !!this.findRoomElementInDoc(doc, r)
-  );
-}
-
 
   // PDF export loading states
   isExportingFloorplan = false;
@@ -167,29 +149,9 @@ private docHasSelectedSuites(doc: Document): boolean {
     return safe;
   }
 
-  // Check if room has a valid video
-  hasVideo(room: Room): boolean {
-    return !!(room.video || room.videoEmbed);
-  }
-
-  // Get video display type
-  getVideoDisplayType(room: Room): 'embed' | 'link' | 'none' {
-    if (room.videoEmbed) return 'embed';
-    if (room.video) return 'link';
-    return 'none';
-  }
-
-  // Get safe video URL for iframe embedding
-  getSafeVideoUrl(videoUrl: string): SafeResourceUrl {
-    return this.sanitizer.bypassSecurityTrustResourceUrl(videoUrl);
-  }
-
   trackBySvgUrl = (_: number, url: string) => url;
 
   ngOnInit() {
-    // Auto-optimize PDF quality for current device
-    this.autoOptimizeQuality();
-    
     this.roomService.rooms$.subscribe((rooms) => {
       this.rooms = rooms;
       this.roomIdIndex = this.buildRoomIdIndex();
@@ -368,6 +330,9 @@ private docHasSelectedSuites(doc: Document): boolean {
       }
     });
   }
+
+  // Add a search term for suite
+  suiteSearchTerm: string = '';
 
   buildOptions() {
     console.log('=== Building Options ===');
@@ -1024,69 +989,48 @@ private docHasSelectedSuites(doc: Document): boolean {
         const doc = objectEl.contentDocument as Document | null;
         const rootSvg = doc?.querySelector('svg') as SVGSVGElement | null;
 
-// Only render floors that actually contain a selected suite
-const objects = this.svgObjects?.toArray?.() ?? [];
-let wroteAnyPage = false;
+        if (!rootSvg) continue;
 
-for (let idx = 0; idx < objects.length; idx++) {
-  const objectRef = objects[idx];
-  const objectEl = objectRef.nativeElement as HTMLObjectElement;
-  const doc = objectEl.contentDocument as Document | null;
-  const rootSvg = doc?.querySelector('svg') as SVGSVGElement | null;
-  if (!rootSvg || !doc) continue;
+        if (idx > 0) {
+          pdf.addPage('landscape');
+        }
 
-  // ❗ Skip this floor if none of the selected suites are on it
-  if (!this.docHasSelectedSuites(doc)) continue;
+        // Page title and filters
+        pdf.setFontSize(20);
+        pdf.setTextColor(255, 102, 0);
+        pdf.text('Private Suite Dashboard - Floorplan', 20, 20);
+        pdf.setFontSize(12);
+        pdf.setTextColor(0, 0, 0);
+        let yPos = 35;
+        if (this.filters.outlet !== 'Select Outlet') {
+          pdf.text(`Outlet: ${this.filters.outlet}`, 20, yPos);
+          yPos += 8;
+        }
+        const floorLabel = this.getFloorLabel(this.displayedSvgs[idx] || '');
+        if (floorLabel) {
+          pdf.text(`Floor: ${floorLabel}`, 20, yPos);
+          yPos += 8;
+        }
+        if (this.filters.status !== 'Select Status') {
+          pdf.text(`Status: ${this.filters.status}`, 20, yPos);
+          yPos += 8;
+        }
+        if (this.filters.pax !== 'Select Pax') {
+          pdf.text(`Pax: ${this.filters.pax}`, 20, yPos);
+          yPos += 8;
+        }
+        if (this.filters.suite !== 'Select Suite') {
+          pdf.text(`Suite: ${this.filters.suite}`, 20, yPos);
+          yPos += 8;
+        }
 
-  // add a new page only after we've written the first one
-  if (wroteAnyPage) {
-    pdf.addPage('landscape');
-  } else {
-    wroteAnyPage = true;
-  }
+        // Clone and reset viewBox to original
+        const svgClone = rootSvg.cloneNode(true) as SVGSVGElement;
+        const originalViewBox = this.objectToOriginalViewBox.get(objectEl);
+        if (originalViewBox) {
+          svgClone.setAttribute('viewBox', originalViewBox);
+        }
 
-  // ----- header -----
-  pdf.setFontSize(20);
-  pdf.setTextColor(255, 102, 0);
-  pdf.text('Private Suite Dashboard - Floorplan', 20, 20);
-  pdf.setFontSize(12);
-  pdf.setTextColor(0, 0, 0);
-  let yPos = 35;
-
-  if (this.filters.outlet !== 'Select Outlet') {
-    pdf.text(`Outlet: ${this.filters.outlet}`, 20, yPos); yPos += 8;
-  }
-
-  // label for THIS floor (still fine to use displayedSvgs[idx])
-  const floorLabel = this.getFloorLabel(this.displayedSvgs[idx] || '');
-  if (floorLabel) { pdf.text(`Floor: ${floorLabel}`, 20, yPos); yPos += 8; }
-
-  if (this.filters.status !== 'Select Status') {
-    pdf.text(`Status: ${this.filters.status}`, 20, yPos); yPos += 8;
-  }
-  if (this.filters.pax !== 'Select Pax') {
-    pdf.text(`Pax: ${this.filters.pax}`, 20, yPos); yPos += 8;
-  }
-
-  // Suites (print count + names; wraps nicely)
-  const left = 20;
-  const maxWidth = pageWidth - 40;
-  if (this.selectedSuites?.length) {
-    const text = `Suites (${this.selectedSuites.length}): ${this.selectedSuites.join(', ')}`;
-    const lines = pdf.splitTextToSize(text, maxWidth);
-    lines.forEach((line: string) => { pdf.text(line, left, yPos); yPos += 6; });
-  } else if (this.filters.suite !== 'Select Suite') {
-    pdf.text(`Suite: ${this.filters.suite}`, left, yPos); yPos += 8;
-  }
-
-  // ----- image -----
-  const svgClone = rootSvg.cloneNode(true) as SVGSVGElement;
-  const originalViewBox = this.objectToOriginalViewBox.get(objectEl);
-  if (originalViewBox) svgClone.setAttribute('viewBox', originalViewBox);
-
-      try {
-        // Try direct SVG to canvas first for better shape preservation
-        let canvas: HTMLCanvasElement;
         try {
           const canvas = await this.svgToCanvas(svgClone);
           const margin = 5;
@@ -1124,28 +1068,6 @@ for (let idx = 0; idx < objects.length; idx++) {
           pdf.setTextColor(0, 0, 0);
           pdf.text('Floorplan SVG (could not render image)', 20, 20);
         }
-        
-        const margin = 5;
-        const imgY = Math.max(yPos + 4, 24);
-        const maxWidthImg = pageWidth - margin * 2;
-        const maxHeight = pageHeight - imgY - margin;
-        const aspect = canvas.width / canvas.height;
-        let imgWidth = maxWidthImg;
-        let imgHeight = imgWidth / aspect;
-        if (imgHeight > maxHeight) { imgHeight = maxHeight; imgWidth = imgHeight * aspect; }
-        const imgX = (pageWidth - imgWidth) / 2;
-        const quality = this.pdfQualitySettings[this.selectedPdfQuality].quality;
-        
-        // Use PNG for better quality on all devices, especially tablets
-        const imgData = canvas.toDataURL('image/png', quality);
-        
-        // Use 'MEDIUM' compression for better quality while maintaining reasonable file size
-        pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'MEDIUM');
-      } catch (e) {
-        console.warn('All SVG→canvas methods failed', e);
-        pdf.setFontSize(14); 
-        pdf.setTextColor(0, 0, 0);
-        pdf.text('Floorplan SVG (could not render image)', 20, 20);
       }
 
       // Save PDF with compression
@@ -1234,36 +1156,23 @@ for (let idx = 0; idx < objects.length; idx++) {
   ): Promise<HTMLCanvasElement> {
     return new Promise((resolve, reject) => {
       try {
-        const quality = this.pdfQualitySettings[this.selectedPdfQuality];
-        const deviceType = this.detectDeviceType();
-        
-        // Create a temporary container with optimized dimensions
+        // Method 1: Try using html2canvas first
         const tempDiv = document.createElement('div');
         tempDiv.style.position = 'absolute';
         tempDiv.style.left = '-9999px';
         tempDiv.style.top = '-9999px';
+        // Use quality settings for optimal file size
+        const quality = this.pdfQualitySettings[this.selectedPdfQuality];
         tempDiv.style.width = `${quality.dimensions.width}px`;
         tempDiv.style.height = `${quality.dimensions.height}px`;
         tempDiv.style.backgroundColor = '#ffffff';
+
         const svgClone = svgElement.cloneNode(true) as SVGSVGElement;
         svgClone.style.width = '100%';
         svgClone.style.height = '100%';
-        svgClone.style.display = 'block';
-        
-        // Ensure SVG has proper dimensions
-        if (!svgClone.getAttribute('width') || !svgClone.getAttribute('height')) {
-          const viewBox = svgClone.getAttribute('viewBox');
-          if (viewBox) {
-            const [, , w, h] = viewBox.split(/\s+/).map(Number);
-            if (!isNaN(w) && !isNaN(h)) {
-              svgClone.setAttribute('width', String(quality.dimensions.width));
-              svgClone.setAttribute('height', String(quality.dimensions.height));
-            }
-          }
-        }
-        
         tempDiv.appendChild(svgClone);
         document.body.appendChild(tempDiv);
+
         html2canvas(tempDiv, {
           backgroundColor: '#ffffff',
           scale: quality.scale,
@@ -1272,6 +1181,7 @@ for (let idx = 0; idx < objects.length; idx++) {
           logging: false,
           width: quality.dimensions.width,
           height: quality.dimensions.height,
+          // Additional optimizations for smaller file size
           removeContainer: true,
           foreignObjectRendering: false,
           imageTimeout: 0,
@@ -1335,7 +1245,16 @@ for (let idx = 0; idx < objects.length; idx++) {
 
   // Get quality description
   getQualityDescription(): string {
-    return 'High quality optimized for all devices';
+    switch (this.selectedPdfQuality) {
+      case 'high':
+        return 'High quality, larger file size';
+      case 'medium':
+        return 'Balanced quality and file size (recommended)';
+      case 'low':
+        return 'Smaller file size, reduced quality';
+      default:
+        return '';
+    }
   }
 
   // Handle quality change to update UI

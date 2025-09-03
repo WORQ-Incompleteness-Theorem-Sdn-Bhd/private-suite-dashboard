@@ -1,0 +1,15 @@
+{
+  "name": "private-suite-dashboard",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "frontend": "cd frontend && npm run start",
+    "backend": "cd backend/functions && npm run start",
+    "dev": "start cmd /k \"npm run frontend\" && start cmd /k \"npm run backend\"",
+    "stop": "taskkill /im node.exe /f"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": ""
+}

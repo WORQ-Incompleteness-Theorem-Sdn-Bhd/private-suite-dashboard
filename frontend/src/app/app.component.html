@@ -1,4 +1,9 @@
 <!-- Your global shell -->
-<div class="min-h-screen bg-gray-100">
+<div class="min-h-screen overflow-y-auto bg-gray-100">
+  <button
+    class="absolute right-0 flex flex-row items-center gap-2 p-2 rounded-full top-2 bg-amber-300 hover:bg-amber-600"
+    *ngIf="!isLoginPage()" (click)="logout()"><span class="material-symbols-outlined">
+      exit_to_app
+    </span><span>Logout</span></button>
   <router-outlet></router-outlet>
 </div>

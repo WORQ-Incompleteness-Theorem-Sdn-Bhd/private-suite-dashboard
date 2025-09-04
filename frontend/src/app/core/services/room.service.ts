@@ -46,14 +46,14 @@ export class RoomService {
       name: 'TTDI',
       svg: ['assets/TTDI-Level1.svg', 'assets/TTDIlevel3A.svg' , 'assets/Sibelco Office - L1.svg'],
     },
-    '5db8fb9798549f0010df15f3': {
+    /*'5db8fb9798549f0010df15f3': {
       name: 'STO-WIP',
       svg: [
         'assets/STO-Level11.svg',
         'assets/STO-Level12.svg',
         'assets/STO-Level14.svg',
       ],
-    },
+    },*/
     '62a9832b43c9f437e373e9dd': {
       name: 'KLS',
       svg: [

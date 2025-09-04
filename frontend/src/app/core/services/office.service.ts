@@ -43,7 +43,7 @@ export class OfficeService {
       displayName: 'TTDI',
       svg: ['assets/TTDI-Level1.svg', 'assets/TTDIlevel3A.svg', 'assets/Sibelco Office - L1.svg'],
     },
-    {
+    /*{
       id: '5db8fb9798549f0010df15f3',
       name: 'STO-WIP',
       displayName: 'STO-WIP',
@@ -52,7 +52,7 @@ export class OfficeService {
         'assets/STO-Level12.svg',
         'assets/STO-Level14.svg',
       ],
-    },
+    },*/
     {
       id: '62a9832b43c9f437e373e9dd',
       name: 'KLS',

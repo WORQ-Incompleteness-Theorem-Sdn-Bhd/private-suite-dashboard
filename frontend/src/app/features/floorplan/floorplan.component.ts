@@ -52,14 +52,14 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   isLoading = false;
 
   // Pax-based color palette
-  paxPalette = ['#003f5c','#444e86','#955196','#dd5182','#ff6e54','#ffa600'] as const;
+  paxPalette = ['rgb(61, 168, 218)','rgb(20, 50, 218)','rgb(215, 66, 218)','rgb(173, 4, 63)','rgb(240, 70, 40)','rgb(255, 166, 0)'] as const;
   paxBuckets = [
-    { max: 4,        label: '≤4'   }, // -> #003f5c
-    { max: 6,        label: '5–6'  }, // -> #444e86
-    { max: 8,        label: '7–8'  }, // -> #955196
-    { max: 12,       label: '9–12' }, // -> #dd5182
-    { max: 20,       label: '13–20'}, // -> #ff6e54
-    { max: Infinity, label: '21+'  }, // -> #ffa600
+    { max: 4,        label: '≤4'   }, // ->rgb(61, 168, 218)
+    { max: 6,        label: '5–6'  }, // ->rgb(20, 50, 218)
+    { max: 8,        label: '7–8'  }, // ->rgb(215, 66, 218)
+    { max: 12,       label: '9–12' }, // ->rgb(173, 4, 63)
+    { max: 20,       label: '13–20'}, // ->rgb(240, 70, 40)
+    { max: Infinity, label: '21+'  }, // ->rgb(255, 166, 0)
   ];
 
   // Multi-select suite functionality
@@ -398,13 +398,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
               id: room.id,
               name: room.name,
             });
-            // Auto-select the room in multi-select suites
-            if (!this.selectedSuites.includes(room.name)) {
-              this.selectedSuites = [room.name];
-            }
-            this.buildOptions();
-            this.applyFilters();
-            this.openPopupFromRoom(room);
+            this.openPopupFromRoom(room, event);
             matched = true;
             return;
           }
@@ -444,7 +438,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
               id: room.id,
               name: room.name,
             });
-            this.openPopupFromRoom(room);
+            this.openPopupFromRoom(room, ev);
           })
         );
         (el as any)[roomMarker] = true;
@@ -558,10 +552,6 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
             key,
             value: this.filters[key],
           });
-          // Auto-select the single room in multi-select suites
-          if (this.selectedSuites.length === 0) {
-            this.selectedSuites = [onlyRoom.name];
-          }
           setTimeout(() => this.openPopupFromRoom(onlyRoom), 60);
         } else {
           this.closePopup();
@@ -709,6 +699,15 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     this.applyFilters();
   }
 
+  // Handle suite search input changes
+  onSuiteSearchChange() {
+    // Rebuild options to apply the search filter
+    // Use setTimeout to debounce the search for better performance
+    setTimeout(() => {
+      this.buildOptions();
+    }, 100);
+  }
+
   // Get office ID from outlet name
   getOfficeIdFromOutletName(outletName: string): string | undefined {
     const office = this.officeService.getOffices().find(o => o.displayName === outletName);
@@ -786,7 +785,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     return { x, y, width, height };
   }
 
-  private openPopupFromRoom(room: Room) {
+  private openPopupFromRoom(room: Room, clickEvent?: MouseEvent) {
     let positioned = false;
     if (this.svgObjects) {
       this.svgObjects.forEach((ref) => {
@@ -800,38 +799,89 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         if (!viewBox) return;
         const el = this.findRoomElementInDoc(doc, room) as any;
         if (!el || !el.getBBox) return;
+        
+        // Get the room's bounding box in SVG coordinates
         const bbox = el.getBBox();
+        
+        // Get the SVG object's position and size on the page
         const objectRect = objectEl.getBoundingClientRect();
+        
+        // Calculate the scale factors from SVG viewBox to actual display size
         const scaleX = objectRect.width / viewBox.w;
         const scaleY = objectRect.height / viewBox.h;
-        const centerX = (bbox.x + bbox.width / 2 - viewBox.x) * scaleX;
-        const centerY = (bbox.y + bbox.height / 2 - viewBox.y) * scaleY;
-        let pageX = objectRect.left + centerX + 16;
-        let pageY = objectRect.top + centerY + 16;
-        const vw = window.innerWidth;
-        const vh = window.innerHeight;
-        const popupWidth = 260;
-        const popupHeight = 200;
-        if (pageX + popupWidth > vw) pageX = vw - popupWidth - 8;
-        if (pageY + popupHeight > vh) pageY = vh - popupHeight - 8;
+        
+        let popupX: number;
+        let popupY: number;
+        
+                 if (clickEvent) {
+           // Position popup adjacent to the room's bounding box
+           const roomCenterX = bbox.x + bbox.width / 2;
+           const roomCenterY = bbox.y + bbox.height / 2;
+           
+           // Convert SVG coordinates to screen coordinates
+           const screenX = objectRect.left + (roomCenterX - viewBox.x) * scaleX;
+           const screenY = objectRect.top + (roomCenterY - viewBox.y) * scaleY;
+           
+           // Position popup to the right of the room
+           popupX = screenX + bbox.width * scaleX / 2 + 10; // 10px offset from room edge
+           popupY = screenY - 10; // 10px offset above room center
+           
+           // Convert to container-relative coordinates
+           const containerRect = this.panelContainer?.nativeElement?.getBoundingClientRect();
+           if (containerRect) {
+             popupX = popupX - containerRect.left;
+             popupY = popupY - containerRect.top;
+           }
+         } else {
+           // Fallback: position popup adjacent to the room's bounding box
+           const roomCenterX = bbox.x + bbox.width / 2;
+           const roomCenterY = bbox.y + bbox.height / 2;
+           
+           // Convert SVG coordinates to screen coordinates
+           const screenX = objectRect.left + (roomCenterX - viewBox.x) * scaleX;
+           const screenY = objectRect.top + (roomCenterY - viewBox.y) * scaleY;
+           
+           // Position popup to the right of the room
+           popupX = screenX + bbox.width * scaleX / 2 + 10; // 10px offset from room edge
+           popupY = screenY - 10; // 10px offset above room center
+           
+           // Convert to container-relative coordinates
+           const containerRect = this.panelContainer?.nativeElement?.getBoundingClientRect();
+           if (containerRect) {
+             popupX = popupX - containerRect.left;
+             popupY = popupY - containerRect.top;
+           }
+         }
+        
+        // Ensure popup stays within container bounds
+        const popupWidth = 192; // w-48 = 12rem = 192px
+        const popupHeight = 120; // estimated height for compact popup
+        const containerRect = this.panelContainer?.nativeElement?.getBoundingClientRect();
+        
+        if (containerRect) {
+          const containerWidth = containerRect.width;
+          const containerHeight = containerRect.height;
+          
+          // Adjust if popup would go outside container
+          if (popupX + popupWidth > containerWidth) {
+            popupX = containerWidth - popupWidth - 10;
+          }
+          if (popupX < 0) {
+            popupX = 10;
+          }
+          if (popupY < 0) {
+            popupY = 10;
+          }
+          if (popupY + popupHeight > containerHeight) {
+            popupY = containerHeight - popupHeight - 10;
+          }
+        }
+        
         this.selectedRoom = room;
         this.showPopup = true;
-        const containerRect =
-          this.panelContainer?.nativeElement?.getBoundingClientRect?.();
-        if (containerRect) {
-          this.popupX = pageX - containerRect.left;
-          this.popupY = pageY - containerRect.top;
-        } else {
-          this.popupX = pageX;
-          this.popupY = pageY;
-        }
-        console.log('[Floorplan] popup positioned', {
-          OutletID: room.outlet,
-          ID: room.id,
-          room: room.name,
-          x: this.popupX,
-          y: this.popupY,
-        });
+        this.popupX = Math.max(0, popupX);
+        this.popupY = Math.max(0, popupY);
+
         positioned = true;
       });
     }

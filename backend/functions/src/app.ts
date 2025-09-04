@@ -9,5 +9,5 @@ app.use(cors({ origin: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use("/api/token", authRoutes);
-app.use("/api/resources", requireAuth, bqRoutes);
+app.use("/api/bq", requireAuth, bqRoutes);
 export default app;

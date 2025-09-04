@@ -1,6 +1,12 @@
 import { Router } from "express";
-import { getResources } from "../controller/resources.controller";
+import {
+  getFloors,
+  getLocations,
+  getResources,
+} from "../controller/bq.controller";
 const router = Router();
 
-router.get("/", getResources);
+router.get("/resources", getResources);
+router.get("/locations", getLocations);
+router.get("/floors", getFloors);
 export default router;

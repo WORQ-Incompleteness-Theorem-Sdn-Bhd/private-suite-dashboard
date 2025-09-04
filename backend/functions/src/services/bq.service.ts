@@ -20,7 +20,7 @@ interface FetchOptions {
 export async function fetchFromTable(opts: FetchOptions) {
   const {
     dataset = process.env.BIGQUERY_DATASET_ID || "",
-    table = process.env.BIGQUERY_TABLE_ID || "",
+    table = "",
     select = ["*"],
     filters = {},
 

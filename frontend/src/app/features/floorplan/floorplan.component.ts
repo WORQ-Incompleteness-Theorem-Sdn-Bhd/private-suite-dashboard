@@ -51,10 +51,10 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   isLoadingResources = false;
   isLoading = false;
 
-  // Pax-based color palette
+  // Pax-based color palette //legend
   paxPalette = ['rgb(61, 168, 218)','rgb(20, 50, 218)','rgb(215, 66, 218)','rgb(173, 4, 63)','rgb(240, 70, 40)','rgb(255, 166, 0)'] as const;
   paxBuckets = [
-    { max: 4,        label: '≤4'   }, // ->rgb(61, 168, 218)
+    { max: 4,        label: '2-4'   }, // ->rgb(61, 168, 218)
     { max: 6,        label: '5–6'  }, // ->rgb(20, 50, 218)
     { max: 8,        label: '7–8'  }, // ->rgb(215, 66, 218)
     { max: 12,       label: '9–12' }, // ->rgb(173, 4, 63)
@@ -101,18 +101,12 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   pdfExportMessage = '';
   showPdfMessage = false;
 
-  // PDF quality settings for file size optimization
-  pdfQualitySettings = {
-    high: { scale: 2, quality: 0.9, dimensions: { width: 800, height: 600 } },
-    medium: {
-      scale: 1.5,
-      quality: 0.7,
-      dimensions: { width: 600, height: 450 },
-    },
-    low: { scale: 1, quality: 0.5, dimensions: { width: 400, height: 300 } },
+  // PDF quality settings - using medium quality only
+  private readonly pdfQuality = {
+    scale: 2,
+    quality: 0.92,
+    dimensions: { width: 2300, height: 1600 }
   };
-
-  selectedPdfQuality: 'high' | 'medium' | 'low' = 'medium';
 
   Occupied = 0;
   Available = 0;
@@ -766,25 +760,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     if ([x, y, w, h].some((n) => Number.isNaN(n))) return null;
     return { x, y, w, h };
   }
-
-  // Convert a DOM client rect to SVG viewBox units
-  private clientRectToSvgBBox(
-    objectEl: HTMLObjectElement,
-    rootSvg: SVGSVGElement,
-    rect: DOMRect
-  ): { x: number; y: number; width: number; height: number } | null {
-    const objectRect = objectEl.getBoundingClientRect();
-    const vb = this.getSvgViewBox(rootSvg);
-    if (!vb || objectRect.width === 0 || objectRect.height === 0) return null;
-    const unitsPerPxX = vb.w / objectRect.width;
-    const unitsPerPxY = vb.h / objectRect.height;
-    const x = vb.x + (rect.left - objectRect.left) * unitsPerPxX;
-    const y = vb.y + (rect.top - objectRect.top) * unitsPerPxY;
-    const width = rect.width * unitsPerPxX;
-    const height = rect.height * unitsPerPxY;
-    return { x, y, width, height };
-  }
-
+  
   private openPopupFromRoom(room: Room, clickEvent?: MouseEvent) {
     let positioned = false;
     if (this.svgObjects) {
@@ -1223,6 +1199,46 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
           yPos += 8;
         }
 
+        // Add dynamic Pax legend if there are available rooms
+        const dynamicLegend = this.getDynamicPaxLegend();
+        if (dynamicLegend.length > 0) {
+          yPos += 4;
+          pdf.setFontSize(10);
+          pdf.setTextColor(0, 0, 0);
+          pdf.text('Pax Capacity Colors:', 20, yPos);
+          yPos += 6;
+          
+          // Draw legend items in a compact grid layout
+          const legendStartX = 20;
+          const legendItemWidth = 40; // Reduced from 60 to 40
+          const legendItemHeight = 6; // Reduced from 8 to 6
+          let currentX = legendStartX;
+          let currentY = yPos;
+          
+          dynamicLegend.forEach((item, index) => {
+            // Check if we need to move to next row
+            if (currentX + legendItemWidth > pageWidth - 20) {
+              currentX = legendStartX;
+              currentY += legendItemHeight + 1; // Reduced gap from 2 to 1
+            }
+            
+            // Draw color box
+            const colorRgb = this.hexToRgb(item.color);
+            if (colorRgb) {
+              pdf.setFillColor(colorRgb.r, colorRgb.g, colorRgb.b);
+              pdf.rect(currentX, currentY - 2, 4, 4, 'F');
+            }
+            
+            // Draw label
+            pdf.setFillColor(0, 0, 0);
+            pdf.text(item.label, currentX + 5, currentY); // Reduced gap from 6 to 5
+            
+            currentX += legendItemWidth;
+          });
+          
+          yPos = currentY + 8;
+        }
+
         // Clone and reset viewBox to original
         const svgClone = rootSvg.cloneNode(true) as SVGSVGElement;
         const originalViewBox = this.objectToOriginalViewBox.get(objectEl);
@@ -1231,7 +1247,9 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         }
 
         try {
-          const canvas = await this.svgToCanvas(svgClone);
+          let canvas = await this.svgToCanvas(svgClone);
+          canvas = this.downscaleCanvasIfNeeded(canvas);
+          
           const margin = 5;
           const imgY = Math.max(yPos + 4, 24);
           const maxWidth = pageWidth - margin * 2;
@@ -1244,19 +1262,10 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
             imgWidth = imgHeight * aspect;
           }
           const imgX = (pageWidth - imgWidth) / 2;
-          const quality =
-            this.pdfQualitySettings[this.selectedPdfQuality].quality;
-          const imgData = canvas.toDataURL('image/jpeg', quality);
-          pdf.addImage(
-            imgData,
-            'PNG',
-            imgX,
-            imgY,
-            imgWidth,
-            imgHeight,
-            undefined,
-            'FAST'
-          );
+
+          // Use PNG for crisp vectors; jsPDF will compress
+          const imgData = canvas.toDataURL('image/png');
+          pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'MEDIUM');
         } catch (canvasError) {
           console.warn(
             'Failed to convert SVG to canvas on page',
@@ -1273,12 +1282,11 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       const fileName = `floorplan-${
         this.filters.outlet !== 'Select Outlet' ? this.filters.outlet : 'all'
       }-${new Date().toISOString().split('T')[0]}.pdf`;
-      pdf.save(fileName);
+      this.savePdfSmart(pdf, fileName);
 
       // Show success message with file size info
-      const estimatedSize = this.getEstimatedFileSize();
       this.showMessage(
-        `Floorplan PDF exported successfully! 🎉 (Estimated size: ${estimatedSize})`
+        `Floorplan PDF exported successfully! 🎉 `
       );
     } catch (error) {
       console.error('Error exporting floorplan as PDF:', error);
@@ -1290,65 +1298,6 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       this.isExportingFloorplan = false;
     }
   }
-
-  // Helper method to add room table to PDF
-  private addRoomTableToPdf(pdf: jsPDF, startY: number) {
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const margin = 20;
-    const tableWidth = pageWidth - margin * 2;
-    const colWidths = [tableWidth * 0.3, tableWidth * 0.7]; // Room name: 30%, Details: 70%
-
-    // Table headers
-    pdf.setFillColor(243, 244, 246); // Light gray background
-    pdf.rect(margin, startY, tableWidth, 12, 'F');
-    pdf.setTextColor(0, 0, 0);
-    pdf.setFontSize(12);
-    pdf.setFont('helvetica', 'bold');
-
-    pdf.text('Room Name', margin + 5, startY + 8);
-    pdf.text('Details', margin + colWidths[0] + 5, startY + 8);
-
-    // Table rows
-    let currentY = startY + 12;
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(10);
-
-    for (const room of this.filteredRooms) {
-      // Check if we need a new page
-      if (currentY > pdf.internal.pageSize.getHeight() - 40) {
-        pdf.addPage();
-        currentY = 20;
-      }
-
-      // Room name
-      pdf.setTextColor(0, 0, 0);
-      pdf.text(room.name, margin + 5, currentY + 6);
-
-      // Room details
-      const details = [
-        `Type: ${room.type}`,
-        `Status: ${room.status}`,
-        `Pax: ${room.capacity}`,
-        `Area: ${room.area} sqft`,
-        `Price: RM ${room.price}`,
-        `Deposit: RM ${room.deposit}`,
-      ];
-
-      let detailY = currentY;
-      for (const detail of details) {
-        pdf.setTextColor(75, 85, 99); // Gray text
-        pdf.text(detail, margin + colWidths[0] + 5, detailY + 6);
-        detailY += 4;
-      }
-
-      // Row separator
-      currentY = Math.max(currentY + 12, detailY + 4);
-      pdf.setDrawColor(229, 231, 235); // Light gray border
-      pdf.line(margin, currentY, margin + tableWidth, currentY);
-      currentY += 2;
-    }
-  }
-
   // Helper method to convert SVG to canvas more reliably
   private async svgToCanvas(
     svgElement: SVGSVGElement
@@ -1360,10 +1309,9 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         tempDiv.style.position = 'absolute';
         tempDiv.style.left = '-9999px';
         tempDiv.style.top = '-9999px';
-        // Use quality settings for optimal file size
-        const quality = this.pdfQualitySettings[this.selectedPdfQuality];
-        tempDiv.style.width = `${quality.dimensions.width}px`;
-        tempDiv.style.height = `${quality.dimensions.height}px`;
+        // Use medium quality settings for optimal file size
+        tempDiv.style.width = `${this.pdfQuality.dimensions.width}px`;
+        tempDiv.style.height = `${this.pdfQuality.dimensions.height}px`;
         tempDiv.style.backgroundColor = '#ffffff';
 
         const svgClone = svgElement.cloneNode(true) as SVGSVGElement;
@@ -1374,16 +1322,15 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
 
         html2canvas(tempDiv, {
           backgroundColor: '#ffffff',
-          scale: quality.scale,
+          scale: this.pdfQuality.scale,
           useCORS: true,
           allowTaint: true,
           logging: false,
-          width: quality.dimensions.width,
-          height: quality.dimensions.height,
-          // Additional optimizations for smaller file size
+          width: this.pdfQuality.dimensions.width,
+          height: this.pdfQuality.dimensions.height,
           removeContainer: true,
           foreignObjectRendering: false,
-          imageTimeout: 0,
+          imageTimeout: 30000 // increased from 0 for iOS stability
         })
           .then((canvas) => {
             document.body.removeChild(tempDiv);
@@ -1411,57 +1358,80 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     }, 5000);
   }
 
-  // Get estimated file size for each quality level (static)
-  getLowQualityFileSize(): string {
-    return '~200-500 KB';
-  }
-
-  getMediumQualityFileSize(): string {
+  // Get estimated file size for medium quality (for display in success message)
+  getEstimatedFileSize(): string {
     return '~500 KB - 1 MB';
   }
 
-  getHighQualityFileSize(): string {
-    return '~2-4 MB';
-  }
-
-  // Get estimated file size for selected quality (for display in success message)
-  getEstimatedFileSize(): string {
-    const quality = this.pdfQualitySettings[this.selectedPdfQuality];
-    const baseSize =
-      quality.dimensions.width *
-      quality.dimensions.height *
-      quality.scale *
-      quality.scale;
-
-    if (this.selectedPdfQuality === 'high') {
-      return '~2-4 MB';
-    } else if (this.selectedPdfQuality === 'medium') {
-      return '~500 KB - 1 MB';
-    } else {
-      return '~200-500 KB';
+  // Get dynamic Pax legend based on filtered rooms
+  private getDynamicPaxLegend(): Array<{label: string, color: string}> {
+    const legend: Array<{label: string, color: string}> = [];
+    
+    // Only show legend if user has selected "Available" status
+    if (this.filters.status !== 'Available') {
+      return legend;
     }
-  }
 
-  // Get quality description
-  getQualityDescription(): string {
-    switch (this.selectedPdfQuality) {
-      case 'high':
-        return 'High quality, larger file size';
-      case 'medium':
-        return 'Balanced quality and file size (recommended)';
-      case 'low':
-        return 'Smaller file size, reduced quality';
-      default:
-        return '';
-    }
-  }
+    const usedPaxSizes = new Set<number>();
 
-  // Handle quality change to update UI
-  onQualityChange() {
-    // Force change detection to update the estimated file size display
-    this.ngZone.run(() => {
-      // This will trigger template updates
+    // Collect all Pax sizes from filtered rooms
+    this.filteredRooms.forEach(room => {
+      if (room.status === 'Available') {
+        usedPaxSizes.add(room.capacity);
+      }
     });
+
+    // Only show legend if there are available rooms
+    if (usedPaxSizes.size === 0) {
+      return legend;
+    }
+
+    // Create legend entries only for Pax buckets that have actual rooms
+    this.paxBuckets.forEach((bucket, index) => {
+      // Check if any of the used Pax sizes fall within this bucket
+      const hasMatchingRooms = Array.from(usedPaxSizes).some(pax => {
+        // For the first bucket (2-4), check if pax is between 2 and 4
+        if (index === 0) {
+          return pax >= 2 && pax <= bucket.max;
+        }
+        // For other buckets, check if pax falls within the range
+        const prevBucket = this.paxBuckets[index - 1];
+        return pax > prevBucket.max && pax <= bucket.max;
+      });
+      
+      if (hasMatchingRooms) {
+        legend.push({
+          label: bucket.label,
+          color: this.paxPalette[index]
+        });
+      }
+    });
+
+    return legend;
+  }
+
+  // Convert hex color to RGB for jsPDF
+  private hexToRgb(hex: string): {r: number, g: number, b: number} | null {
+    const result = /^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/.exec(hex);
+    if (result) {
+      return {
+        r: parseInt(result[1], 10),
+        g: parseInt(result[2], 10),
+        b: parseInt(result[3], 10)
+      };
+    }
+    
+    // Handle hex format
+    const hexResult = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    if (hexResult) {
+      return {
+        r: parseInt(hexResult[1], 16),
+        g: parseInt(hexResult[2], 16),
+        b: parseInt(hexResult[3], 16)
+      };
+    }
+    
+    return null;
   }
 
   getFloorLabel(path: string): string {
@@ -1484,5 +1454,37 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
 
     // 4) final fallback: humanize filename
     return base.replace(/[_\-]/g, ' ').trim();
+  }
+
+  private isIOSDevice(): boolean {
+    return /iphone|ipad|ipod/i.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  }
+
+  private savePdfSmart(pdf: jsPDF, fileName: string) {
+    const blob = pdf.output('blob');
+    const url = URL.createObjectURL(blob);
+    if (this.isIOSDevice()) {
+      window.open(url, '_blank'); // iOS can Share/Save
+    } else {
+      pdf.save(fileName);
+    }
+  }
+
+  private downscaleCanvasIfNeeded(src: HTMLCanvasElement): HTMLCanvasElement {
+    const MAX_PX = 8_000_000; // ~8MP safety cap
+    const area = src.width * src.height;
+    if (area <= MAX_PX) return src;
+
+    const scale = Math.sqrt(MAX_PX / area);
+    const dst = document.createElement('canvas');
+    dst.width = Math.max(1, Math.floor(src.width  * scale));
+    dst.height = Math.max(1, Math.floor(src.height * scale));
+
+    const ctx = dst.getContext('2d')!;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(src, 0, 0, dst.width, dst.height);
+    return dst;
   }
 }

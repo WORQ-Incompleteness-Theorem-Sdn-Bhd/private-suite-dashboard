@@ -9,6 +9,7 @@ import {
 } from '@angular/fire/auth';
 import { environment } from '../../environments/environment.prod';
 import { Observable } from 'rxjs';
+import { ToastService } from './toast.service';
 
 @Injectable({
   providedIn: 'root',
@@ -17,13 +18,21 @@ export class AuthService {
   private auth = inject(Auth);
   private http = inject(HttpClient);
 
-  constructor(private router: Router) {
+  constructor(
+    private router: Router,
+    private toastService: ToastService
+  ) {
     this.auth = getAuth();
   }
 
   async signInWithGoogle() {
     try {
       const provider = new GoogleAuthProvider();
+      // Add additional parameters to help with COOP issues
+      provider.setCustomParameters({
+        prompt: 'select_account'
+      });
+      
       const credential: any = await signInWithPopup(this.auth, provider);
       const user = credential.user;
       const tokenResponse = credential._tokenResponse;
@@ -35,13 +44,27 @@ export class AuthService {
       const allowedDomain = '@worq.space';
 
       if (!userEmail.endsWith(allowedDomain)) {
-        alert('You are not part of WORQ!');
+        this.toastService.error('You are not part of WORQ!');
         this.handleNonInternalUser(user);
       } else {
         this.handleInternalUser(user, user.uid);
       }
     } catch (error: any) {
-      console.error('An error occured while signing in');
+      console.error('An error occured while signing in:', error);
+      
+      // Handle specific error cases
+      if (error?.code === 'auth/popup-closed-by-user') {
+        this.toastService.info('Sign-in cancelled');
+      } else if (error?.code === 'auth/popup-blocked') {
+        this.toastService.error('Pop-up blocked by browser. Please enable pop-ups and try again.');
+      } else if (error?.code === 'auth/cancelled-popup-request') {
+        this.toastService.info('Sign-in cancelled');
+      } else if (error?.code === 'auth/network-request-failed') {
+        this.toastService.error('Network error. Please check your connection and try again.');
+      } else {
+        this.toastService.error('Sign-in failed. Please try again.');
+      }
+      throw error; // Re-throw so login component can handle it
     }
   }
 
@@ -57,9 +80,9 @@ export class AuthService {
       //   .toPromise();
       sessionStorage.removeItem('userAccessToken');
       await this.logout();
-      // this.toast.show('warning', 'You are not a Worq employee');
+      this.toastService.warning('You are not a Worq employee');
     } catch (err) {
-      //  this.toast.show('error', 'Error processing user');
+      this.toastService.error('Error processing user');
     }
   }
 
@@ -68,6 +91,7 @@ export class AuthService {
       const tokenResponse = await this.getUserToken(uid).toPromise();
 
       if (!tokenResponse?.token) {
+        this.toastService.error('Authentication failed. Access denied.');
         await this.router.navigate(['/unauthorized']);
         return;
       }
@@ -84,11 +108,21 @@ export class AuthService {
 
       // sessionStorage.setItem('user', JSON.stringify(userDetail));
 
-      // this.toast.show('success', `Welcome ${userDetail.name}`);
+      this.toastService.success('Welcome to WORQ Floorplan Dashboard!');
       await this.router.navigate(['/floorplan']);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error in handleInternalUser:', error);
-      // this.toast.show('error', 'Login failed');
+      
+      // Handle specific backend connection errors
+      if (error?.status === 0 || error?.message?.includes('ERR_CONNECTION_REFUSED')) {
+        this.toastService.error('Backend server is not running. Please contact your administrator.');
+      } else if (error?.status === 500) {
+        this.toastService.error('Server error. Please try again later.');
+      } else if (error?.status === 401) {
+        this.toastService.error('Authentication failed. Please try again.');
+      } else {
+        this.toastService.error('Login failed. Please try again.');
+      }
       throw error;
     }
   }
@@ -137,10 +171,11 @@ export class AuthService {
 
       await this.auth.signOut();
       sessionStorage.clear();
+      this.toastService.info('Successfully logged out');
       await this.router.navigate(['/login']);
     } catch (error) {
       console.error('Error during logout:', error);
-      //  this.toast.show('error', 'Logout failed');
+      this.toastService.error('Logout failed');
     } finally {
       //  this.loadingService.hide();
     }

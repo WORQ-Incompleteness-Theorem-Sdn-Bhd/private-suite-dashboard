@@ -9,15 +9,19 @@ import {
   NgZone,
 } from '@angular/core';
 import { Room } from '../../core/models/room.model';
-import { RoomService } from '../../core/services/room.service';
+import { RoomService, ResourceParams } from '../../core/services/room.service';
+import { OfficeService } from '../../core/services/office.service';
+import { ToastService } from '../../shared/services/toast.service';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
-import { Observable } from 'rxjs';
+import { Observable, of } from 'rxjs'; 
+import { catchError, finalize } from 'rxjs/operators';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import { ToastComponent } from '../../shared/components/toast.component';
 
-type FilterKey = 'outlet' | 'status' | 'pax' | 'suite';
+type FilterKey = 'outlet' | 'status' | 'pax';
 
 interface FilterConfig {
   key: FilterKey;
@@ -27,7 +31,7 @@ interface FilterConfig {
 
 @Component({
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, ToastComponent],
   selector: 'app-floorplan',
   templateUrl: './floorplan.component.html',
   styleUrls: ['./floorplan.component.scss'],
@@ -42,6 +46,26 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   selectedFloorSvg: string = 'all';
   floorOptions: string[] = [];
 
+  // Loading states
+  isLoadingOffices = false;
+  isLoadingResources = false;
+  isLoading = false;
+
+  // Pax-based color palette //legend
+  paxPalette = ['rgb(61, 168, 218)','rgb(20, 50, 218)','rgb(215, 66, 218)','rgb(173, 4, 63)','rgb(240, 70, 40)','rgb(255, 166, 0)'] as const;
+  paxBuckets = [
+    { max: 4,        label: '2-4'   }, // ->rgb(61, 168, 218)
+    { max: 6,        label: '5–6'  }, // ->rgb(20, 50, 218)
+    { max: 8,        label: '7–8'  }, // ->rgb(215, 66, 218)
+    { max: 12,       label: '9–12' }, // ->rgb(173, 4, 63)
+    { max: 20,       label: '13–20'}, // ->rgb(240, 70, 40)
+    { max: Infinity, label: '21+'  }, // ->rgb(255, 166, 0)
+  ];
+
+  // Multi-select suite functionality
+  selectedSuites: string[] = [];
+  suiteSearchTerm: string = '';
+
   isArray(value: unknown): boolean {
     return Array.isArray(value);
   }
@@ -50,14 +74,12 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     { key: 'outlet', label: 'Outlet', options: [] },
     { key: 'status', label: 'Status', options: [] },
     { key: 'pax', label: 'Pax', options: [] },
-    { key: 'suite', label: 'Suite', options: [] },
   ];
 
   filters = {
     outlet: 'Select Outlet',
     status: 'Select Status',
     pax: 'Select Pax',
-    suite: 'Select Suite',
     svg: 'all',
   };
   outletOptions: string[] = [];
@@ -79,18 +101,12 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   pdfExportMessage = '';
   showPdfMessage = false;
 
-  // PDF quality settings for file size optimization
-  pdfQualitySettings = {
-    high: { scale: 2, quality: 0.9, dimensions: { width: 800, height: 600 } },
-    medium: {
-      scale: 1.5,
-      quality: 0.7,
-      dimensions: { width: 600, height: 450 },
-    },
-    low: { scale: 1, quality: 0.5, dimensions: { width: 400, height: 300 } },
+  // PDF quality settings - using medium quality only
+  private readonly pdfQuality = {
+    scale: 2,
+    quality: 0.92,
+    dimensions: { width: 2300, height: 1600 }
   };
-
-  selectedPdfQuality: 'high' | 'medium' | 'low' = 'medium';
 
   Occupied = 0;
   Available = 0;
@@ -130,6 +146,24 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       'UBP-L13A.svg': 'Level 13A',
       'UBP-L13AAIRIT.svg': 'Level 13A AIRIT',
     },
+    '8FA': {
+      '8FA.svg': 'Floor 15',
+    },
+    ITG: {
+      'ITG.svg': 'Floor 9',
+    },
+    UBP: {
+      'UBP.svg': 'Floor 2',
+    },
+    KLG: {
+      'KLG.svg': 'Floor 3',
+    },
+    SV2: {
+      'SV2.svg': 'Floor 12',
+    },
+    SPM: {
+      'SPM.svg': 'Floor 4',
+    },
   };
 
   private basename(path: string): string {
@@ -137,6 +171,8 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   }
   constructor(
     private roomService: RoomService,
+    private officeService: OfficeService,
+    private toastService: ToastService,
     public sanitizer: DomSanitizer,
     private ngZone: NgZone
   ) {}
@@ -152,6 +188,10 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   trackBySvgUrl = (_: number, url: string) => url;
 
   ngOnInit() {
+    // 1) Load outlets first
+    this.loadOffices();
+
+    // 2) Subscribe to rooms changes
     this.roomService.rooms$.subscribe((rooms) => {
       this.rooms = rooms;
       this.roomIdIndex = this.buildRoomIdIndex();
@@ -167,22 +207,82 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       this.buildOptions();
       this.applyFilters();
     });
-    this.roomService.fetchRooms();
   }
 
-  private attachSvgListeners() {
-    const objectEl = document.getElementById(
-      'floorplanSvg'
-    ) as HTMLObjectElement;
-    if (!objectEl) return;
-
-    const svgDoc = objectEl.contentDocument;
-    if (!svgDoc) return;
-
-    this.attachRoomListeners(svgDoc);
-    this.updateSvgColors();
+  // Load offices on app start
+  loadOffices() {
+    this.isLoadingOffices = true;
+    this.officeService.loadOffices().pipe(
+      catchError((error) => {
+        console.error('Error loading outlet:', error);
+        this.toastService.error('Failed to load outlet. Please try again.');
+        return of(null);
+      }),
+      finalize(() => {
+        this.isLoadingOffices = false;
+      })
+    ).subscribe((response) => {
+      if (response && response.success) {
+        this.toastService.success('Outlets loaded successfully');
+        this.buildOptions();
+      }
+    });
   }
 
+  // When user selects an outlet
+  onOutletChange(outletDisplayName: string) {
+    if (!outletDisplayName || outletDisplayName === 'Select Outlet') {
+      this.rooms = [];
+      this.filteredRooms = [];
+      this.selectedOutletSvgs = [];
+      this.displayedSvgs = [];
+      this.buildOptions();
+      this.applyFilters();
+      return;
+    }
+
+    // Get the office ID from the display name
+    const officeId = this.getOfficeIdFromOutletName(outletDisplayName);
+    if (!officeId) {
+      console.error('Office ID not found for outlet:', outletDisplayName);
+      this.toastService.error('Invalid outlet selected');
+      return;
+    }
+
+    // 3) Fetch resources for this outlet using office.id
+    this.loadResources({ officeId });
+  }
+
+  // Fetch resources for selected outlet
+  loadResources(params: ResourceParams) {
+    this.isLoadingResources = true;
+    this.roomService.getResources(params).pipe(
+      catchError((error) => {
+        console.error('Error loading resources:', error);
+        this.toastService.error('Failed to load resources. Please try again.');
+        return of(null);
+      }),
+      finalize(() => {
+        this.isLoadingResources = false;
+      })
+    ).subscribe((response) => {
+      if (response) {
+        this.toastService.success('Resources loaded successfully');
+        // Update selected outlet SVGs and build filters from backend data
+        this.updateSelectedOutletSvgs();
+        this.buildFiltersFromBackend();
+        // Force SVG color updates after data is loaded
+        setTimeout(() => this.updateSvgColors(), 100);
+      }
+    });
+  }
+
+  // Build filters from backend data
+  buildFiltersFromBackend() {
+    this.buildOptions();
+    this.applyFilters();
+  }
+  
   ngAfterViewInit() {
     const attach = () => {
       if (!this.svgObjects) return;
@@ -279,11 +379,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
               id: room.id,
               name: room.name,
             });
-            // Sync selection to filters so metrics reflect the picked room
-            this.filters.suite = room.name;
-            this.buildOptions();
-            this.applyFilters();
-            this.openPopupFromRoom(room);
+            this.openPopupFromRoom(room, event);
             matched = true;
             return;
           }
@@ -323,16 +419,13 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
               id: room.id,
               name: room.name,
             });
-            this.openPopupFromRoom(room);
+            this.openPopupFromRoom(room, ev);
           })
         );
         (el as any)[roomMarker] = true;
       }
     });
   }
-
-  // Add a search term for suite
-  suiteSearchTerm: string = '';
 
   buildOptions() {
     console.log('=== Building Options ===');
@@ -360,10 +453,8 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     );
     console.log('After pax filter:', filteredForSuite);
 
-    // Outlet options: all unique outlets
-    this.outletOptions = Array.from(
-      new Set(this.rooms.map((r) => r.outlet))
-    ).sort();
+    // Outlet options: from office service
+    this.outletOptions = this.officeService.getOffices().map(office => office.displayName).sort();
     console.log('Outlet options:', this.outletOptions);
 
     // Status options: based on selected outlet
@@ -412,8 +503,6 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     this.filtersConfig.find((f) => f.key === 'status')!.options =
       this.statusOptions;
     this.filtersConfig.find((f) => f.key === 'pax')!.options = this.paxOptions;
-    this.filtersConfig.find((f) => f.key === 'suite')!.options =
-      this.suiteOptions;
   }
 
   updateFilter(type: string, event: Event) {
@@ -422,33 +511,19 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     if (select) {
       this.filters[key] = select.value;
       if (key === 'outlet') {
+        // When outlet changes, load resources for that outlet
+        this.onOutletChange(select.value);
         this.updateSelectedOutletSvgs();
         this.updateDisplayedSvgs();
+      } else {
+        // For other filters, apply client-side filtering
+        this.buildOptions();
+        this.applyFilters();
+        // Update SVG colors after filter changes
+        setTimeout(() => this.updateSvgColors(), 50);
       }
-      this.buildOptions();
-      this.applyFilters();
-      if (key === 'suite') {
-        // Zoom to the selected suite when explicitly chosen
-        if (this.filters.suite === 'Select Suite') {
-          this.closePopup();
-        } else {
-          const outletNow = this.filters.outlet;
-          const candidates = this.rooms.filter(
-            (r) => r.name === this.filters.suite
-          );
-          const room =
-            candidates.find(
-              (r) => outletNow === 'Select Outlet' || r.outlet === outletNow
-            ) || candidates[0];
-          if (room) {
-            console.log('[Floorplan] zoom due to suite selection', {
-              id: room.id,
-              name: room.name,
-            });
-            setTimeout(() => this.openPopupFromRoom(room), 60);
-          }
-        }
-      } else if (key === 'status' || key === 'pax' || key === 'outlet') {
+      
+      if (key === 'status' || key === 'pax' || key === 'outlet') {
         // Only auto-zoom if filtering yields exactly one room
         if (this.filteredRooms.length === 1) {
           const onlyRoom = this.filteredRooms[0];
@@ -458,13 +533,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
             key,
             value: this.filters[key],
           });
-          this.filters.suite = onlyRoom.name; // sync suite for consistency
           setTimeout(() => this.openPopupFromRoom(onlyRoom), 60);
-        } else if (this.filters.suite !== 'Select Suite') {
-          // If suite remains selected after other filters, keep zooming to it
-          const target = this.rooms.find((r) => r.name === this.filters.suite);
-          if (target) {
-          }
         } else {
           this.closePopup();
         }
@@ -506,8 +575,9 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
             r.status === this.filters.status) &&
           (this.filters.pax === 'Select Pax' ||
             r.capacity.toString() === this.filters.pax) &&
-          (this.filters.suite === 'Select Suite' ||
-            r.name === this.filters.suite)
+
+          (this.selectedSuites.length === 0 ||
+            this.selectedSuites.includes(r.name))
       )
 
       .sort((a, b) => {
@@ -516,7 +586,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
           return a.capacity - b.capacity;
         }
         // Sort by Suite name if Suite filter is active
-        if (this.filters.suite !== 'Select Suite') {
+        if (this.selectedSuites.length > 0) {
           return a.name.localeCompare(b.name);
         }
         return 0; // No sorting if no filter
@@ -528,8 +598,11 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     this.Available = this.filteredRooms.filter(
       (r) => r.status === 'Available'
     ).length;
+    console.log('Filtered rooms:', this.filteredRooms.length);
     console.log('Occupied:', this.Occupied);
     console.log('Available:', this.Available);
+    
+    // Update SVG colors after filtering
     this.updateSvgColors();
   }
 
@@ -539,11 +612,18 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         const el = doc.getElementById(room.id);
         if (el) {
           if (this.filteredRooms.includes(room)) {
-            // Selected → colored
-            el.setAttribute(
-              'fill',
-              room.status === 'Occupied' ? '#ef4444' : '#22c55e'
-            );
+            // Selected → colored with pax-based palette for available rooms
+            let color: string;
+            if (room.status === 'Occupied') {
+              color = '#ef4444'; // Red for occupied
+            } else if (this.filters.status === 'Available') {
+              // Use pax-based palette for available rooms
+              color = this.getPaxColor(room.capacity);
+            } else {
+              color = '#22c55e'; // Green for available (default)
+            }
+            
+            el.setAttribute('fill', color);
             el.setAttribute('opacity', '0.7');
             (el as any).style.pointerEvents = 'auto';
           } else {
@@ -568,6 +648,51 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         if (doc) applyColors(doc);
       });
     }
+  }
+
+  // Get color based on pax capacity
+  getPaxColor(capacity: number): string {
+    for (let i = 0; i < this.paxBuckets.length; i++) {
+      if (capacity <= this.paxBuckets[i].max) {
+        return this.paxPalette[i];
+      }
+    }
+    return this.paxPalette[this.paxPalette.length - 1]; // Fallback to last color
+  }
+
+  // Multi-select suite functionality
+  toggleSuiteSelection(suiteName: string) {
+    const index = this.selectedSuites.indexOf(suiteName);
+    if (index > -1) {
+      this.selectedSuites.splice(index, 1);
+    } else {
+      this.selectedSuites.push(suiteName);
+    }
+    this.applyFilters();
+  }
+
+  isSuiteSelected(suiteName: string): boolean {
+    return this.selectedSuites.includes(suiteName);
+  }
+
+  clearSuiteSelection() {
+    this.selectedSuites = [];
+    this.applyFilters();
+  }
+
+  // Handle suite search input changes
+  onSuiteSearchChange() {
+    // Rebuild options to apply the search filter
+    // Use setTimeout to debounce the search for better performance
+    setTimeout(() => {
+      this.buildOptions();
+    }, 100);
+  }
+
+  // Get office ID from outlet name
+  getOfficeIdFromOutletName(outletName: string): string | undefined {
+    const office = this.officeService.getOffices().find(o => o.displayName === outletName);
+    return office?.id;
   }
 
   private normalizeId(value: string | undefined | null): string {
@@ -622,26 +747,8 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     if ([x, y, w, h].some((n) => Number.isNaN(n))) return null;
     return { x, y, w, h };
   }
-
-  // Convert a DOM client rect to SVG viewBox units
-  private clientRectToSvgBBox(
-    objectEl: HTMLObjectElement,
-    rootSvg: SVGSVGElement,
-    rect: DOMRect
-  ): { x: number; y: number; width: number; height: number } | null {
-    const objectRect = objectEl.getBoundingClientRect();
-    const vb = this.getSvgViewBox(rootSvg);
-    if (!vb || objectRect.width === 0 || objectRect.height === 0) return null;
-    const unitsPerPxX = vb.w / objectRect.width;
-    const unitsPerPxY = vb.h / objectRect.height;
-    const x = vb.x + (rect.left - objectRect.left) * unitsPerPxX;
-    const y = vb.y + (rect.top - objectRect.top) * unitsPerPxY;
-    const width = rect.width * unitsPerPxX;
-    const height = rect.height * unitsPerPxY;
-    return { x, y, width, height };
-  }
-
-  private openPopupFromRoom(room: Room) {
+  
+  private openPopupFromRoom(room: Room, clickEvent?: MouseEvent) {
     let positioned = false;
     if (this.svgObjects) {
       this.svgObjects.forEach((ref) => {
@@ -655,38 +762,89 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         if (!viewBox) return;
         const el = this.findRoomElementInDoc(doc, room) as any;
         if (!el || !el.getBBox) return;
+        
+        // Get the room's bounding box in SVG coordinates
         const bbox = el.getBBox();
+        
+        // Get the SVG object's position and size on the page
         const objectRect = objectEl.getBoundingClientRect();
+        
+        // Calculate the scale factors from SVG viewBox to actual display size
         const scaleX = objectRect.width / viewBox.w;
         const scaleY = objectRect.height / viewBox.h;
-        const centerX = (bbox.x + bbox.width / 2 - viewBox.x) * scaleX;
-        const centerY = (bbox.y + bbox.height / 2 - viewBox.y) * scaleY;
-        let pageX = objectRect.left + centerX + 16;
-        let pageY = objectRect.top + centerY + 16;
-        const vw = window.innerWidth;
-        const vh = window.innerHeight;
-        const popupWidth = 260;
-        const popupHeight = 200;
-        if (pageX + popupWidth > vw) pageX = vw - popupWidth - 8;
-        if (pageY + popupHeight > vh) pageY = vh - popupHeight - 8;
+        
+        let popupX: number;
+        let popupY: number;
+        
+                 if (clickEvent) {
+           // Position popup adjacent to the room's bounding box
+           const roomCenterX = bbox.x + bbox.width / 2;
+           const roomCenterY = bbox.y + bbox.height / 2;
+           
+           // Convert SVG coordinates to screen coordinates
+           const screenX = objectRect.left + (roomCenterX - viewBox.x) * scaleX;
+           const screenY = objectRect.top + (roomCenterY - viewBox.y) * scaleY;
+           
+           // Position popup to the right of the room
+           popupX = screenX + bbox.width * scaleX / 2 + 10; // 10px offset from room edge
+           popupY = screenY - 10; // 10px offset above room center
+           
+           // Convert to container-relative coordinates
+           const containerRect = this.panelContainer?.nativeElement?.getBoundingClientRect();
+           if (containerRect) {
+             popupX = popupX - containerRect.left;
+             popupY = popupY - containerRect.top;
+           }
+         } else {
+           // Fallback: position popup adjacent to the room's bounding box
+           const roomCenterX = bbox.x + bbox.width / 2;
+           const roomCenterY = bbox.y + bbox.height / 2;
+           
+           // Convert SVG coordinates to screen coordinates
+           const screenX = objectRect.left + (roomCenterX - viewBox.x) * scaleX;
+           const screenY = objectRect.top + (roomCenterY - viewBox.y) * scaleY;
+           
+           // Position popup to the right of the room
+           popupX = screenX + bbox.width * scaleX / 2 + 10; // 10px offset from room edge
+           popupY = screenY - 10; // 10px offset above room center
+           
+           // Convert to container-relative coordinates
+           const containerRect = this.panelContainer?.nativeElement?.getBoundingClientRect();
+           if (containerRect) {
+             popupX = popupX - containerRect.left;
+             popupY = popupY - containerRect.top;
+           }
+         }
+        
+        // Ensure popup stays within container bounds
+        const popupWidth = 192; // w-48 = 12rem = 192px
+        const popupHeight = 120; // estimated height for compact popup
+        const containerRect = this.panelContainer?.nativeElement?.getBoundingClientRect();
+        
+        if (containerRect) {
+          const containerWidth = containerRect.width;
+          const containerHeight = containerRect.height;
+          
+          // Adjust if popup would go outside container
+          if (popupX + popupWidth > containerWidth) {
+            popupX = containerWidth - popupWidth - 10;
+          }
+          if (popupX < 0) {
+            popupX = 10;
+          }
+          if (popupY < 0) {
+            popupY = 10;
+          }
+          if (popupY + popupHeight > containerHeight) {
+            popupY = containerHeight - popupHeight - 10;
+          }
+        }
+        
         this.selectedRoom = room;
         this.showPopup = true;
-        const containerRect =
-          this.panelContainer?.nativeElement?.getBoundingClientRect?.();
-        if (containerRect) {
-          this.popupX = pageX - containerRect.left;
-          this.popupY = pageY - containerRect.top;
-        } else {
-          this.popupX = pageX;
-          this.popupY = pageY;
-        }
-        console.log('[Floorplan] popup positioned', {
-          OutletID: room.outlet,
-          ID: room.id,
-          room: room.name,
-          x: this.popupX,
-          y: this.popupY,
-        });
+        this.popupX = Math.max(0, popupX);
+        this.popupY = Math.max(0, popupY);
+
         positioned = true;
       });
     }
@@ -755,6 +913,11 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
           `Price: RM ${this.selectedRoom.price}`,
           `Deposit: RM ${this.selectedRoom.deposit}`,
         ];
+
+        // Add YouTube link if available
+        if (this.selectedRoom.video) {
+          lines.push(`Video: ${this.selectedRoom.video}`);
+        }
 
         const pad = 10;
         const lineHeight = 18;
@@ -923,7 +1086,6 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       outlet: 'Select Outlet',
       status: 'Select Status',
       pax: 'Select Pax',
-      suite: 'Select Suite',
       svg: 'all',
     };
 
@@ -1019,9 +1181,49 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
           pdf.text(`Pax: ${this.filters.pax}`, 20, yPos);
           yPos += 8;
         }
-        if (this.filters.suite !== 'Select Suite') {
-          pdf.text(`Suite: ${this.filters.suite}`, 20, yPos);
+        if (this.selectedSuites.length > 0) {
+          pdf.text(`Suites: ${this.selectedSuites.join(', ')}`, 20, yPos);
           yPos += 8;
+        }
+
+        // Add dynamic Pax legend if there are available rooms
+        const dynamicLegend = this.getDynamicPaxLegend();
+        if (dynamicLegend.length > 0) {
+          yPos += 4;
+          pdf.setFontSize(10);
+          pdf.setTextColor(0, 0, 0);
+          pdf.text('Pax Capacity Colors:', 20, yPos);
+          yPos += 6;
+          
+          // Draw legend items in a compact grid layout
+          const legendStartX = 20;
+          const legendItemWidth = 40; // Reduced from 60 to 40
+          const legendItemHeight = 6; // Reduced from 8 to 6
+          let currentX = legendStartX;
+          let currentY = yPos;
+          
+          dynamicLegend.forEach((item, index) => {
+            // Check if we need to move to next row
+            if (currentX + legendItemWidth > pageWidth - 20) {
+              currentX = legendStartX;
+              currentY += legendItemHeight + 1; // Reduced gap from 2 to 1
+            }
+            
+            // Draw color box
+            const colorRgb = this.hexToRgb(item.color);
+            if (colorRgb) {
+              pdf.setFillColor(colorRgb.r, colorRgb.g, colorRgb.b);
+              pdf.rect(currentX, currentY - 2, 4, 4, 'F');
+            }
+            
+            // Draw label
+            pdf.setFillColor(0, 0, 0);
+            pdf.text(item.label, currentX + 5, currentY); // Reduced gap from 6 to 5
+            
+            currentX += legendItemWidth;
+          });
+          
+          yPos = currentY + 8;
         }
 
         // Clone and reset viewBox to original
@@ -1032,7 +1234,9 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         }
 
         try {
-          const canvas = await this.svgToCanvas(svgClone);
+          let canvas = await this.svgToCanvas(svgClone);
+          canvas = this.downscaleCanvasIfNeeded(canvas);
+          
           const margin = 5;
           const imgY = Math.max(yPos + 4, 24);
           const maxWidth = pageWidth - margin * 2;
@@ -1045,19 +1249,10 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
             imgWidth = imgHeight * aspect;
           }
           const imgX = (pageWidth - imgWidth) / 2;
-          const quality =
-            this.pdfQualitySettings[this.selectedPdfQuality].quality;
-          const imgData = canvas.toDataURL('image/jpeg', quality);
-          pdf.addImage(
-            imgData,
-            'PNG',
-            imgX,
-            imgY,
-            imgWidth,
-            imgHeight,
-            undefined,
-            'FAST'
-          );
+
+          // Use PNG for crisp vectors; jsPDF will compress
+          const imgData = canvas.toDataURL('image/png');
+          pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'MEDIUM');
         } catch (canvasError) {
           console.warn(
             'Failed to convert SVG to canvas on page',
@@ -1074,12 +1269,11 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       const fileName = `floorplan-${
         this.filters.outlet !== 'Select Outlet' ? this.filters.outlet : 'all'
       }-${new Date().toISOString().split('T')[0]}.pdf`;
-      pdf.save(fileName);
+      this.savePdfSmart(pdf, fileName);
 
       // Show success message with file size info
-      const estimatedSize = this.getEstimatedFileSize();
       this.showMessage(
-        `Floorplan PDF exported successfully! 🎉 (Estimated size: ${estimatedSize})`
+        `Floorplan PDF exported successfully! 🎉 `
       );
     } catch (error) {
       console.error('Error exporting floorplan as PDF:', error);
@@ -1091,65 +1285,6 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       this.isExportingFloorplan = false;
     }
   }
-
-  // Helper method to add room table to PDF
-  private addRoomTableToPdf(pdf: jsPDF, startY: number) {
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const margin = 20;
-    const tableWidth = pageWidth - margin * 2;
-    const colWidths = [tableWidth * 0.3, tableWidth * 0.7]; // Room name: 30%, Details: 70%
-
-    // Table headers
-    pdf.setFillColor(243, 244, 246); // Light gray background
-    pdf.rect(margin, startY, tableWidth, 12, 'F');
-    pdf.setTextColor(0, 0, 0);
-    pdf.setFontSize(12);
-    pdf.setFont('helvetica', 'bold');
-
-    pdf.text('Room Name', margin + 5, startY + 8);
-    pdf.text('Details', margin + colWidths[0] + 5, startY + 8);
-
-    // Table rows
-    let currentY = startY + 12;
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(10);
-
-    for (const room of this.filteredRooms) {
-      // Check if we need a new page
-      if (currentY > pdf.internal.pageSize.getHeight() - 40) {
-        pdf.addPage();
-        currentY = 20;
-      }
-
-      // Room name
-      pdf.setTextColor(0, 0, 0);
-      pdf.text(room.name, margin + 5, currentY + 6);
-
-      // Room details
-      const details = [
-        `Type: ${room.type}`,
-        `Status: ${room.status}`,
-        `Pax: ${room.capacity}`,
-        `Area: ${room.area} sqft`,
-        `Price: RM ${room.price}`,
-        `Deposit: RM ${room.deposit}`,
-      ];
-
-      let detailY = currentY;
-      for (const detail of details) {
-        pdf.setTextColor(75, 85, 99); // Gray text
-        pdf.text(detail, margin + colWidths[0] + 5, detailY + 6);
-        detailY += 4;
-      }
-
-      // Row separator
-      currentY = Math.max(currentY + 12, detailY + 4);
-      pdf.setDrawColor(229, 231, 235); // Light gray border
-      pdf.line(margin, currentY, margin + tableWidth, currentY);
-      currentY += 2;
-    }
-  }
-
   // Helper method to convert SVG to canvas more reliably
   private async svgToCanvas(
     svgElement: SVGSVGElement
@@ -1161,10 +1296,9 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         tempDiv.style.position = 'absolute';
         tempDiv.style.left = '-9999px';
         tempDiv.style.top = '-9999px';
-        // Use quality settings for optimal file size
-        const quality = this.pdfQualitySettings[this.selectedPdfQuality];
-        tempDiv.style.width = `${quality.dimensions.width}px`;
-        tempDiv.style.height = `${quality.dimensions.height}px`;
+        // Use medium quality settings for optimal file size
+        tempDiv.style.width = `${this.pdfQuality.dimensions.width}px`;
+        tempDiv.style.height = `${this.pdfQuality.dimensions.height}px`;
         tempDiv.style.backgroundColor = '#ffffff';
 
         const svgClone = svgElement.cloneNode(true) as SVGSVGElement;
@@ -1175,16 +1309,15 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
 
         html2canvas(tempDiv, {
           backgroundColor: '#ffffff',
-          scale: quality.scale,
+          scale: this.pdfQuality.scale,
           useCORS: true,
           allowTaint: true,
           logging: false,
-          width: quality.dimensions.width,
-          height: quality.dimensions.height,
-          // Additional optimizations for smaller file size
+          width: this.pdfQuality.dimensions.width,
+          height: this.pdfQuality.dimensions.height,
           removeContainer: true,
           foreignObjectRendering: false,
-          imageTimeout: 0,
+          imageTimeout: 30000 // increased from 0 for iOS stability
         })
           .then((canvas) => {
             document.body.removeChild(tempDiv);
@@ -1212,57 +1345,80 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     }, 5000);
   }
 
-  // Get estimated file size for each quality level (static)
-  getLowQualityFileSize(): string {
-    return '~200-500 KB';
-  }
-
-  getMediumQualityFileSize(): string {
+  // Get estimated file size for medium quality (for display in success message)
+  getEstimatedFileSize(): string {
     return '~500 KB - 1 MB';
   }
 
-  getHighQualityFileSize(): string {
-    return '~2-4 MB';
-  }
-
-  // Get estimated file size for selected quality (for display in success message)
-  getEstimatedFileSize(): string {
-    const quality = this.pdfQualitySettings[this.selectedPdfQuality];
-    const baseSize =
-      quality.dimensions.width *
-      quality.dimensions.height *
-      quality.scale *
-      quality.scale;
-
-    if (this.selectedPdfQuality === 'high') {
-      return '~2-4 MB';
-    } else if (this.selectedPdfQuality === 'medium') {
-      return '~500 KB - 1 MB';
-    } else {
-      return '~200-500 KB';
+  // Get dynamic Pax legend based on filtered rooms
+  private getDynamicPaxLegend(): Array<{label: string, color: string}> {
+    const legend: Array<{label: string, color: string}> = [];
+    
+    // Only show legend if user has selected "Available" status
+    if (this.filters.status !== 'Available') {
+      return legend;
     }
-  }
 
-  // Get quality description
-  getQualityDescription(): string {
-    switch (this.selectedPdfQuality) {
-      case 'high':
-        return 'High quality, larger file size';
-      case 'medium':
-        return 'Balanced quality and file size (recommended)';
-      case 'low':
-        return 'Smaller file size, reduced quality';
-      default:
-        return '';
-    }
-  }
+    const usedPaxSizes = new Set<number>();
 
-  // Handle quality change to update UI
-  onQualityChange() {
-    // Force change detection to update the estimated file size display
-    this.ngZone.run(() => {
-      // This will trigger template updates
+    // Collect all Pax sizes from filtered rooms
+    this.filteredRooms.forEach(room => {
+      if (room.status === 'Available') {
+        usedPaxSizes.add(room.capacity);
+      }
     });
+
+    // Only show legend if there are available rooms
+    if (usedPaxSizes.size === 0) {
+      return legend;
+    }
+
+    // Create legend entries only for Pax buckets that have actual rooms
+    this.paxBuckets.forEach((bucket, index) => {
+      // Check if any of the used Pax sizes fall within this bucket
+      const hasMatchingRooms = Array.from(usedPaxSizes).some(pax => {
+        // For the first bucket (2-4), check if pax is between 2 and 4
+        if (index === 0) {
+          return pax >= 2 && pax <= bucket.max;
+        }
+        // For other buckets, check if pax falls within the range
+        const prevBucket = this.paxBuckets[index - 1];
+        return pax > prevBucket.max && pax <= bucket.max;
+      });
+      
+      if (hasMatchingRooms) {
+        legend.push({
+          label: bucket.label,
+          color: this.paxPalette[index]
+        });
+      }
+    });
+
+    return legend;
+  }
+
+  // Convert hex color to RGB for jsPDF
+  private hexToRgb(hex: string): {r: number, g: number, b: number} | null {
+    const result = /^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/.exec(hex);
+    if (result) {
+      return {
+        r: parseInt(result[1], 10),
+        g: parseInt(result[2], 10),
+        b: parseInt(result[3], 10)
+      };
+    }
+    
+    // Handle hex format
+    const hexResult = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    if (hexResult) {
+      return {
+        r: parseInt(hexResult[1], 16),
+        g: parseInt(hexResult[2], 16),
+        b: parseInt(hexResult[3], 16)
+      };
+    }
+    
+    return null;
   }
 
   getFloorLabel(path: string): string {
@@ -1285,5 +1441,37 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
 
     // 4) final fallback: humanize filename
     return base.replace(/[_\-]/g, ' ').trim();
+  }
+
+  private isIOSDevice(): boolean {
+    return /iphone|ipad|ipod/i.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  }
+
+  private savePdfSmart(pdf: jsPDF, fileName: string) {
+    const blob = pdf.output('blob');
+    const url = URL.createObjectURL(blob);
+    if (this.isIOSDevice()) {
+      window.open(url, '_blank'); // iOS can Share/Save
+    } else {
+      pdf.save(fileName);
+    }
+  }
+
+  private downscaleCanvasIfNeeded(src: HTMLCanvasElement): HTMLCanvasElement {
+    const MAX_PX = 8_000_000; // ~8MP safety cap
+    const area = src.width * src.height;
+    if (area <= MAX_PX) return src;
+
+    const scale = Math.sqrt(MAX_PX / area);
+    const dst = document.createElement('canvas');
+    dst.width = Math.max(1, Math.floor(src.width  * scale));
+    dst.height = Math.max(1, Math.floor(src.height * scale));
+
+    const ctx = dst.getContext('2d')!;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(src, 0, 0, dst.width, dst.height);
+    return dst;
   }
 }

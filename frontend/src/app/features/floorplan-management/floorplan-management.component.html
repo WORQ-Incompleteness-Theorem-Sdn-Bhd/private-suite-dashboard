@@ -1,0 +1,82 @@
+<form [formGroup]="form" (ngSubmit)="submit()" class="max-w-xl p-4 space-y-4">
+  <!-- Office dropdown -->
+  <div class="grid gap-2">
+    <label class="font-medium">Office</label>
+    <select formControlName="officeId" class="w-full p-2 border rounded">
+      <option value="" disabled selected>Select Office</option>
+      <option *ngFor="let loc of locations" [value]="loc.value">
+        {{ loc.label }}
+      </option>
+    </select>
+    <small *ngIf="form.controls['officeId'].touched && form.controls['officeId'].invalid" class="text-red-600">
+      Office is required
+    </small>
+  </div>
+
+  <!-- Floor dropdown -->
+  <div class="grid gap-2">
+    <div class="flex flex-row items-center gap-2">
+      <label class="font-medium">Floor</label> <span class="text-xs italic font-medium text-gray-800">*Please only
+        select
+        floor if
+        there are multiple floors for that
+        location</span>
+    </div>
+    <select formControlName="floorId" class="w-full p-2 border rounded">
+      <option value="" disabled selected>Select Floor</option>
+      <option *ngFor="let fl of floors" [value]="fl.value">
+        {{ fl.label }}
+      </option>
+    </select>
+  </div>
+
+  <!-- Custom file name -->
+  <div class="grid gap-2">
+    <label class="font-medium">Custom File Name (optional, no extension)</label>
+    <input type="text" formControlName="fileName" class="w-full p-2 border rounded" placeholder="e.g., floorplan_v2" />
+  </div>
+
+  <!-- File upload -->
+  <div class="grid gap-2">
+    <label class="font-medium">SVG File</label>
+    <input type="file" accept=".svg,image/svg+xml" (change)="onFileChange($event)" />
+    <small *ngIf="form.controls['file'].touched && form.controls['file'].invalid" class="text-red-600">
+      File is required
+    </small>
+  </div>
+
+  <button class="px-4 py-2 text-white bg-black rounded disabled:opacity-50" [disabled]="uploading() || form.invalid"
+    type="submit">
+    {{ uploading() ? 'Uploading…' : 'Upload' }}
+  </button>
+
+  <!-- Progress -->
+  <div *ngIf="uploading()" class="mt-3">
+    <div class="h-2 bg-gray-200 rounded">
+      <div class="h-2 bg-green-600 rounded" [style.width.%]="progress()"></div>
+    </div>
+    <div class="mt-1 text-sm">{{ progress() }}%</div>
+  </div>
+
+  <!-- Error -->
+  <p *ngIf="errorMsg()" class="mt-3 text-red-600">{{ errorMsg() }}</p>
+
+  <!-- Result -->
+  <div *ngIf="result()" class="mt-4 space-y-1">
+    <div class="font-semibold text-green-700">Upload complete</div>
+    <div><strong>Bucket:</strong> {{ result()!.bucket }}</div>
+    <div><strong>Path:</strong> {{ result()!.path }}</div>
+    <div><strong>gsURI:</strong> {{ result()!.gsUri }}</div>
+
+    <ng-container *ngIf="result()!.signedUrl">
+      <div class="mt-2">
+        <a [href]="result()!.signedUrl" target="_blank" rel="noopener" class="text-blue-600 underline">
+          Open preview (signed URL)
+        </a>
+      </div>
+      <small class="text-gray-600">
+        Expires in {{ result()!.signedUrlExpiresInMinutes }} minutes
+      </small>
+    </ng-container>
+  </div>
+</form>

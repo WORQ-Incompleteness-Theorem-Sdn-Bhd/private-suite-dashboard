@@ -3,7 +3,7 @@ import {
   getFloors,
   getLocations,
   getResources,
-} from "../controller/bq.controller";
+} from "../controller/bigquery.controller";
 const router = Router();
 
 router.get("/resources", getResources);

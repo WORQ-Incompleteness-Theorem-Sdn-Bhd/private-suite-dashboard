@@ -1474,4 +1474,52 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     ctx.drawImage(src, 0, 0, dst.width, dst.height);
     return dst;
   }
+
+  // Returns a normal YouTube "watch" URL for the given room (if present)
+  getYouTubeWatchUrlFor(room: Room | null | undefined): string | null {
+    if (!room?.video) return null;
+    return this.toYouTubeWatch(room.video.trim());
+  }
+
+  // Get all rooms that have YouTube links
+  getRoomsWithYouTubeLinks(): Room[] {
+    return this.rooms.filter(room => room.video && room.video.trim() !== '');
+  }
+
+  // Get count of rooms with YouTube links
+  getYouTubeLinkCount(): number {
+    return this.getRoomsWithYouTubeLinks().length;
+  }
+
+  // Normalize YouTube URLs to https://www.youtube.com/watch?v=VIDEO_ID
+  private toYouTubeWatch(raw: string): string | null {
+    if (!raw) return null;
+    try {
+      const u = new URL(raw);
+
+      // youtu.be/<id>
+      if (u.hostname.includes('youtu.be')) {
+        const id = u.pathname.replace('/', '');
+        return id ? `https://www.youtube.com/watch?v=${id}` : null;
+      }
+
+      // youtube.com/embed/<id>
+      if (u.hostname.includes('youtube.com')) {
+        if (u.pathname.startsWith('/embed/')) {
+          const id = u.pathname.split('/')[2];
+          return id ? `https://www.youtube.com/watch?v=${id}` : null;
+        }
+        // youtube.com/watch?v=<id>
+        if (u.pathname === '/watch') {
+          const id = u.searchParams.get('v');
+          return id ? `https://www.youtube.com/watch?v=${id}` : null;
+        }
+      }
+
+      // If it's already a usable link, return as-is
+      return raw;
+    } catch {
+      return raw;
+    }
+  }
 }

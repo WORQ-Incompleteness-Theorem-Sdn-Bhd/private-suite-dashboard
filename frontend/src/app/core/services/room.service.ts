@@ -119,7 +119,7 @@ export class RoomService {
 //Populate filters from backend data
   getResources(params: ResourceParams): Observable<any> {
     this.loadingSubject.next(true);
-    const url = environment.baseUrl + '/api/resources';
+    const url = environment.baseUrl + '/api/resources';   //use resourceUrl instead
     
     // Build query parameters
     let httpParams = new HttpParams();
@@ -133,7 +133,7 @@ export class RoomService {
     }
     if (params.suites && params.suites.length > 0) {
       // For multiple suites, we'll send them as comma-separated values
-      httpParams = httpParams.set('resource_name', params.suites.join(','));
+      httpParams = httpParams.set('resource_name', params.suites.join(',')); // use resources_id instead
     }
     if (params.floor) {
       httpParams = httpParams.set('floor_id', params.floor);
@@ -141,7 +141,7 @@ export class RoomService {
     
     return this.http.get<any>(url, { 
       params: httpParams,
-      headers: this.getAuthHeaders()
+      headers: this.getAuthHeaders() //remove this
     }).pipe(
       tap((response) => {
         console.log('Fetched resources from backend:', response);

@@ -223,7 +223,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       })
     ).subscribe((response) => {
       if (response && response.success) {
-        this.toastService.success('Offices loaded successfully');
+        this.toastService.success('Outlets loaded successfully');
         this.buildOptions();
       }
     });
@@ -282,20 +282,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     this.buildOptions();
     this.applyFilters();
   }
-
-  private attachSvgListeners() {
-    const objectEl = document.getElementById(
-      'floorplanSvg'
-    ) as HTMLObjectElement;
-    if (!objectEl) return;
-
-    const svgDoc = objectEl.contentDocument;
-    if (!svgDoc) return;
-
-    this.attachRoomListeners(svgDoc);
-    this.updateSvgColors();
-  }
-
+  
   ngAfterViewInit() {
     const attach = () => {
       if (!this.svgObjects) return;

@@ -5,11 +5,11 @@ import { Room } from '../models/room.model';
 import { environment } from '../../environments/environment.prod';
 
 export interface ResourceParams {
-  officeId: string;           // location → office.id
-  status?: string;            // optional
-  pax?: number;               // optional
-  suites?: string[];          // optional (multi-select)
-  floor?: string;             // optional (if backend supports)
+  officeId: string; // location → office.id
+  status?: string; // optional
+  pax?: number; // optional
+  suites?: string[]; // optional (multi-select)
+  floor?: string; // optional (if backend supports)
 }
 
 const MM2_PER_SQFT = 92903.04;
@@ -42,9 +42,13 @@ export class RoomService {
       name: 'KLG',
       svg: 'assets/KLG.svg',
     },
-    '5db8fb7e35798d0010950a77': {  
+    '5db8fb7e35798d0010950a77': {
       name: 'TTDI',
-      svg: ['assets/TTDI-Level1.svg', 'assets/TTDIlevel3A.svg' , 'assets/Sibelco Office - L1.svg'],
+      svg: [
+        'assets/TTDI-Level1.svg',
+        'assets/TTDIlevel3A.svg',
+        'assets/Sibelco Office - L1.svg',
+      ],
     },
     /*'5db8fb9798549f0010df15f3': {
       name: 'STO-WIP',
@@ -91,7 +95,7 @@ export class RoomService {
     const token = sessionStorage.getItem('userAccessToken');
     return new HttpHeaders({
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
+      Authorization: `Bearer ${token}`,
     });
   }
 
@@ -100,31 +104,33 @@ export class RoomService {
     try {
       // watch?v=
       const watch = url.match(/[?&]v=([^&]+)/);
-      if (watch && watch[1]) return `https://www.youtube.com/embed/${watch[1]}?rel=0`;
-  
+      if (watch && watch[1])
+        return `https://www.youtube.com/embed/${watch[1]}?rel=0`;
+
       // youtu.be/
       const short = url.match(/youtu\.be\/([^?&#]+)/);
-      if (short && short[1]) return `https://www.youtube.com/embed/${short[1]}?rel=0`;
-  
+      if (short && short[1])
+        return `https://www.youtube.com/embed/${short[1]}?rel=0`;
+
       // already embed
       if (/youtube\.com\/embed\//.test(url)) return url;
-  
+
       return url;
     } catch {
       return null;
     }
   }
 
+  private url = environment.bqUrl;
 
-//Populate filters from backend data
+  //Populate filters from backend data
   getResources(params: ResourceParams): Observable<any> {
     this.loadingSubject.next(true);
-    const url = environment.baseUrl + '/api/resources';
-    
+
     // Build query parameters
     let httpParams = new HttpParams();
     httpParams = httpParams.set('office_id', params.officeId);
-    
+
     if (params.status) {
       httpParams = httpParams.set('status', params.status);
     }
@@ -138,55 +144,57 @@ export class RoomService {
     if (params.floor) {
       httpParams = httpParams.set('floor_id', params.floor);
     }
-    
-    return this.http.get<any>(url, { 
-      params: httpParams,
-      headers: this.getAuthHeaders()
-    }).pipe(
-      tap((response) => {
-        console.log('Fetched resources from backend:', response);
-        const data = response.data || [];
-        
-        const mapped = data.map((item: any) => {
-          const outletInfo = this.outletMap[item.office_id];
-          const svgPath = outletInfo?.svg || [];
 
-          // Normalize status from backend data
-          let normalizedStatus: 'Available' | 'Occupied';
-          if (
-            ['available', 'available_soon'].includes(
-              item.status.toLowerCase()
-            )
-          ) {
-            normalizedStatus = 'Available';
-          } else {
-            normalizedStatus = 'Occupied';
-          }
-
-          // Convert mm² → ft²
-          const areaMm2 = Number(item.area_in_sqmm) || 0;
-          const areaSqft = areaMm2 / MM2_PER_SQFT;
-
-          return {
-            id: item.resource_id,
-            name: item.resource_name,
-            status: normalizedStatus,
-            outlet: outletInfo?.name || '',
-            svg: Array.isArray(svgPath) ? svgPath : [svgPath],
-            capacity: item.pax_size,
-            type: item.resource_type,
-            area: Math.round(areaSqft),
-            price: item.price,
-            deposit: item.deposit,
-            video: item.youtube_link || undefined,
-            videoEmbed: this.toYoutubeEmbed(item.youtube_link) || undefined
-          } as Room;
-        });
-        
-        console.log('Mapped resources:', mapped);
-        this.roomsSubject.next(mapped);
-        this.loadingSubject.next(false);
+    return this.http
+      .get<any>(`${this.url}/resources`, {
+        params: httpParams,
+        headers: this.getAuthHeaders(),
       })
-    );
+      .pipe(
+        tap((response) => {
+          console.log('Fetched resources from backend:', response);
+          const data = response.data || [];
+
+          const mapped = data.map((item: any) => {
+            const outletInfo = this.outletMap[item.office_id];
+            const svgPath = outletInfo?.svg || [];
+
+            // Normalize status from backend data
+            let normalizedStatus: 'Available' | 'Occupied';
+            if (
+              ['available', 'available_soon'].includes(
+                item.status.toLowerCase()
+              )
+            ) {
+              normalizedStatus = 'Available';
+            } else {
+              normalizedStatus = 'Occupied';
+            }
+
+            // Convert mm² → ft²
+            const areaMm2 = Number(item.area_in_sqmm) || 0;
+            const areaSqft = areaMm2 / MM2_PER_SQFT;
+
+            return {
+              id: item.resource_id,
+              name: item.resource_name,
+              status: normalizedStatus,
+              outlet: outletInfo?.name || '',
+              svg: Array.isArray(svgPath) ? svgPath : [svgPath],
+              capacity: item.pax_size,
+              type: item.resource_type,
+              area: Math.round(areaSqft),
+              price: item.price,
+              deposit: item.deposit,
+              video: item.youtube_link || undefined,
+              videoEmbed: this.toYoutubeEmbed(item.youtube_link) || undefined,
+            } as Room;
+          });
+
+          console.log('Mapped resources:', mapped);
+          this.roomsSubject.next(mapped);
+          this.loadingSubject.next(false);
+        })
+      );
   }
 }

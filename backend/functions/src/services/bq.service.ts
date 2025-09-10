@@ -1,4 +1,4 @@
-import { bq } from "../bq-client";
+import { bq } from "../clients/bq-client";
 
 type Filters = Record<string, string | number | boolean>;
 
@@ -98,4 +98,20 @@ export async function fetchFromTable(opts: FetchOptions) {
 
   const [rows] = await job.getQueryResults();
   return rows;
+}
+
+export async function queryRows(opts: {
+  sql: string;
+  params?: Record<string, any>;
+  location?: string;
+}): Promise<any[]> {
+  const [job] = await bq.createQueryJob({
+    query: opts.sql,
+    params: opts.params ?? {},
+    location:
+      opts.location || process.env.BIGQUERY_LOCATION || "asia-southeast1",
+  });
+
+  const [rows] = await job.getQueryResults();
+  return rows as any[];
 }

@@ -6,11 +6,11 @@ import { environment } from '../../environments/environment.prod';
 import { OfficeService } from './office.service';
 
 export interface ResourceParams {
-  officeId: string;           // location → office.id
-  status?: string;            // optional
-  pax?: number;               // optional
-  suites?: string[];          // optional (multi-select)
-  floor?: string;             // optional (if backend supports)
+  officeId: string; // location → office.id
+  status?: string; // optional
+  pax?: number; // optional
+  suites?: string[]; // optional (multi-select)
+  floor?: string; // optional (if backend supports)
 }
 
 const MM2_PER_SQFT = 92903.04;
@@ -33,15 +33,17 @@ export class RoomService {
     try {
       // watch?v=
       const watch = url.match(/[?&]v=([^&]+)/);
-      if (watch && watch[1]) return `https://www.youtube.com/embed/${watch[1]}?rel=0`;
-  
+      if (watch && watch[1])
+        return `https://www.youtube.com/embed/${watch[1]}?rel=0`;
+
       // youtu.be/
       const short = url.match(/youtu\.be\/([^?&#]+)/);
-      if (short && short[1]) return `https://www.youtube.com/embed/${short[1]}?rel=0`;
-  
+      if (short && short[1])
+        return `https://www.youtube.com/embed/${short[1]}?rel=0`;
+
       // already embed
       if (/youtube\.com\/embed\//.test(url)) return url;
-  
+
       return url;
     } catch {
       return null;
@@ -57,7 +59,7 @@ export class RoomService {
     // Build query parameters
     let httpParams = new HttpParams();
     httpParams = httpParams.set('office_id', params.officeId);
-    
+
     if (params.status) {
       httpParams = httpParams.set('status', params.status);
     }
@@ -91,9 +93,9 @@ export class RoomService {
             normalizedStatus = 'Occupied';
           }
 
-          // Convert mm² → ft²
-          const areaMm2 = Number(item.area_in_sqmm) || 0;
-          const areaSqft = areaMm2 / MM2_PER_SQFT;
+            // Convert mm² → ft²
+            const areaMm2 = Number(item.area_in_sqmm) || 0;
+            const areaSqft = areaMm2 / MM2_PER_SQFT;
 
           return {
             id: item.resource_id,

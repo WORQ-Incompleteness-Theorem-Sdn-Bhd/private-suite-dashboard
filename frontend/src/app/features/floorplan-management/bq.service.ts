@@ -2,9 +2,7 @@ import { Injectable } from '@angular/core';
 import {
   HttpClient,
   HttpEvent,
-  HttpEventType,
-  HttpHeaders,
-  HttpRequest,
+  HttpEventType
 } from '@angular/common/http';
 import { Observable, map } from 'rxjs';
 import { environment } from '../../environments/environment.prod';
@@ -26,6 +24,7 @@ export class BQService {
   private floorplanUrl = environment.floorplanUrl;
 
   constructor(private http: HttpClient) {}
+  // remove if not in use
   getLocation(): Observable<{ label: string; value: string }[]> {
     return this.http.get<any>(`${this.bqUrl}/locations`).pipe(
       map((res) => {
@@ -38,6 +37,7 @@ export class BQService {
     );
   }
 
+  // remove if not in use
   getFloor(): Observable<{ label: string; value: string }[]> {
     return this.http.get<any>(`${this.bqUrl}/floors`).pipe(
       map((res) => {
@@ -92,3 +92,5 @@ export class BQService {
       );
   }
 }
+
+//temp by dayang for upload svg testing

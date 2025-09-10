@@ -11,6 +11,8 @@ import {
 import { Room } from '../../core/models/room.model';
 import { RoomService, ResourceParams } from '../../core/services/room.service';
 import { OfficeService } from '../../core/services/office.service';
+import { FloorService } from '../../core/services/floor.service';
+import { Floor } from '../../core/models/floor.model';
 import { ToastService } from '../../shared/services/toast.service';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -45,6 +47,8 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   displayedSvgs: string[] = [];
   selectedFloorSvg: string = 'all';
   floorOptions: string[] = [];
+  floors: Floor[] = [];
+  floorIdToFloorMap: Map<string, Floor> = new Map();
 
   // Loading states
   isLoadingOffices = false;
@@ -127,24 +131,24 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   // Friendly labels for specific outlets/files
   private floorLabelOverrides: Record<string, Record<string, string>> = {
     TTDI: {
-      'TTDI-Level1.svg': 'Level 1',
-      'TTDI-Level3A.svg': 'Level 3A',
+      'TTDI-Level1.svg': 'Floor 1',
+      'TTDI-Level3A.svg': 'Floor 3A',
       'Sibelco Office - L1.svg': 'Sibelco Office',
     },
     KLS: {
-      'KLS- L20.svg': 'Level 20',
-      'KLS-ByteDance.svg': 'Level 21 ByteDance',
-      'KLS-L21.svg': 'Level 21',
-      'KLS-L28.svg': 'Level 28',
+      'KLS- L20.svg': 'Floor 20',
+      'KLS-ByteDance.svg': 'Floor 21 ByteDance',
+      'KLS-L21.svg': 'Floor 21',
+      'KLS-L28.svg': 'Floor 28',
     },
     MUB: {
-      'MUB-level9.svg': 'Level 9',
-      'MUB-level12.svg': 'Level 12',
-      'MUB-level17.svg': 'Level 17',
+      'MUB-level9.svg': 'Floor  9',
+      'MUB-level12.svg': 'Floor 12',
+      'MUB-level17.svg': 'Floor 17',
     },
     UBP3A: {
-      'UBP-L13A.svg': 'Level 13A',
-      'UBP-L13AAIRIT.svg': 'Level 13A AIRIT',
+      'UBP-L13A.svg': 'Floor 13A',
+      'UBP-L13AAIRIT.svg': 'Floor 13A AIRIT',
     },
     '8FA': {
       '8FA.svg': 'Floor 15',
@@ -172,6 +176,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   constructor(
     private roomService: RoomService,
     private officeService: OfficeService,
+    private floorService: FloorService,
     private toastService: ToastService,
     public sanitizer: DomSanitizer,
     private ngZone: NgZone
@@ -188,8 +193,9 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   trackBySvgUrl = (_: number, url: string) => url;
 
   ngOnInit() {
-    // 1) Load outlets first
+    // 1) Load outlets and floors first
     this.loadOffices();
+    this.loadFloors();
 
     // 2) Subscribe to rooms changes
     this.roomService.rooms$.subscribe((rooms) => {
@@ -226,6 +232,25 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         this.toastService.success('Outlets loaded successfully');
         this.buildOptions();
       }
+    });
+  }
+
+  // Load floors from backend
+  loadFloors() {
+    this.floorService.getFloors().pipe(
+      catchError((error) => {
+        console.error('Error loading floors:', error);
+        this.toastService.error('Failed to load floors. Please try again.');
+        return of([]);
+      })
+    ).subscribe((floors) => {
+      this.floors = floors;
+      // Build floor ID to floor mapping for quick lookup
+      this.floorIdToFloorMap.clear();
+      floors.forEach(floor => {
+        this.floorIdToFloorMap.set(floor.floor_id, floor);
+      });
+      console.log('Floors loaded:', floors);
     });
   }
 
@@ -328,13 +353,62 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       this.floorOptions = [];
       return;
     }
-    const set = new Set<string>();
-    this.rooms
-      .filter((r) => r.outlet === outlet)
-      .forEach((r) => r.svg.forEach((p) => set.add(p)));
-
-    this.selectedOutletSvgs = Array.from(set);
-    this.floorOptions = this.selectedOutletSvgs.slice();
+    
+    // Get the office ID for the selected outlet
+    const officeId = this.getOfficeIdFromOutletName(outlet);
+    if (!officeId) {
+      console.error('Office ID not found for outlet:', outlet);
+      return;
+    }
+    
+    // Get rooms for the selected outlet
+    const outletRooms = this.rooms.filter((r) => r.outlet === outlet);
+    
+    // Extract unique floor IDs from rooms
+    const floorIds = new Set<string>();
+    outletRooms.forEach(room => {
+      if (room.floor_id) {
+        floorIds.add(room.floor_id);
+      }
+    });
+    
+    // Build floor options from backend floor data
+    this.floorOptions = Array.from(floorIds)
+      .map(floorId => {
+        const floor = this.floorIdToFloorMap.get(floorId);
+        if (floor) {
+          const floorLabel = this.floorService.getFloorDisplayLabel(floorId, this.floors);
+          return `${floorLabel}|${floorId}`; // Format: "Sibelco Office|floor_id" for display and ID
+        }
+        return null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => {
+        // Sort by floor label (Sibelco Office will come first alphabetically)
+        const aLabel = a!.split('|')[0];
+        const bLabel = b!.split('|')[0];
+        
+        // Special sorting: Sibelco Office first, then numeric floors
+        if (aLabel === 'Sibelco Office') return -1;
+        if (bLabel === 'Sibelco Office') return 1;
+        
+        // For numeric floors, sort by number
+        const aNum = parseInt(aLabel) || 999;
+        const bNum = parseInt(bLabel) || 999;
+        return aNum - bNum;
+      }) as string[];
+    
+    // Get all SVG files for this outlet from floor service
+    this.floorService.getAllSvgFilesForOutlet(officeId).subscribe(svgs => {
+      this.selectedOutletSvgs = svgs;
+      this.updateDisplayedSvgs();
+    });
+    
+    // If no floor options from backend, fall back to SVG-based approach
+    if (this.floorOptions.length === 0) {
+      this.floorOptions = this.selectedOutletSvgs.slice();
+    }
+    
     // default to all floors when outlet changes
     this.selectedFloorSvg = 'all';
     this.updateDisplayedSvgs();
@@ -559,9 +633,26 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     if (this.selectedFloorSvg === 'all') {
       this.displayedSvgs = this.selectedOutletSvgs.slice();
     } else {
-      this.displayedSvgs = this.selectedOutletSvgs.filter(
-        (p) => p === this.selectedFloorSvg
-      );
+      // Check if selectedFloorSvg is in the new format (floorNumber|floorId)
+      if (this.selectedFloorSvg.includes('|')) {
+        const floorId = this.selectedFloorSvg.split('|')[1];
+        const outlet = this.filters.outlet;
+        const officeId = this.getOfficeIdFromOutletName(outlet);
+        
+        if (officeId) {
+          // Get SVG files for the specific floor
+          this.floorService.getSvgFilesForFloor(officeId, floorId, this.floors).subscribe(floorSvgs => {
+            this.displayedSvgs = floorSvgs.length > 0 ? floorSvgs : this.selectedOutletSvgs.slice();
+          });
+        } else {
+          this.displayedSvgs = this.selectedOutletSvgs.slice();
+        }
+      } else {
+        // Fallback to old SVG-based filtering
+        this.displayedSvgs = this.selectedOutletSvgs.filter(
+          (p) => p === this.selectedFloorSvg
+        );
+      }
     }
   }
 
@@ -1423,6 +1514,26 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
 
   getFloorLabel(path: string): string {
     if (!path) return '';
+    
+    // Check if path is in the new format (floorLabel|floorId)
+    if (path.includes('|')) {
+      const floorId = path.split('|')[1];
+      const floorLabel = path.split('|')[0];
+      
+      // Special case for Sibelco Office
+      if (floorId === '6348ba804d92f2ab589dc7e3' || floorLabel === 'Sibelco Office') {
+        return 'Sibelco Office';
+      }
+      
+      // For other floors, add "Level" prefix if it's numeric
+      if (/^\d+[A-Za-z]?$/.test(floorLabel)) {
+        return `Level ${floorLabel}`;
+      }
+      
+      return floorLabel;
+    }
+    
+    // Fallback to old logic for SVG paths
     const outlet = this.filters.outlet;
     const baseWithExt = this.basename(path);
     const base = baseWithExt.replace(/\.(svg)$/i, '');

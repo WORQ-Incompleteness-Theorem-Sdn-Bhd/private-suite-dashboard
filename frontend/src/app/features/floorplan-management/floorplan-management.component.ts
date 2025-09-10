@@ -1,16 +1,54 @@
-import { Component, OnInit, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import {
-  FormBuilder,
-  ReactiveFormsModule,
-  Validators,
-  FormGroup,
-} from '@angular/forms';
+  Component,
+  OnInit,
+  AfterViewInit,
+  ElementRef,
+  ViewChildren,
+  QueryList,
+  ViewChild,
+  NgZone,
+  signal,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { HttpClientModule } from '@angular/common/http';
+import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
+import { Observable, of, forkJoin } from 'rxjs';
+import { catchError, finalize, tap } from 'rxjs/operators';
+import { Room } from '../../core/models/room.model';
+import { RoomService, ResourceParams } from '../../core/services/room.service';
+import { OfficeService } from '../../core/services/office.service';
+import { ToastService } from '../../shared/services/toast.service';
 import { BQService, UploadResponse } from './bq.service';
-import { forkJoin } from 'rxjs';
+import { ToastComponent } from '../../shared/components/toast.component';
 
 type Option = { label: string; value: string };
+type FilterKey = 'outlet' | 'status' | 'pax';
+type ManagementTab = 'overview' | 'rooms' | 'upload';
+
+interface FilterConfig {
+  key: FilterKey;
+  label: string;
+  options: string[];
+}
+
+interface FloorData {
+  id: string;
+  name: string;
+  svgPath: string;
+  roomCount: number;
+  availableRooms: number;
+  occupiedRooms: number;
+}
+
+interface ManagementMetrics {
+  totalRooms: number;
+  availableRooms: number;
+  occupiedRooms: number;
+  totalFloors: number;
+  totalOutlets: number;
+  averageOccupancy: number;
+}
 
 @Component({
   selector: 'app-floorplan-upload',

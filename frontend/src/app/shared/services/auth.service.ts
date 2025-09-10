@@ -7,8 +7,8 @@ import {
   signInWithPopup,
   GoogleAuthProvider,
 } from '@angular/fire/auth';
-import { environment } from '../../environments/environment.dev';
-import { Observable } from 'rxjs';
+import { environment } from '../../environments/environment.prod';
+import { Observable, firstValueFrom } from 'rxjs';
 import { ToastService } from './toast.service';
 
 @Injectable({
@@ -73,7 +73,7 @@ export class AuthService {
     sessionStorage.removeItem('refreshToken');
 
     try {
-      const tokenResponse = await this.getUserToken(userDetail.uid).toPromise();
+      const tokenResponse = await firstValueFrom(this.getUserToken(userDetail.uid));
       sessionStorage.setItem('userAccessToken', tokenResponse.token);
       // await this.http
       //   .delete(environment.userUrl + `/${userDetail.uid}`)
@@ -88,7 +88,7 @@ export class AuthService {
 
   private async handleInternalUser(user: object, uid: string) {
     try {
-      const tokenResponse = await this.getUserToken(uid).toPromise();
+      const tokenResponse = await firstValueFrom(this.getUserToken(uid));
 
       if (!tokenResponse?.token) {
         this.toastService.error('Authentication failed. Access denied.');
@@ -115,7 +115,7 @@ export class AuthService {
       
       // Handle specific backend connection errors
       if (error?.status === 0 || error?.message?.includes('ERR_CONNECTION_REFUSED')) {
-        this.toastService.error('Backend server is not running. Please contact your administrator.');
+        this.toastService.error('Server is not running. Please contact your administrator.');
       } else if (error?.status === 500) {
         this.toastService.error('Server error. Please try again later.');
       } else if (error?.status === 401) {

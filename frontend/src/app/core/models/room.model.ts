@@ -13,5 +13,6 @@ export interface Room {
   pax?: any;
   video?: string;
   videoEmbed?: string; // Converted YouTube embed URL
+  floor_id?: string; // Floor ID from backend
 }
 //data type

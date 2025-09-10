@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams, HttpHeaders } from '@angular/common/http';
 import { BehaviorSubject, Observable, tap } from 'rxjs';
 import { Room } from '../models/room.model';
-import { environment } from '../../environments/environment.prod';
+import { environment } from '../../environments/environment.dev';
 
 export interface ResourceParams {
   officeId: string;           // location → office.id
@@ -115,11 +115,11 @@ export class RoomService {
     }
   }
 
-
+  
+  private url = environment.bqUrl ;   //use resourceUrl instead
 //Populate filters from backend data
   getResources(params: ResourceParams): Observable<any> {
     this.loadingSubject.next(true);
-    const url = environment.baseUrl + '/api/resources';   //use resourceUrl instead
     
     // Build query parameters
     let httpParams = new HttpParams();
@@ -139,7 +139,7 @@ export class RoomService {
       httpParams = httpParams.set('floor_id', params.floor);
     }
     
-    return this.http.get<any>(url, { 
+    return this.http.get<any>(`${this.url}/resources` , { 
       params: httpParams,
       headers: this.getAuthHeaders() //remove this
     }).pipe(
@@ -151,7 +151,7 @@ export class RoomService {
           const outletInfo = this.outletMap[item.office_id];
           const svgPath = outletInfo?.svg || [];
 
-          // Normalize status from backend data
+          // Normalize status from backend data // update tht group 
           let normalizedStatus: 'Available' | 'Occupied';
           if (
             ['available', 'available_soon'].includes(

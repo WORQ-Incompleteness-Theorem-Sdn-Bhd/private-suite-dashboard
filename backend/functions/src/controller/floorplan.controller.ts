@@ -45,7 +45,8 @@ export async function handleUpload(req: Request, res: Response): Promise<void> {
     const rawBody = (req as any).rawBody;
 
     if (!rawBody) {
-      if (req.readableEnded) throw new Error("Request stream already consumed");
+      if ((req as any).readableEnded)
+        throw new Error("Request stream already consumed");
       const { fields, file } = await parseMultipartFromStream(req);
       return await processUpload(fields, file, res, cleanup);
     }
@@ -58,13 +59,14 @@ export async function handleUpload(req: Request, res: Response): Promise<void> {
 
     await processUpload(fields, file, res, cleanup);
   } catch (error: any) {
-    console.error("Upload error:", error.message);
+    console.error("Upload error:", error?.message || error);
     await cleanup();
-
     res.status(500).json({
       error: "Upload failed",
       details:
-        process.env.NODE_ENV === "development" ? error.message : undefined,
+        process.env.NODE_ENV === "development"
+          ? String(error?.message || error)
+          : undefined,
     });
   }
 }
@@ -88,6 +90,9 @@ async function processUpload(
 
   const officeId = fields.officeId || fields.office_id;
   const floorId = fields.floorId || fields.floor_id;
+  const overwrite =
+    String(fields.overwrite || "false").toLowerCase() === "true";
+
   const fileName =
     fields.fileName || fields.filename || file.filename.replace(/\.svg$/i, "");
 
@@ -100,68 +105,157 @@ async function processUpload(
   const tmp = path.join(os.tmpdir(), `upload-${tempId}.svg`);
   await fs.writeFile(tmp, file.buffer);
 
-  const sanitizedName = sanitizeBaseName(fileName) + ".svg";
-  const finalKey = floorId
-    ? `${officeId}/${floorId}/${sanitizedName}`
-    : `${officeId}/${sanitizedName}`;
-
-  console.log("☁️ Uploading to:", finalKey);
-
-  await bucket.upload(tmp, {
-    destination: finalKey,
-    resumable: false,
-    contentType: "image/svg+xml",
-    metadata: {
-      metadata: {
-        officeId,
-        ...(floorId ? { floorId } : {}),
-        originalName: file.filename,
-      },
-      cacheControl: "public, max-age=31536000, immutable",
-    },
-  });
-
-  const cloudFile = bucket.file(finalKey);
   try {
-    const minutes = 60;
-    const [signedUrl] = await cloudFile.getSignedUrl({
-      version: "v4",
-      action: "read",
-      expires: Date.now() + minutes * 60 * 1000,
+    // 1) Ensure office exists
+    const [officeProbe] = await bucket.getFiles({
+      prefix: `${officeId}/`,
+      maxResults: 1,
+      autoPaginate: false,
     });
 
-    await fs.unlink(tmp);
+    if ((officeProbe || []).length === 0) {
+      await fs.unlink(tmp).catch(() => {});
+      res.status(404).json({ error: `officeId '${officeId}' not found` });
+      return;
+    }
 
-    res.status(201).json({
-      ok: true,
-      bucket: BUCKET,
-      path: finalKey,
-      signedUrl,
+    // Build final destination key
+    const sanitizedName = sanitizeBaseName(fileName) + ".svg";
+    const finalKey = floorId
+      ? `${officeId}/${floorId}/${sanitizedName}`
+      : `${officeId}/${sanitizedName}`;
+
+    // 2) If floorId provided, handle floor existence and replacement
+    if (floorId) {
+      const [floorListing] = await bucket.getFiles({
+        prefix: `${officeId}/${floorId}/`,
+        autoPaginate: false,
+        // We may need to fetch more than 1; keep at a reasonable cap
+        maxResults: 100,
+      });
+
+      const floorExists = (floorListing || []).length > 0;
+      if (!floorExists) {
+        await fs.unlink(tmp).catch(() => {});
+        res.status(404).json({
+          error: `floorId '${floorId}' under office '${officeId}' not found`,
+        });
+        return;
+      }
+
+      // Find any existing SVG(s) under this floor
+      const existingSvgs = (floorListing || []).filter((f) =>
+        f.name.toLowerCase().endsWith(".svg")
+      );
+
+      if (existingSvgs.length > 0 && !overwrite) {
+        await fs.unlink(tmp).catch(() => {});
+        res.status(409).json({
+          error:
+            "SVG already exists for this floor. Pass overwrite=true to replace.",
+          existing: existingSvgs.map((f) => f.name),
+        });
+        return;
+      }
+
+      // If overwriting, remove existing SVGs first (safer than write-over during CDN caching)
+      if (existingSvgs.length > 0 && overwrite) {
+        await Promise.all(
+          existingSvgs.map((f) =>
+            f.delete({ ignoreNotFound: true }).catch(() => {})
+          )
+        );
+      }
+    } else {
+      // 3) No floorId (uploading under office root). Block if same-name file exists unless overwrite.
+      const rootFile = bucket.file(finalKey);
+      const [exists] = await rootFile.exists();
+      if (exists && !overwrite) {
+        await fs.unlink(tmp).catch(() => {});
+        res.status(409).json({
+          error: `File '${sanitizedName}' already exists under office '${officeId}'. Pass overwrite=true to replace.`,
+          existing: [finalKey],
+        });
+        return;
+      }
+      if (exists && overwrite) {
+        await rootFile.delete({ ignoreNotFound: true }).catch(() => {});
+      }
+    }
+
+    // 4) Upload the new file
+    console.log("☁️ Uploading to:", finalKey);
+    await bucket.upload(tmp, {
+      destination: finalKey,
+      resumable: false,
+      contentType: "image/svg+xml",
       metadata: {
-        originalName: file.filename,
-        size: file.size,
-        uploadId: tempId,
+        metadata: {
+          officeId,
+          ...(floorId ? { floorId } : {}),
+          originalName: file.filename,
+        },
+        cacheControl: "public, max-age=31536000, immutable",
       },
     });
-  } catch (signError: any) {
-    console.error("Signed URL generation failed:", signError.message);
 
-    await fs.unlink(tmp);
+    // Only now set cloudFile for potential cleanup-on-error
+    const cloudFile = bucket.file(finalKey);
 
-    res.status(201).json({
-      ok: true,
-      bucket: BUCKET,
-      path: finalKey,
-      signedUrl: null,
-      signedUrlError: "Failed to generate signed URL",
-      metadata: {
-        originalName: file.filename,
-        size: file.size,
-        uploadId: tempId,
-      },
-    });
-  } finally {
+    // 5) Try to sign a URL (optional)
+    try {
+      const minutes = 60;
+      const [signedUrl] = await cloudFile.getSignedUrl({
+        version: "v4",
+        action: "read",
+        expires: Date.now() + minutes * 60 * 1000,
+      });
+      await fs.unlink(tmp).catch(() => {});
+      res.status(201).json({
+        ok: true,
+        bucket: BUCKET,
+        path: finalKey,
+        signedUrl,
+        metadata: {
+          originalName: file.filename,
+          size: file.size,
+          uploadId: tempId,
+          overwrote: overwrite || undefined,
+        },
+      });
+    } catch (signError: any) {
+      console.error(
+        "Signed URL generation failed:",
+        signError?.message || signError
+      );
+      await fs.unlink(tmp).catch(() => {});
+      res.status(201).json({
+        ok: true,
+        bucket: BUCKET,
+        path: finalKey,
+        signedUrl: null,
+        signedUrlError: "Failed to generate signed URL",
+        metadata: {
+          originalName: file.filename,
+          size: file.size,
+          uploadId: tempId,
+          overwrote: overwrite || undefined,
+        },
+      });
+    } finally {
+      await cleanup();
+    }
+  } catch (err: any) {
+    console.error("Upload processing error:", err?.message || err);
+    await fs.unlink(tmp).catch(() => {});
     await cleanup();
+    res.status(500).json({
+      error: "Upload failed during processing",
+      details:
+        process.env.NODE_ENV === "development"
+          ? String(err?.message || err)
+          : undefined,
+    });
   }
 }
 

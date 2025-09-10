@@ -1,4 +1,4 @@
-import { bq } from "../bq-client";
+import { bq } from "../clients/bq-client";
 
 type Filters = Record<string, string | number | boolean>;
 

@@ -24,7 +24,6 @@ export class FloorplanManagementComponent implements OnInit {
   result = signal<UploadResponse | null>(null);
   errorMsg = signal<string | null>(null);
 
-  // ✅ Use FormGroup (not FormData)
   form: FormGroup;
 
   // Dropdown options
@@ -34,7 +33,7 @@ export class FloorplanManagementComponent implements OnInit {
   constructor(private fb: FormBuilder, private uploader: BQService) {
     this.form = this.fb.group({
       officeId: ['', Validators.required],
-      floorId: [''],
+      floorId: [''], // optional for outlets with more than 1 floor
       fileName: [''], // optional
       file: [null as File | null, Validators.required],
     });
@@ -44,10 +43,12 @@ export class FloorplanManagementComponent implements OnInit {
     this.loadDropdown();
   }
 
+  //change getlocation and getfloor if not using the bq.service.ts
+
   loadDropdown() {
     forkJoin({
-      locations: this.uploader.getLocation(), // -> Option[]
-      floors: this.uploader.getFloor(), // -> Option[]
+      locations: this.uploader.getLocation(),
+      floors: this.uploader.getFloor(),
     }).subscribe({
       next: ({ locations, floors }) => {
         this.locations = locations;
@@ -62,7 +63,6 @@ export class FloorplanManagementComponent implements OnInit {
   onFileChange(ev: Event) {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0] || null;
-    console.log('📂 onFileChange picked:', file);
 
     if (!file) return;
 
@@ -75,12 +75,6 @@ export class FloorplanManagementComponent implements OnInit {
       console.warn('❌ Rejected non-SVG file:', file.name, file.type);
       return;
     }
-
-    console.log('✅ File accepted:', {
-      name: file.name,
-      type: file.type,
-      size: file.size,
-    });
 
     this.errorMsg.set(null);
     this.form.patchValue({ file });
@@ -100,13 +94,6 @@ export class FloorplanManagementComponent implements OnInit {
       file: File;
     };
 
-    console.log('🚀 Submitting upload with:', {
-      officeId,
-      floorId,
-      fileName,
-      file: file ? { name: file.name, type: file.type, size: file.size } : null,
-    });
-
     this.uploading.set(true);
     this.progress.set(0);
     this.result.set(null);
@@ -121,10 +108,8 @@ export class FloorplanManagementComponent implements OnInit {
       })
       .subscribe({
         next: (state) => {
-          console.log('📡 Upload state:', state);
           this.progress.set(state.progress);
           if (state.done && state.data) {
-            console.log('✅ Upload complete, server response:', state.data);
             this.result.set(state.data);
             this.uploading.set(false);
           }

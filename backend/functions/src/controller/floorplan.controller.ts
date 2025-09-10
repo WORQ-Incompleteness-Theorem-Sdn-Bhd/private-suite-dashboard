@@ -63,10 +63,7 @@ export async function handleUpload(req: Request, res: Response): Promise<void> {
     await cleanup();
     res.status(500).json({
       error: "Upload failed",
-      details:
-        process.env.NODE_ENV === "development"
-          ? String(error?.message || error)
-          : undefined,
+      details: String(error?.message || error) ?? undefined,
     });
   }
 }
@@ -251,10 +248,7 @@ async function processUpload(
     await cleanup();
     res.status(500).json({
       error: "Upload failed during processing",
-      details:
-        process.env.NODE_ENV === "development"
-          ? String(err?.message || err)
-          : undefined,
+      details: String(err?.message || err) ?? undefined,
     });
   }
 }

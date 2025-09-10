@@ -9,7 +9,7 @@ export async function handleToken(req: Request, res: Response): Promise<void> {
     try {
       await admin.auth().getUser(uid);
     } catch {
-      await admin.auth().createUser({ uid, email: `${uid}@worq.space` });
+      return;
     }
 
     const token = await generateToken(uid);

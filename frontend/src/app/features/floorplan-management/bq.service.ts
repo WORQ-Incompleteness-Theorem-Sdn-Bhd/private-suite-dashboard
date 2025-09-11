@@ -1,9 +1,5 @@
 import { Injectable } from '@angular/core';
-import {
-  HttpClient,
-  HttpEvent,
-  HttpEventType
-} from '@angular/common/http';
+import { HttpClient, HttpEvent, HttpEventType } from '@angular/common/http';
 import { Observable, map } from 'rxjs';
 import { environment } from '../../environments/environment.prod';
 
@@ -90,6 +86,13 @@ export class BQService {
           }
         })
       );
+  }
+
+  getFloorplan(officeId: string, floorId?: string): Observable<any> {
+    const url = floorId
+      ? `${this.floorplanUrl}/${officeId}/${floorId}`
+      : `${this.floorplanUrl}/${officeId}`;
+    return this.http.get<any>(url);
   }
 }
 

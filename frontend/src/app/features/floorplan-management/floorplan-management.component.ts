@@ -10,7 +10,13 @@ import {
   signal,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import {
+  FormBuilder,
+  ReactiveFormsModule,
+  Validators,
+  FormGroup,
+  FormsModule,
+} from '@angular/forms';
 import { HttpClientModule } from '@angular/common/http';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { Observable, of, forkJoin } from 'rxjs';
@@ -20,40 +26,30 @@ import { RoomService, ResourceParams } from '../../core/services/room.service';
 import { OfficeService } from '../../core/services/office.service';
 import { ToastService } from '../../shared/services/toast.service';
 import { BQService, UploadResponse } from './bq.service';
-import { ToastComponent } from '../../shared/components/toast.component';
+import { forkJoin } from 'rxjs';
+import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 
 type Option = { label: string; value: string };
-type FilterKey = 'outlet' | 'status' | 'pax';
-type ManagementTab = 'overview' | 'rooms' | 'upload';
 
-interface FilterConfig {
-  key: FilterKey;
-  label: string;
-  options: string[];
-}
-
-interface FloorData {
-  id: string;
-  name: string;
-  svgPath: string;
-  roomCount: number;
-  availableRooms: number;
-  occupiedRooms: number;
-}
-
-interface ManagementMetrics {
-  totalRooms: number;
-  availableRooms: number;
-  occupiedRooms: number;
-  totalFloors: number;
-  totalOutlets: number;
-  averageOccupancy: number;
+interface FloorplanMeta {
+  ok: boolean;
+  bucket: string;
+  path: string;
+  signedUrl?: string;
+  contentType: string;
+  size: number;
+  updated: string;
+  metadata?: {
+    officeId: string;
+    originalName: string;
+    firebaseStorageDownloadTokens?: string;
+  };
 }
 
 @Component({
   selector: 'app-floorplan-upload',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, HttpClientModule],
+  imports: [CommonModule, ReactiveFormsModule, HttpClientModule, FormsModule],
   templateUrl: './floorplan-management.component.html',
 })
 export class FloorplanManagementComponent implements OnInit {
@@ -62,13 +58,23 @@ export class FloorplanManagementComponent implements OnInit {
   result = signal<UploadResponse | null>(null);
   errorMsg = signal<string | null>(null);
 
+  selectedOffice: any = null;
+  selectedFloor: any = null;
+  safeSvgUrl?: SafeResourceUrl;
+  error = '';
+  loading = false;
+
   form: FormGroup;
 
   // Dropdown options
   locations: Option[] = [];
   floors: Option[] = [];
 
-  constructor(private fb: FormBuilder, private uploader: BQService) {
+  constructor(
+    private fb: FormBuilder,
+    private uploader: BQService,
+    private sanitizer: DomSanitizer
+  ) {
     this.form = this.fb.group({
       officeId: ['', Validators.required],
       floorId: [''], // optional for outlets with more than 1 floor
@@ -160,5 +166,36 @@ export class FloorplanManagementComponent implements OnInit {
           );
         },
       });
+  }
+
+  private toStorageUrl(meta: FloorplanMeta): string {
+    if (meta.signedUrl) return meta.signedUrl;
+
+    const encodedPath = encodeURIComponent(meta.path);
+    const token = meta.metadata?.firebaseStorageDownloadTokens;
+
+    return `https://firebasestorage.googleapis.com/v0/b/${
+      meta.bucket
+    }/o/${encodedPath}?alt=media${token ? `&token=${token}` : ''}`;
+  }
+
+  onSelected() {
+    if (!this.selectedOffice) return;
+    this.loading = true;
+    this.error = '';
+
+    const floor = this.selectedFloor || undefined;
+    this.uploader.getFloorplan(this.selectedOffice, floor).subscribe({
+      next: (meta: FloorplanMeta) => {
+        const url = this.toStorageUrl(meta);
+        this.safeSvgUrl = this.sanitizer.bypassSecurityTrustResourceUrl(url);
+        this.loading = false;
+      },
+      error: (err) => {
+        console.error(err);
+        this.error = 'Failed to load floorplan.';
+        this.loading = false;
+      },
+    });
   }
 }

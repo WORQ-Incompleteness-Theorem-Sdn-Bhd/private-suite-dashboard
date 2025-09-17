@@ -30,8 +30,8 @@
           <option value="Select Outlet" *ngIf="filter.key === 'outlet'">Select Outlet</option>
           <option value="Select Status" *ngIf="filter.key === 'status'">Select Status</option>
           <option value="Select Pax" *ngIf="filter.key === 'pax'">Select Pax</option>
-          <option *ngFor="let opt of filter.options" [value]="opt">
-            {{ opt }}
+          <option *ngFor="let opt of filter.options" [value]="getOptionValue(opt)">
+            {{ getOptionLabel(opt) }}
           </option>
         </select>
       </ng-container>

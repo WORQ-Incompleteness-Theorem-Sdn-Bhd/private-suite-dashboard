@@ -7,7 +7,7 @@ import {
   signInWithPopup,
   GoogleAuthProvider,
 } from '@angular/fire/auth';
-import { environment } from '../../environments/environment.prod';
+import { environment } from '../../environments/environment.dev';
 import { Observable, firstValueFrom } from 'rxjs';
 import { ToastService } from './toast.service';
 

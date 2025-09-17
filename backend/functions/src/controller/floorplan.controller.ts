@@ -15,8 +15,7 @@ import {
 } from "../utils/floorplan.util";
 
 /** CONFIG */
-const BUCKET = process.env.FLOORPLAN_BUCKET as string;
-if (!BUCKET) throw new Error("Missing env FLOORPLAN_BUCKET");
+const BUCKET = process.env.FLOORPLAN_BUCKET || 'floorplan-dashboard-2a468.appspot.com';
 
 const storage: Storage = initializeStorage();
 const bucket = storage.bucket(BUCKET);
@@ -324,11 +323,16 @@ export async function getFloorplan(req: Request, res: Response): Promise<void> {
 
 export async function getAllFloorplans(req: Request, res: Response) {
   try {
+    console.log("getAllFloorplans: Starting to fetch floorplans from bucket:", BUCKET);
+    
     const officePrefixes = await listPrefixes(bucket, "");
+    console.log("getAllFloorplans: Found office prefixes:", officePrefixes);
+    
     const offices: any[] = [];
 
     for (const op of officePrefixes) {
       const officeId = op.replace(/\/$/, "");
+      console.log("getAllFloorplans: Processing office:", officeId);
 
       // office-level file (direct under office/)
       const officeSvg = await tryBuildEntry(
@@ -350,19 +354,33 @@ export async function getAllFloorplans(req: Request, res: Response) {
       offices.push({ officeId, ...(officeSvg ? { officeSvg } : {}), floors });
     }
 
+    console.log("getAllFloorplans: Returning offices:", offices);
     res.json(offices);
   } catch (err: any) {
     console.error("getAllFloorplans error:", err?.message || err);
-    res.status(500).json({ error: "Internal error" });
+    console.error("getAllFloorplans stack:", err?.stack);
+    res.status(500).json({ 
+      error: "Internal error", 
+      message: err?.message || "Unknown error",
+      bucket: BUCKET
+    });
   }
 }
 //helper
 async function listPrefixes(bucket: Bucket, prefix: string): Promise<string[]> {
-  const opts: GetFilesOptions = { prefix, delimiter: "/", autoPaginate: true };
-  const [_files, _next, apiResponse] = (await (bucket as any).getFiles(
-    opts
-  )) as [File[], any, { prefixes?: string[] }];
-  return (apiResponse?.prefixes || []).filter(Boolean);
+  try {
+    console.log("listPrefixes: Listing prefixes for bucket:", bucket.name, "prefix:", prefix);
+    const opts: GetFilesOptions = { prefix, delimiter: "/", autoPaginate: true };
+    const [_files, _next, apiResponse] = (await (bucket as any).getFiles(
+      opts
+    )) as [File[], any, { prefixes?: string[] }];
+    const prefixes = (apiResponse?.prefixes || []).filter(Boolean);
+    console.log("listPrefixes: Found prefixes:", prefixes);
+    return prefixes;
+  } catch (error) {
+    console.error("listPrefixes error:", error);
+    return [];
+  }
 }
 
 async function tryBuildEntry(

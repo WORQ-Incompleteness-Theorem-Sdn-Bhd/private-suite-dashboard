@@ -1,18 +1,17 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, map, tap } from 'rxjs';
+import { Observable, map, tap, catchError, of } from 'rxjs';
 import { Floor, FloorResponse } from '../models/floor.model';
-import { FirebaseSvgService } from './firebase-svg.service';
-import { environment } from '../../environments/environment.prod';
+import { environment } from '../../environments/environment.dev';
 
 @Injectable({
   providedIn: 'root'
 })
 export class FloorService {
-  private url = environment.bqUrl;
+  private url = environment.floorplanUrl;
 
   // Fallback mapping for local assets (only used if Firebase is unavailable)
-  private fallbackSvgMap: Record<string, Record<string, string[]>> = {
+  /*private fallbackSvgMap: Record<string, Record<string, string[]>> = {
     '5db8fb7e35798d0010950a77': { // TTDI
       'floor_1': ['assets/TTDI-Level1.svg'],
       'floor_3a': ['assets/TTDIlevel3A.svg'],
@@ -51,9 +50,9 @@ export class FloorService {
     '6537957cc3653d2412ab4d7e': { // SPM
       'floor_4': ['assets/SPM.svg']
     }
-  };
+  };*/
 
-  constructor(private http: HttpClient, private firebaseSvgService: FirebaseSvgService) {}
+  constructor(private http: HttpClient) {}
 
   getFloors(): Observable<Floor[]> {
     return this.http.get<FloorResponse>(`${this.url}/floors`).pipe(
@@ -100,66 +99,24 @@ export class FloorService {
   getSvgFilesForFloor(officeId: string, floorId: string, floors?: Floor[]): Observable<string[]> {
     console.log('🏢 Floor Service - Getting SVGs for floor:', { officeId, floorId });
     
-    // First try to get from Firebase Cloud Storage
-    return this.firebaseSvgService.getFloorSvgUrls(officeId, floorId).pipe(
-      tap(firebaseUrls => console.log('🔥 Firebase URLs received:', firebaseUrls)),
-      map(firebaseUrls => {
-        if (firebaseUrls.length > 0) {
-          console.log('✅ Using Firebase SVGs:', firebaseUrls);
-          return firebaseUrls;
-        }
-        
-        console.log('⚠️ No Firebase SVGs found, using fallback');
-        // Fallback to static mapping
-        const outletFloors = this.fallbackSvgMap[officeId];
-        if (!outletFloors) return [];
-
-        // Try to find matching floor mapping
-        for (const [floorKey, svgFiles] of Object.entries(outletFloors)) {
-          if (floorKey === floorId || floorKey.includes(floorId)) {
-            console.log('📁 Using fallback SVGs:', svgFiles);
-            return svgFiles;
-          }
-        }
-
-        // If no direct match, try to match by floor number
-        if (floors) {
-          const floor = floors.find(f => f.floor_id === floorId);
-          if (floor) {
-            const floorNumber = this.extractFloorNumber(floor.floor_name);
-            for (const [floorKey, svgFiles] of Object.entries(outletFloors)) {
-              if (floorKey.includes(floorNumber.toLowerCase())) {
-                console.log('📁 Using fallback SVGs by floor number:', svgFiles);
-                return svgFiles;
-              }
-            }
-          }
-        }
-
-        console.log('❌ No SVGs found for floor');
-        return [];
+    // Call backend API which handles Firebase operations
+    return this.http.get<any>(`${this.url}/${officeId}/${floorId}`).pipe(
+      map(response => response.signedUrl ? [response.signedUrl] : []),
+      catchError(error => {
+        console.error('Error getting floor SVGs:', error);
+        return of([]);
       })
     );
   }
 
   // Get all SVG files for an outlet
   getAllSvgFilesForOutlet(officeId: string): Observable<string[]> {
-    // First try to get from Firebase Cloud Storage
-    return this.firebaseSvgService.getOfficeSvgUrls(officeId).pipe(
-      map(firebaseUrls => {
-        if (firebaseUrls.length > 0) {
-          return firebaseUrls;
-        }
-        
-        // Fallback to static mapping
-        const outletFloors = this.fallbackSvgMap[officeId];
-        if (!outletFloors) return [];
-
-        const allSvgs: string[] = [];
-        Object.values(outletFloors).forEach(svgFiles => {
-          allSvgs.push(...svgFiles);
-        });
-        return allSvgs;
+    // Call backend API which handles Firebase operations
+    return this.http.get<any>(`${this.url}/${officeId}`).pipe(
+      map(response => response.signedUrl ? [response.signedUrl] : []),
+      catchError(error => {
+        console.error('Error getting office SVGs:', error);
+        return of([]);
       })
     );
   }

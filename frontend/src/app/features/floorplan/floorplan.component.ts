@@ -74,10 +74,18 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     return Array.isArray(value);
   }
 
+  getOptionValue(opt: any): string {
+    return typeof opt === 'string' ? opt : opt.value;
+  }
+
+  getOptionLabel(opt: any): string {
+    return typeof opt === 'string' ? opt : opt.label;
+  }
+
   filtersConfig: FilterConfig[] = [
-    { key: 'outlet', label: 'Outlet', options: [] },
-    { key: 'status', label: 'Status', options: [] },
-    { key: 'pax', label: 'Pax', options: [] },
+    { key: 'outlet', label: 'Outlet', options: [] as any[] },
+    { key: 'status', label: 'Status', options: [] as string[] },
+    { key: 'pax', label: 'Pax', options: [] as string[] },
   ];
 
   filters = {
@@ -86,7 +94,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     pax: 'Select Pax',
     svg: 'all',
   };
-  outletOptions: string[] = [];
+  outletOptions: { label: string; value: string }[] = [];
   statusOptions: string[] = [];
   paxOptions: string[] = [];
   suiteOptions: string[] = [];
@@ -345,8 +353,8 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   }
   //#region function to get svg
   private updateSelectedOutletSvgs() {
-    const outlet = this.filters.outlet;
-    if (!outlet || outlet === 'Select Outlet') {
+    const outletId = this.filters.outlet;
+    if (!outletId || outletId === 'Select Outlet') {
       this.selectedOutletSvgs = [];
       this.displayedSvgs = [];
       this.selectedFloorSvg = 'all';
@@ -354,15 +362,15 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       return;
     }
     
-    // Get the office ID for the selected outlet
-    const officeId = this.getOfficeIdFromOutletName(outlet);
-    if (!officeId) {
-      console.error('Office ID not found for outlet:', outlet);
+    // Find the selected office by ID
+    const selectedOffice = this.officeService.getOffices().find(office => office.id === outletId);
+    if (!selectedOffice) {
+      console.error('Office not found for ID:', outletId);
       return;
     }
     
     // Get rooms for the selected outlet
-    const outletRooms = this.rooms.filter((r) => r.outlet === outlet);
+    const outletRooms = this.rooms.filter((r) => r.outlet === selectedOffice.displayName);
     
     // Extract unique floor IDs from rooms
     const floorIds = new Set<string>();
@@ -399,15 +407,22 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       }) as string[];
     
     // Get all SVG files for this outlet from floor service
-    this.floorService.getAllSvgFilesForOutlet(officeId).subscribe(svgs => {
+    this.floorService.getAllSvgFilesForOutlet(outletId).pipe(
+      catchError(error => {
+        console.error('Error loading outlet SVGs:', error);
+        this.toastService.error('Failed to load floorplan SVGs');
+        return of([]);
+      })
+    ).subscribe(svgs => {
       this.selectedOutletSvgs = svgs;
+      
+      // If no floor options from backend, fall back to SVG-based approach
+      if (this.floorOptions.length === 0) {
+        this.floorOptions = this.selectedOutletSvgs.slice();
+      }
+      
       this.updateDisplayedSvgs();
     });
-    
-    // If no floor options from backend, fall back to SVG-based approach
-    if (this.floorOptions.length === 0) {
-      this.floorOptions = this.selectedOutletSvgs.slice();
-    }
     
     // default to all floors when outlet changes
     this.selectedFloorSvg = 'all';
@@ -507,9 +522,12 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
 
     let filteredForOutlet = this.rooms;
     let filteredForStatus = filteredForOutlet.filter(
-      (r) =>
-        this.filters.outlet === 'Select Outlet' ||
-        r.outlet === this.filters.outlet
+      (r) => {
+        if (this.filters.outlet === 'Select Outlet') return true;
+        // Find the office by ID and compare with room's outlet name
+        const selectedOffice = this.officeService.getOffices().find(office => office.id === this.filters.outlet);
+        return selectedOffice && r.outlet === selectedOffice.displayName;
+      }
     );
     console.log('After outlet filter:', filteredForStatus);
 
@@ -527,8 +545,11 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     );
     console.log('After pax filter:', filteredForSuite);
 
-    // Outlet options: from office service
-    this.outletOptions = this.officeService.getOffices().map(office => office.displayName).sort();
+    // Outlet options: from office service - label = displayName, value = id
+    this.outletOptions = this.officeService.getOffices().map(office => ({
+      label: office.displayName,
+      value: office.id
+    }));
     console.log('Outlet options:', this.outletOptions);
 
     // Status options: based on selected outlet
@@ -542,9 +563,11 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       new Set(
         this.rooms
           .filter((r) => {
-            const outletMatch =
-              this.filters.outlet === 'Select Outlet' ||
-              r.outlet === this.filters.outlet;
+            const outletMatch = (() => {
+              if (this.filters.outlet === 'Select Outlet') return true;
+              const selectedOffice = this.officeService.getOffices().find(office => office.id === this.filters.outlet);
+              return selectedOffice && r.outlet === selectedOffice.displayName;
+            })();
             const statusMatch =
               this.filters.status === 'Select Status' ||
               r.status === this.filters.status;
@@ -573,7 +596,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
 
     // Keep filtersConfig in sync
     this.filtersConfig.find((f) => f.key === 'outlet')!.options =
-      this.outletOptions;
+      this.outletOptions as any[];
     this.filtersConfig.find((f) => f.key === 'status')!.options =
       this.statusOptions;
     this.filtersConfig.find((f) => f.key === 'pax')!.options = this.paxOptions;
@@ -636,12 +659,17 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       // Check if selectedFloorSvg is in the new format (floorNumber|floorId)
       if (this.selectedFloorSvg.includes('|')) {
         const floorId = this.selectedFloorSvg.split('|')[1];
-        const outlet = this.filters.outlet;
-        const officeId = this.getOfficeIdFromOutletName(outlet);
+        const outletId = this.filters.outlet;
         
-        if (officeId) {
+        if (outletId && outletId !== 'Select Outlet') {
           // Get SVG files for the specific floor
-          this.floorService.getSvgFilesForFloor(officeId, floorId, this.floors).subscribe(floorSvgs => {
+          this.floorService.getSvgFilesForFloor(outletId, floorId, this.floors).pipe(
+            catchError(error => {
+              console.error('Error loading floor SVGs:', error);
+              this.toastService.error('Failed to load floor SVGs');
+              return of([]);
+            })
+          ).subscribe(floorSvgs => {
             this.displayedSvgs = floorSvgs.length > 0 ? floorSvgs : this.selectedOutletSvgs.slice();
           });
         } else {
@@ -659,19 +687,23 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   applyFilters() {
     this.filteredRooms = this.rooms
       .filter(
-        (r) =>
-          (this.filters.outlet === 'Select Outlet' ||
-            r.outlet === this.filters.outlet) &&
+        (r) => {
+          const outletMatch = (() => {
+            if (this.filters.outlet === 'Select Outlet') return true;
+            const selectedOffice = this.officeService.getOffices().find(office => office.id === this.filters.outlet);
+            return selectedOffice && r.outlet === selectedOffice.displayName;
+          })();
+          return outletMatch &&
           (this.filters.status === 'Select Status' ||
             r.status === this.filters.status) &&
           (this.filters.pax === 'Select Pax' ||
             r.capacity.toString() === this.filters.pax) &&
 
           (this.selectedSuites.length === 0 ||
-            this.selectedSuites.includes(r.name))
+            this.selectedSuites.includes(r.name));
+        }
       )
-
-      .sort((a, b) => {
+      .sort((a: any, b: any) => {
         // Sort by Pax (capacity) if Pax filter is active
         if (this.filters.pax !== 'Select Pax') {
           return a.capacity - b.capacity;

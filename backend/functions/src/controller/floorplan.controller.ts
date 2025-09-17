@@ -11,7 +11,7 @@ import {
   parseMultipartFromRawBody,
   sanitizeBaseName,
   clampInt,
-  fetchUniqueSvg,
+  // fetchUniqueSvg,
 } from "../utils/floorplan.util";
 
 /** CONFIG */
@@ -253,60 +253,138 @@ async function processUpload(
 }
 
 /** GET /api/floorplans/:officeId[/:floorId] */
+async function fetchAllSvgs(bucket: Bucket, prefix: string): Promise<File[]> {
+  const opts: GetFilesOptions = {
+    prefix,            // recursive search (no delimiter)
+    autoPaginate: true
+  };
+  const [files] = await bucket.getFiles(opts);
+  return files.filter((f) => f.name.toLowerCase().endsWith(".svg"));
+}
+
+async function fetchUniqueSvg(bucket: Bucket, prefix: string): Promise<File> {
+  const svgs = await fetchAllSvgs(bucket, prefix);
+  if (svgs.length === 0) {
+    const err: any = new Error(`No SVG found at ${prefix}`);
+    err.code = "ENOENT";
+    throw err;
+  }
+  if (svgs.length > 1) {
+    const err: any = new Error(
+      `Expected 1 SVG at ${prefix} but found ${svgs.length} (${svgs.map(f => f.name).join(", ")})`
+    );
+    err.code = "EEXIST";
+    throw err;
+  }
+  return svgs[0];
+}
+
+// --- single controller for both cases ---
 export async function getFloorplan(req: Request, res: Response): Promise<void> {
   try {
     const officeId = (req.params.officeId || "").trim();
-    const floorId = (req.params.floorId || "").trim();
+    const floorId  = (req.params.floorId  || "").trim();
+
     if (!officeId) {
       res.status(400).json({ error: "officeId is required" });
       return;
     }
 
-    const wantRaw = String(req.query.raw || "") === "1";
+    const wantRaw    = String(req.query.raw || "") === "1";              // only valid for single
     const wantSigned = String(req.query.signed ?? "true") !== "false";
     const expiresMin = clampInt(Number(req.query.expires || 60), 1, 4320);
 
-    const prefix = floorId ? `${officeId}/${floorId}/` : `${officeId}/`;
-    const file = await fetchUniqueSvg(bucket, prefix);
+    // ---- Case A: specific floor (unique SVG expected) ----
+    if (floorId) {
+      const prefix = `${officeId}/${floorId}/`;
+      const file = await fetchUniqueSvg(bucket, prefix);
 
-    if (wantRaw) {
-      res.setHeader("Content-Type", "image/svg+xml");
-      res.setHeader("Cache-Control", "public, max-age=60");
-      file
-        .createReadStream()
-        .on("error", (err) => {
-          console.error("Stream error:", err);
-          if (!res.headersSent) res.status(500).end("Failed to read SVG");
-        })
-        .pipe(res);
+      if (wantRaw) {
+        res.setHeader("Content-Type", "image/svg+xml");
+        res.setHeader("Cache-Control", "public, max-age=60");
+        file.createReadStream()
+          .on("error", (err) => {
+            console.error("Stream error:", err);
+            if (!res.headersSent) res.status(500).end("Failed to read SVG");
+          })
+          .pipe(res);
+        return;
+      }
+
+      let signedUrl: string | null = null;
+      if (wantSigned) {
+        try {
+          const [url] = await file.getSignedUrl({
+            version: "v4",
+            action: "read",
+            expires: Date.now() + expiresMin * 60 * 1000,
+          });
+          signedUrl = url;
+        } catch (e: any) {
+          console.warn("Signed URL generation failed:", e?.message || e);
+        }
+      }
+
+      const [meta] = await file.getMetadata();
+      res.json({
+        ok: true,
+        scope: "single",
+        bucket: BUCKET,
+        path: file.name,
+        signedUrl,
+        contentType: meta.contentType || "image/svg+xml",
+        size: Number(meta.size || 0),
+        updated: meta.updated,
+        metadata: meta.metadata || {},
+      });
       return;
     }
 
-    let signedUrl: string | null = null;
-    if (wantSigned) {
-      try {
-        const [url] = await file.getSignedUrl({
-          version: "v4",
-          action: "read",
-          expires: Date.now() + expiresMin * 60 * 1000,
-        });
-        signedUrl = url;
-      } catch (e: any) {
-        console.warn("Signed URL generation failed:", e?.message || e);
+    // ---- Case B: list all floors under an office ----
+    {
+      const prefix = `${officeId}/`;
+      const files = await fetchAllSvgs(bucket, prefix);
+      if (!files.length) {
+        res.status(404).json({ error: `No SVG found at ${prefix}` });
+        return;
       }
-    }
 
-    const [meta] = await file.getMetadata();
-    res.json({
-      ok: true,
-      bucket: BUCKET,
-      path: file.name,
-      signedUrl,
-      contentType: meta.contentType || "image/svg+xml",
-      size: Number(meta.size || 0),
-      updated: meta.updated,
-      metadata: meta.metadata || {},
-    });
+      // Optionally sign each (can be heavy for many; keep or toggle with ?signed=false)
+      const items = await Promise.all(
+        files.map(async (file) => {
+          let signedUrl: string | null = null;
+          if (wantSigned) {
+            try {
+              const [url] = await file.getSignedUrl({
+                version: "v4",
+                action: "read",
+                expires: Date.now() + expiresMin * 60 * 1000,
+              });
+              signedUrl = url;
+            } catch (e: any) {
+              console.warn(`Signed URL failed for ${file.name}:`, e?.message || e);
+            }
+          }
+          const [meta] = await file.getMetadata();
+          return {
+            path: file.name,
+            signedUrl,
+            contentType: meta.contentType || "image/svg+xml",
+            size: Number(meta.size || 0),
+            updated: meta.updated,
+            metadata: meta.metadata || {},
+          };
+        })
+      );
+
+      res.json({
+        ok: true,
+        scope: "list",
+        bucket: BUCKET,
+        count: items.length,
+        items,
+      });
+    }
   } catch (err: any) {
     if (err?.code === "ENOENT") {
       res.status(404).json({ error: err.message || "Not found" });

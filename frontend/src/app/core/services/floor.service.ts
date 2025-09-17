@@ -9,6 +9,7 @@ import { environment } from '../../environments/environment.dev';
 })
 export class FloorService {
   private url = environment.floorplanUrl;
+  private bqUrl = environment.bqUrl;
 
   // Fallback mapping for local assets (only used if Firebase is unavailable)
   /*private fallbackSvgMap: Record<string, Record<string, string[]>> = {
@@ -52,10 +53,10 @@ export class FloorService {
     }
   };*/
 
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient) { }
 
   getFloors(): Observable<Floor[]> {
-    return this.http.get<FloorResponse>(`${this.url}/floors`).pipe(
+    return this.http.get<FloorResponse>(`${this.bqUrl}/floors`).pipe(
       map(response => response.data || [])
     );
   }
@@ -63,31 +64,31 @@ export class FloorService {
   // Extract floor number from floor_name (e.g., "Level 1" -> "1", "Level 3A" -> "3A")
   extractFloorNumber(floorName: string): string {
     if (!floorName) return '';
-    
+
     // Special case for Sibelco Office
     if (floorName.toLowerCase().includes('sibelco')) {
       return 'Sibelco Office';
     }
-    
+
     // Match patterns like "Level 1", "Level 3A", "Floor 2", etc.
     const match = floorName.match(/(?:level|lvl|floor|f)[\s\-_]?(\d+[A-Za-z]?)/i);
     if (match) {
       return match[1].toUpperCase();
     }
-    
+
     // Fallback: extract any number with optional letter
     const numberMatch = floorName.match(/(\d+[A-Za-z]?)/);
     if (numberMatch) {
       return numberMatch[1].toUpperCase();
     }
-    
+
     return floorName;
   }
 
   // Get floors grouped by office (if needed for filtering)
   getFloorsByOffice(officeId: string): Observable<Floor[]> {
     return this.getFloors().pipe(
-      map(floors => floors.filter(floor => 
+      map(floors => floors.filter(floor =>
         // You might need to add office_id filtering here if the backend supports it
         // For now, return all floors
         true
@@ -98,7 +99,7 @@ export class FloorService {
   // Get SVG files for a specific floor and outlet
   getSvgFilesForFloor(officeId: string, floorId: string, floors?: Floor[]): Observable<string[]> {
     console.log('🏢 Floor Service - Getting SVGs for floor:', { officeId, floorId });
-    
+
     // Call backend API which handles Firebase operations
     return this.http.get<any>(`${this.url}/${officeId}/${floorId}`).pipe(
       map(response => response.signedUrl ? [response.signedUrl] : []),
@@ -112,6 +113,7 @@ export class FloorService {
   // Get all SVG files for an outlet
   getAllSvgFilesForOutlet(officeId: string): Observable<string[]> {
     // Call backend API which handles Firebase operations
+    console.log("`${this.url}/${officeId}`", `${this.url}/${officeId}`)
     return this.http.get<any>(`${this.url}/${officeId}`).pipe(
       map(response => response.signedUrl ? [response.signedUrl] : []),
       catchError(error => {

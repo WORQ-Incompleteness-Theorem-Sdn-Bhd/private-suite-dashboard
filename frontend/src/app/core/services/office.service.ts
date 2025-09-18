@@ -1,7 +1,8 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable, of } from 'rxjs';
-import { tap } from 'rxjs/operators';
+import { tap, map, catchError } from 'rxjs/operators';
 import { Office, OfficeResponse } from '../models/office.model';
+import { FirebaseSvgService } from './firebase-svg.service';
 
 @Injectable({ providedIn: 'root' })
 export class OfficeService {
@@ -94,23 +95,56 @@ export class OfficeService {
     },
   ];
 
-  constructor() {}
+  constructor(private firebaseSvgService: FirebaseSvgService) {}
 
   loadOffices(): Observable<OfficeResponse> {
     this.loadingSubject.next(true);
     
-    // Simulate async loading
-    return of({
-      data: this.staticOffices,
-      success: true,
-      message: 'Offices loaded successfully'
-    }).pipe(
+    // First load Firebase Cloud Storage SVG URLs, then merge with static office data
+    return this.firebaseSvgService.buildOfficeFloorMapping().pipe(
+      map(cloudMapping => {
+        // Merge static office data with Firebase Cloud Storage SVG URLs
+        const officesWithFirebaseSvgs = this.staticOffices.map(office => {
+          const cloudSvgs = cloudMapping.get(office.id);
+          if (cloudSvgs) {
+            // Get all SVG URLs for this office
+            const allSvgs: string[] = [];
+            cloudSvgs.forEach(svgUrls => {
+              allSvgs.push(...svgUrls);
+            });
+            
+            return {
+              ...office,
+              svg: allSvgs.length > 0 ? allSvgs : office.svg // Fallback to static if no Firebase SVGs
+            };
+          }
+          return office; // Keep original if no Firebase data
+        });
+
+        return {
+          data: officesWithFirebaseSvgs,
+          success: true,
+          message: 'Offices loaded successfully with Firebase Cloud Storage SVGs'
+        };
+      }),
       tap((response: OfficeResponse) => {
-        console.log('Loaded static offices:', response);
+        console.log('Loaded offices with Firebase SVGs:', response);
         if (response.success && response.data) {
           this.officesSubject.next(response.data);
         }
         this.loadingSubject.next(false);
+      }),
+      catchError(error => {
+        console.error('Error loading Firebase SVGs, falling back to static:', error);
+        // Fallback to static data if Firebase fails
+        const fallbackResponse = {
+          data: this.staticOffices,
+          success: true,
+          message: 'Offices loaded with static SVGs (Firebase unavailable)'
+        };
+        this.officesSubject.next(fallbackResponse.data);
+        this.loadingSubject.next(false);
+        return of(fallbackResponse);
       })
     );
   }

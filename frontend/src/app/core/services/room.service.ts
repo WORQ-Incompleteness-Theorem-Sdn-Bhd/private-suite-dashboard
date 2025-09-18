@@ -1,8 +1,9 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpParams, HttpHeaders } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { BehaviorSubject, Observable, tap } from 'rxjs';
 import { Room } from '../models/room.model';
 import { environment } from '../../environments/environment.prod';
+import { OfficeService } from './office.service';
 
 export interface ResourceParams {
   officeId: string; // location → office.id
@@ -22,82 +23,10 @@ export class RoomService {
   private loadingSubject = new BehaviorSubject<boolean>(false);
   loading$ = this.loadingSubject.asObservable();
 
-  private readonly outletMap: Record<
-    string,
-    { name: string; svg: string | string[] }
-  > = {
-    '67ad665a9aa9ef620e693aa0': {
-      name: '8FA',
-      svg: 'assets/8FA.svg',
-    },
-    '65e56bd7a24b74cef513834f': {
-      name: 'ITG',
-      svg: 'assets/ITG.svg',
-    },
-    '565748274a955c790d808c77': {
-      name: 'UBP',
-      svg: 'assets/UBP.svg',
-    },
-    '5dac63c998e930010a595016': {
-      name: 'KLG',
-      svg: 'assets/KLG.svg',
-    },
-    '5db8fb7e35798d0010950a77': {
-      name: 'TTDI',
-      svg: [
-        'assets/TTDI-Level1.svg',
-        'assets/TTDIlevel3A.svg',
-        'assets/Sibelco Office - L1.svg',
-      ],
-    },
-    /*'5db8fb9798549f0010df15f3': {
-      name: 'STO-WIP',
-      svg: [
-        'assets/STO-Level11.svg',
-        'assets/STO-Level12.svg',
-        'assets/STO-Level14.svg',
-      ],
-    },*/
-    '62a9832b43c9f437e373e9dd': {
-      name: 'KLS',
-      svg: [
-        'assets/KLS- L20.svg',
-        'assets/KLS-ByteDance.svg',
-        'assets/KLS-L21.svg',
-        'assets/KLS-L28.svg',
-      ],
-    },
-    '63f5de531f29f60007ca8209': {
-      name: 'MUB',
-      svg: [
-        'assets/MUB-level9.svg',
-        'assets/MUB-level12.svg',
-        'assets/MUB-level17.svg',
-      ],
-    },
-    '6537957cc3653d2412ab4d7e': {
-      name: 'SPM',
-      svg: 'assets/SPM.svg',
-    },
-    '66dfd21d5ec307e20a9b761c': {
-      name: 'UBP3A',
-      svg: ['assets/UBP-L13A.svg', 'assets/UBP-L13AAIRIT.svg'],
-    },
-    '671f3dbf0951c4dfbaaadd5d': {
-      name: 'SV2',
-      svg: 'assets/SV2.svg',
-    },
-  };
+  // Removed hardcoded outletMap in favor of OfficeService data
 
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient, private officeService: OfficeService) {}
 
-  private getAuthHeaders(): HttpHeaders {
-    const token = sessionStorage.getItem('userAccessToken');
-    return new HttpHeaders({
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    });
-  }
 
   private toYoutubeEmbed(url: string): string | null {
     if (!url) return null;
@@ -121,12 +50,12 @@ export class RoomService {
     }
   }
 
-  private url = environment.bqUrl;
-
-  //Populate filters from backend data
+  
+  private url = environment.bqUrl ;  
+//Populate filters from backend data
   getResources(params: ResourceParams): Observable<any> {
     this.loadingSubject.next(true);
-
+    
     // Build query parameters
     let httpParams = new HttpParams();
     httpParams = httpParams.set('office_id', params.officeId);
@@ -139,62 +68,56 @@ export class RoomService {
     }
     if (params.suites && params.suites.length > 0) {
       // For multiple suites, we'll send them as comma-separated values
-      httpParams = httpParams.set('resource_name', params.suites.join(','));
+      httpParams = httpParams.set('resource_name', params.suites.join(',')); // use resources_id instead
     }
     if (params.floor) {
       httpParams = httpParams.set('floor_id', params.floor);
     }
+    
+    return this.http.get<any>(`${this.url}/resources` , { 
+      params: httpParams
+    }).pipe(
+      tap((response) => {
+        console.log('Fetched resources from backend:', response);
+        const data = response.data || [];
+        
+        const mapped = data.map((item: any) => {
+          const office = this.officeService.getOfficeById(item.office_id);
+          const svgPath = office?.svg || [];
 
-    return this.http
-      .get<any>(`${this.url}/resources`, {
-        params: httpParams,
-        headers: this.getAuthHeaders(),
-      })
-      .pipe(
-        tap((response) => {
-          console.log('Fetched resources from backend:', response);
-          const data = response.data || [];
-
-          const mapped = data.map((item: any) => {
-            const outletInfo = this.outletMap[item.office_id];
-            const svgPath = outletInfo?.svg || [];
-
-            // Normalize status from backend data
-            let normalizedStatus: 'Available' | 'Occupied';
-            if (
-              ['available', 'available_soon'].includes(
-                item.status.toLowerCase()
-              )
-            ) {
-              normalizedStatus = 'Available';
-            } else {
-              normalizedStatus = 'Occupied';
-            }
+          // Normalize status from backend data // update tht group 
+          let normalizedStatus: 'Available' | 'Occupied';
+          if (item.status.toLowerCase() === 'available') {
+            normalizedStatus = 'Available';
+          } else {
+            normalizedStatus = 'Occupied';
+          }
 
             // Convert mm² → ft²
             const areaMm2 = Number(item.area_in_sqmm) || 0;
             const areaSqft = areaMm2 / MM2_PER_SQFT;
 
-            return {
-              id: item.resource_id,
-              name: item.resource_name,
-              status: normalizedStatus,
-              outlet: outletInfo?.name || '',
-              svg: Array.isArray(svgPath) ? svgPath : [svgPath],
-              capacity: item.pax_size,
-              type: item.resource_type,
-              area: Math.round(areaSqft),
-              price: item.price,
-              deposit: item.deposit,
-              video: item.youtube_link || undefined,
-              videoEmbed: this.toYoutubeEmbed(item.youtube_link) || undefined,
-            } as Room;
-          });
-
-          console.log('Mapped resources:', mapped);
-          this.roomsSubject.next(mapped);
-          this.loadingSubject.next(false);
-        })
-      );
+          return {
+            id: item.resource_id,
+            name: item.resource_name,
+            status: normalizedStatus,
+            outlet: (office?.name || office?.displayName || ''),
+            svg: Array.isArray(svgPath) ? svgPath : (svgPath ? [svgPath] : []),
+            capacity: item.pax_size,
+            type: item.resource_type,
+            area: Math.round(areaSqft),
+            price: item.price,
+            deposit: item.deposit,
+            video: item.youtube_link || undefined,
+            videoEmbed: this.toYoutubeEmbed(item.youtube_link) || undefined,
+            floor_id: item.floor_id
+          } as Room;
+        });
+        
+        console.log('Mapped resources:', mapped);
+        this.roomsSubject.next(mapped);
+        this.loadingSubject.next(false);
+      })
+    );
   }
 }

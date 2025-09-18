@@ -256,16 +256,24 @@
         <p><strong>Price:</strong> RM {{ selectedRoom.price }}</p>
         <p><strong>Deposit:</strong> RM {{ selectedRoom.deposit }}</p>
         -->
-        <!-- below still need to check with how it works with the youtube video -->
-        <div *ngIf="selectedRoom.video" class="mt-1">
-          <a [href]="selectedRoom.video" target="_blank" 
-             class="inline-flex items-center px-2 py-1 text-xs font-medium text-white bg-red-600 rounded hover:bg-red-700 transition-colors">
-            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+        <!-- Watch on YouTube link -->
+        <ng-container *ngIf="getYouTubeWatchUrlFor(selectedRoom) as ytUrl">
+          <a
+            [href]="ytUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            (click)="$event.stopPropagation()"
+            class="mt-2 inline-flex items-center gap-2 rounded-md border border-gray-300 px-2 py-1 text-[13px] text-blue-600 hover:underline"
+            aria-label="Open walkthrough video on YouTube"
+            title="Open walkthrough video on YouTube"
+          >
+            <!-- play icon -->
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M8 5v14l11-7z"></path>
             </svg>
             Watch Tour
           </a>
-        </div>
+        </ng-container>
       </div>
     </div>
   </div>

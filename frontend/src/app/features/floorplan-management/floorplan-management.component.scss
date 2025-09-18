@@ -1,0 +1,297 @@
+// Floorplan Management Component Styles
+
+// Tab navigation styling
+.tab-navigation {
+  .tab-button {
+    transition: all 0.2s ease-in-out;
+    
+    &:hover {
+      transform: translateY(-1px);
+    }
+    
+    &.active {
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+  }
+}
+
+// Metrics dashboard styling
+.metrics-dashboard {
+  background: linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%);
+  border: 1px solid #fed7aa;
+  
+  .metric-card {
+    transition: transform 0.2s ease-in-out;
+    
+    &:hover {
+      transform: scale(1.05);
+    }
+  }
+}
+
+// Room and floor list styling
+.room-item, .floor-item {
+  transition: all 0.2s ease-in-out;
+  border: 1px solid #e5e7eb;
+  
+  &:hover {
+    border-color: #f97316;
+    box-shadow: 0 2px 8px rgba(249, 115, 22, 0.1);
+    transform: translateY(-1px);
+  }
+}
+
+// Form modal styling
+.modal-overlay {
+  backdrop-filter: blur(4px);
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+.modal-content {
+  animation: modalSlideIn 0.3s ease-out;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+// Upload progress styling
+.upload-progress {
+  .progress-bar {
+    background: linear-gradient(90deg, #f97316 0%, #ea580c 100%);
+    transition: width 0.3s ease-in-out;
+  }
+}
+
+// SVG object styling
+svg-object {
+  border-radius: 8px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  transition: box-shadow 0.2s ease-in-out;
+  
+  &:hover {
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  }
+}
+
+// Filter section styling
+.filter-section {
+  .filter-input {
+    transition: all 0.2s ease-in-out;
+    
+    &:focus {
+      border-color: #f97316;
+      box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.1);
+    }
+  }
+}
+
+// Suite selection styling
+.suite-selection {
+  .suite-item {
+    transition: all 0.2s ease-in-out;
+    
+    &:hover {
+      background-color: #fef3c7;
+    }
+    
+    &.selected {
+      background-color: #fed7aa;
+      border-color: #f97316;
+    }
+  }
+}
+
+// Action buttons styling
+.action-button {
+  transition: all 0.2s ease-in-out;
+  
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+  
+  &:active {
+    transform: translateY(0);
+  }
+}
+
+// Loading states
+.loading-spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+// Responsive design
+@media (max-width: 1024px) {
+  .grid-cols-12 {
+    grid-template-columns: 1fr;
+  }
+  
+  .lg\\:col-span-4 {
+    grid-column: span 1;
+  }
+  
+  .lg\\:col-span-8 {
+    grid-column: span 1;
+  }
+}
+
+// Custom scrollbar for overflow areas
+.custom-scrollbar {
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  &::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 3px;
+  }
+  
+  &::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 3px;
+    
+    &:hover {
+      background: #94a3b8;
+    }
+  }
+}
+
+// Status indicators
+.status-available {
+  color: #059669;
+  background-color: #d1fae5;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.status-occupied {
+  color: #dc2626;
+  background-color: #fee2e2;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+// Pax color legend
+.pax-legend {
+  .legend-item {
+    transition: all 0.2s ease-in-out;
+    
+    &:hover {
+      transform: scale(1.1);
+    }
+  }
+}
+
+// Floor label styling
+.floor-label {
+  background: linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%);
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-weight: 600;
+  color: #9a3412;
+}
+
+// Empty state styling
+.empty-state {
+  .empty-icon {
+    font-size: 3rem;
+    opacity: 0.5;
+  }
+  
+  .empty-text {
+    color: #6b7280;
+    font-size: 0.875rem;
+  }
+}
+
+// Success/Error message styling
+.message-success {
+  background-color: #d1fae5;
+  border-color: #a7f3d0;
+  color: #065f46;
+}
+
+.message-error {
+  background-color: #fee2e2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
+// Form validation styling
+.form-error {
+  color: #dc2626;
+  font-size: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.form-input-error {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+}
+
+// Animation for list items
+.list-item-enter {
+  animation: listItemEnter 0.3s ease-out;
+}
+
+@keyframes listItemEnter {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+// Hover effects for interactive elements
+.interactive-element {
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+}
+
+// Focus states for accessibility
+.focus-visible {
+  outline: 2px solid #f97316;
+  outline-offset: 2px;
+}
+
+// Print styles
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  .print-break {
+    page-break-before: always;
+  }
+}

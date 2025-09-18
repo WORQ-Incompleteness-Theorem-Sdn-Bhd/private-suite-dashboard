@@ -1,4 +1,14 @@
-import { Component, OnInit, signal } from '@angular/core';
+import {
+  Component,
+  OnInit,
+  AfterViewInit,
+  ElementRef,
+  ViewChildren,
+  QueryList,
+  ViewChild,
+  NgZone,
+  signal,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
   FormBuilder,
@@ -8,6 +18,13 @@ import {
   FormsModule,
 } from '@angular/forms';
 import { HttpClientModule } from '@angular/common/http';
+import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
+import { Observable, of, forkJoin } from 'rxjs';
+import { catchError, finalize, tap } from 'rxjs/operators';
+import { Room } from '../../core/models/room.model';
+import { RoomService, ResourceParams } from '../../core/services/room.service';
+import { OfficeService } from '../../core/services/office.service';
+import { ToastService } from '../../shared/services/toast.service';
 import { BQService, UploadResponse } from './bq.service';
 import { forkJoin } from 'rxjs';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';

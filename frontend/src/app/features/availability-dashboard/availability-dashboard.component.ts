@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, BehaviorSubject } from 'rxjs';
-import { environment } from '../../environments/environment.dev';
+import { environment } from '../../environments/environment.prod';
 import { AuthService } from '../../shared/services/auth.service';
 import { OfficeService } from '../../core/services/office.service';
 import { Office } from '../../core/models/office.model';

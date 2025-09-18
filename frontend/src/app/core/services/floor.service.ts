@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, map, tap, catchError, of } from 'rxjs';
 import { Floor, FloorResponse } from '../models/floor.model';
-import { environment } from '../../environments/environment.dev';
+import { environment } from '../../environments/environment.prod';
 import { FirebaseSvgService } from './firebase.service';
 
 

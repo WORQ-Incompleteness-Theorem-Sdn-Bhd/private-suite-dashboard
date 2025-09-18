@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { BehaviorSubject, Observable, tap, catchError, of } from 'rxjs';
 import { Room } from '../models/room.model';
-import { environment } from '../../environments/environment.dev';
+import { environment } from '../../environments/environment.prod';
 import { OfficeService } from './office.service';
 
 export interface ResourceParams {

@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, map, tap, catchError, of } from 'rxjs';
 import { Floor, FloorResponse } from '../models/floor.model';
 import { environment } from '../../environments/environment.prod';
-import { FirebaseSvgService } from './firebase.service';
+import { FirebaseSvgItem, FirebaseSvgResponse, FirebaseSvgService } from './firebase.service';
 
 
 @Injectable({
@@ -12,7 +12,7 @@ import { FirebaseSvgService } from './firebase.service';
 export class FloorService {
   private url = environment.floorplanUrl;
   private bqUrl = environment.bqUrl;
-  private fallbackSvgMap: Record<string, Record<string, string[]>> = {} 
+  private fallbackSvgMap: Record<string, Record<string, string[]>> = {}
   constructor(private http: HttpClient, private firebaseSvgService: FirebaseSvgService) { }
 
   getFloors(): Observable<Floor[]> {
@@ -148,5 +148,53 @@ export class FloorService {
       return this.extractFloorNumber(floor.floor_name);
     }
     return floorId;
+  }
+
+
+  getFloorplanUrls(officeId: string, floorId?: string): Observable<string[]> {
+    const url = floorId
+      ? `${this.url}/${officeId}/${floorId}`
+      : `${this.url}/${officeId}`;
+
+    console.log("getFloorplan url", url);
+    console.log("🔥 Firebase SVG Service - Fetching floorplan:", { officeId, floorId, url });
+
+    return this.http.get<FirebaseSvgResponse>(url).pipe(
+      tap(resp => console.log('✅ Firebase SVG Response:', resp)),
+      map((resp) => {
+        if (!resp?.ok) return [];
+        if (resp.scope === "single") {
+          const item: FirebaseSvgItem = {
+            path: resp.path,
+            signedUrl: resp.signedUrl,
+            contentType: resp.contentType,
+            size: resp.size,
+            updated: resp.updated,
+            metadata: resp.metadata ?? null,
+          };
+          return [this.buildSvgUrl((resp as any).bucket, item)];
+        }
+        // list
+        return resp.items.map(it => this.buildSvgUrl((resp as any).bucket, it));
+      }),
+      catchError(error => {
+        console.error('❌ Firebase SVG Error:', error);
+        return of<string[]>([]);
+      })
+    );
+  }
+
+
+
+  // --- helper to build a usable URL
+  private buildSvgUrl(bucket: string, item: FirebaseSvgItem): string {
+    if (item.signedUrl) return item.signedUrl!;
+    // const token = item.metadata?.firebaseStorageDownloadTokens;
+    // const encodedPath = encodeURIComponent(item.path);
+    // if (token) {
+    //   return `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodedPath}?alt=media&token=${token}`;
+    // }
+    // only works if object is public
+    return `https://storage.googleapis.com/${bucket}/${item.path}`;
   }
 }

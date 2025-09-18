@@ -3,17 +3,44 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, map, catchError, of, tap } from 'rxjs';
 import { environment } from '../../environments/environment.prod';
 
-export interface FirebaseSvgResponse {
-  ok: boolean;
-  bucket: string;
+// export interface FirebaseSvgResponse {
+//   ok: boolean;
+//   bucket: string;
+//   path: string;
+//   signedUrl: string | null;
+//   contentType: string;
+//   size: number;
+//   updated: string;
+//   metadata: any;
+// }
+export type FirebaseSvgItem = {
   path: string;
-  signedUrl: string | null;
-  contentType: string;
-  size: number;
-  updated: string;
-  metadata: any;
-}
+  signedUrl?: string | null;
+  contentType?: string;
+  size?: number;
+  updated?: string;
+  metadata?: Record<string, any> | null;
+};
 
+export type FirebaseSvgResponse =
+  | {
+    ok: boolean;
+    scope: "single";
+    bucket: string;
+    path: string;
+    signedUrl?: string | null;
+    contentType?: string;
+    size?: number;
+    updated?: string;
+    metadata?: Record<string, any> | null;
+  }
+  | {
+    ok: boolean;
+    scope: "list";
+    bucket: string;
+    count: number;
+    items: FirebaseSvgItem[];
+  };
 export interface FloorplanEntry {
   officeId: string;
   floorId?: string;
@@ -70,7 +97,7 @@ export class FirebaseSvgService {
   // Get SVG URL for a specific office and floor
   getSvgUrl(officeId: string, floorId?: string): Observable<string | null> {
     return this.getFloorplan(officeId, floorId).pipe(
-      map(response => response.signedUrl),
+      map((response:any) => response.signedUrl),
       catchError(error => {
         console.error('Error getting SVG URL:', error);
         return of(null);
@@ -111,7 +138,7 @@ export class FirebaseSvgService {
   // Get SVG URLs for specific floor
   getFloorSvgUrls(officeId: string, floorId: string): Observable<string[]> {
     return this.getFloorplan(officeId, floorId).pipe(
-      map(response => response.signedUrl ? [response.signedUrl] : []),
+      map((response:any) => response.signedUrl ? [response.signedUrl] : []),
       catchError(error => {
         console.error('Error getting floor SVG URLs:', error);
         return of([]);
@@ -152,4 +179,5 @@ export class FirebaseSvgService {
       })
     );
   }
+ 
 }

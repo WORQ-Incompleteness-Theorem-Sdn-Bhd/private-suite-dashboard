@@ -191,6 +191,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   ) { }
 
   getSafeUrl(url: string): SafeResourceUrl {
+    console.log("getSafeUrl url", url)
     const cached = this.safeUrlCache.get(url);
     if (cached) return cached;
     const safe = this.sanitizer.bypassSecurityTrustResourceUrl(url);
@@ -253,6 +254,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       })
     ).subscribe((floors) => {
       this.floors = floors;
+      console.log("floors", floors)
       // Build floor ID to floor mapping for quick lookup
       this.floorIdToFloorMap.clear();
       floors.forEach(floor => {
@@ -640,52 +642,162 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       }
     }
   }
-
-  // Floor selection handler
   onFloorChange(event: Event) {
-    const select = event.target as HTMLSelectElement | null;
-    if (select) {
-      this.selectedFloorSvg = select.value;
-      this.updateDisplayedSvgs();
-      // colors/handlers will reattach on next load event automatically
-    }
+    const select = event.target as HTMLSelectElement;
+    const raw = select.value; // e.g. "9|63f5decf5de9f10007e115a6" or "all"
+    // store as-is; we'll parse inside updateDisplayedSvgs()
+    this.selectedFloorSvg = raw;
+    this.updateDisplayedSvgs();
   }
 
   private updateDisplayedSvgs() {
-    if (!this.selectedOutletSvgs || this.selectedOutletSvgs.length === 0) {
+    const outletId = this.filters.outlet;
+
+    // guards
+    if (!outletId || outletId === 'Select Outlet') {
       this.displayedSvgs = [];
       return;
     }
     if (this.selectedFloorSvg === 'all') {
-      this.displayedSvgs = this.selectedOutletSvgs.slice();
-    } else {
-      // Check if selectedFloorSvg is in the new format (floorNumber|floorId)
-      if (this.selectedFloorSvg.includes('|')) {
-        const floorId = this.selectedFloorSvg.split('|')[1];
-        const outletId = this.filters.outlet;
-
-        if (outletId && outletId !== 'Select Outlet') {
-          // Get SVG files for the specific floor
-          this.floorService.getSvgFilesForFloor(outletId, floorId, this.floors).pipe(
-            catchError(error => {
-              console.error('Error loading floor SVGs:', error);
-              this.toastService.error('Failed to load floor SVGs');
-              return of([]);
-            })
-          ).subscribe(floorSvgs => {
-            this.displayedSvgs = floorSvgs.length > 0 ? floorSvgs : this.selectedOutletSvgs.slice();
-          });
-        } else {
-          this.displayedSvgs = this.selectedOutletSvgs.slice();
-        }
-      } else {
-        // Fallback to old SVG-based filtering
-        this.displayedSvgs = this.selectedOutletSvgs.filter(
-          (p) => p === this.selectedFloorSvg
-        );
-      }
+      // If you have an office-wide listing endpoint, call it here:
+      // this.floorService.getFloorplanUrls(outletId).subscribe(urls => this.displayedSvgs = urls);
+      // Temporary: keep whatever you had before for "all"
+      this.displayedSvgs = this.selectedOutletSvgs?.slice?.() ?? [];
+      return;
     }
+
+    // extract floorId from "9|<floorId>" or treat as legacy value (no pipe)
+    const parts = (this.selectedFloorSvg || '').split('|');
+    const floorId = parts.length > 1 ? (parts[1] || '').trim() : '';
+
+    // legacy fallback (old behavior)
+    if (!floorId) {
+      this.displayedSvgs = (this.selectedOutletSvgs || []).filter(p => p === this.selectedFloorSvg);
+      return;
+    }
+
+    // ✅ call API and render the SVG from the response
+    this.floorService.getFloorplanUrls(outletId, floorId).pipe(
+      catchError(err => {
+        console.error('Error loading floor SVG:', err);
+        this.toastService.error('Failed to load floor SVG');
+        return of<string[]>([]);
+      })
+    ).subscribe(urls => {
+      this.displayedSvgs = urls; // direct render-ready SVG URLs
+    });
   }
+
+  // onFloorChange(event: Event) {
+  //   const select = event.target as HTMLSelectElement | null;
+  //   const raw = select?.value ?? '';
+  //   this.selectedFloorSvg = raw;
+  //   console.log("onFloorChange selectedFloorSvg", this.selectedFloorSvg)
+  //   console.log("onFloorChange raw", raw)
+  //   this.updateDisplayedSvgs();
+  //   if (!raw) return;
+
+  // }
+
+  // private updateDisplayedSvgs() {
+  //   console.log("updateDisplayedSvgs", this.selectedFloorSvg)
+  //   console.log("updateDisplayedSvgs", this.selectedFloorSvg)
+  //   // "9|63f5decf5de9f10007e115a6" -> extract floorId
+  //   const _hasPipe = this.selectedFloorSvg.includes('|');
+  //   const hasPipe = _hasPipe ? true:false;
+  //   console.log("hasPipe", hasPipe)
+  //   // const floorId = hasPipe ? this.selectedFloorSvg.split('|')[1]?.trim() : '';
+  //   const floorId = this.selectedFloorSvg.split('|')[1];
+  //   const outletId = this.filters.outlet;
+  //   console.log("floorId", floorId)
+  //   console.log("outletId", outletId)
+  //   console.log("selectedFloorSvg", this.selectedFloorSvg)
+
+  //   if (hasPipe && floorId && outletId !== 'Select Outlet') {
+  //     console.log("hello")
+  //     this.floorService.getSvgFilesForFloor(outletId, floorId, this.floors).pipe(
+  //       catchError(err => {
+  //         console.error('Error loading floor SVGs:', err);
+  //         this.toastService.error('Failed to load floor SVGs');
+  //         return of<string[]>([]);
+  //       })
+  //     ).subscribe(floorSvgs => {
+  //       this.displayedSvgs = floorSvgs.length ? floorSvgs : this.selectedOutletSvgs.slice();
+  //     });
+  //   } else if (!hasPipe) {
+  //     console.log("hello 2")
+  //     // Fallback old behavior (value is a direct SVG url)
+  //     this.displayedSvgs = this.selectedOutletSvgs.filter(p => p === this.selectedFloorSvg);
+  //   } else {
+  //     console.log("hello 3")
+  //     this.displayedSvgs = this.selectedOutletSvgs.slice();
+  //   }
+  //   if (!this.selectedOutletSvgs?.length) {
+  //     this.displayedSvgs = [];
+  //     return;
+  //   }
+
+  //   if (this.selectedFloorSvg === 'all') {
+  //     this.displayedSvgs = this.selectedOutletSvgs.slice();
+  //     return;
+  //   }
+
+
+
+
+  // }
+
+  // // Floor selection handler
+  // onFloorChange(event: Event) {
+  //   console.log("onFloorChange event.target", event.target)
+  //   const select: any = event.target as HTMLSelectElement | null;
+  //   console.log("onFloorChange select", select)
+  //   console.log("onFloorChange select.value", select.value)
+  //   if (select) {
+  //     this.selectedFloorSvg = select.value;
+  //     this.updateDisplayedSvgs();
+  //     // colors/handlers will reattach on next load event automatically
+  //   }
+  // }
+
+  // private updateDisplayedSvgs() {
+  //   console.log("updateDisplayedSvgs selectedOutletSvgs", this.selectedOutletSvgs)
+  //   if (!this.selectedOutletSvgs || this.selectedOutletSvgs.length === 0) {
+  //     this.displayedSvgs = [];
+  //     return;
+  //   }
+  //   if (this.selectedFloorSvg === 'all') {
+  //     this.displayedSvgs = this.selectedOutletSvgs.slice();
+  //   } else {
+  //     // Check if selectedFloorSvg is in the new format (floorNumber|floorId)
+  //     if (this.selectedFloorSvg.includes('|')) {
+  //       const floorId = this.selectedFloorSvg.split('|')[1];
+  //       const outletId = this.filters.outlet;
+  //       console.log("floorId", floorId)
+  //       console.log("outletId", outletId)
+  //       if (outletId && outletId !== 'Select Outlet') {
+  //         // Get SVG files for the specific floor
+  //         this.floorService.getSvgFilesForFloor(outletId, floorId, this.floors).pipe(
+  //           catchError(error => {
+  //             console.error('Error loading floor SVGs:', error);
+  //             this.toastService.error('Failed to load floor SVGs');
+  //             return of([]);
+  //           })
+  //         ).subscribe(floorSvgs => {
+  //           console.log("getSvgFilesForFloor : floorSvgs", floorSvgs)
+  //           this.displayedSvgs = floorSvgs.length > 0 ? floorSvgs : this.selectedOutletSvgs.slice();
+  //         });
+  //       } else {
+  //         this.displayedSvgs = this.selectedOutletSvgs.slice();
+  //       }
+  //     } else {
+  //       // Fallback to old SVG-based filtering
+  //       this.displayedSvgs = this.selectedOutletSvgs.filter(
+  //         (p) => p === this.selectedFloorSvg
+  //       );
+  //     }
+  //   }
+  // }
 
   applyFilters() {
     this.filteredRooms = this.rooms

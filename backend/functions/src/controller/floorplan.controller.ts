@@ -15,7 +15,7 @@ import {
 } from "../utils/floorplan.util";
 
 /** CONFIG */
-const BUCKET =  process.env.FLOORPLAN_BUCKET || 'floorplan-dashboard-2a468.appspot.com';
+const BUCKET = process.env.FLOORPLAN_BUCKET || 'floorplan-dashboard-2a468.appspot.com';
 
 const storage: Storage = initializeStorage();
 const bucket = storage.bucket(BUCKET);
@@ -30,10 +30,10 @@ export async function handleUpload(req: Request, res: Response): Promise<void> {
   const cleanup = async () => {
     try {
       if (tempFilePath) {
-        await fs.unlink(tempFilePath).catch(() => {});
+        await fs.unlink(tempFilePath).catch(() => { });
       }
       if (cloudFile) {
-        await (cloudFile as File).delete().catch(() => {});
+        await (cloudFile as File).delete().catch(() => { });
       }
     } catch (e) {
       console.warn("Cleanup warning:", e);
@@ -110,7 +110,7 @@ async function processUpload(
     });
 
     if ((officeProbe || []).length === 0) {
-      await fs.unlink(tmp).catch(() => {});
+      await fs.unlink(tmp).catch(() => { });
       res.status(404).json({ error: `officeId '${officeId}' not found` });
       return;
     }
@@ -132,7 +132,7 @@ async function processUpload(
 
       const floorExists = (floorListing || []).length > 0;
       if (!floorExists) {
-        await fs.unlink(tmp).catch(() => {});
+        await fs.unlink(tmp).catch(() => { });
         res.status(404).json({
           error: `floorId '${floorId}' under office '${officeId}' not found`,
         });
@@ -145,7 +145,7 @@ async function processUpload(
       );
 
       if (existingSvgs.length > 0 && !overwrite) {
-        await fs.unlink(tmp).catch(() => {});
+        await fs.unlink(tmp).catch(() => { });
         res.status(409).json({
           error:
             "SVG already exists for this floor. Pass overwrite=true to replace.",
@@ -158,7 +158,7 @@ async function processUpload(
       if (existingSvgs.length > 0 && overwrite) {
         await Promise.all(
           existingSvgs.map((f) =>
-            f.delete({ ignoreNotFound: true }).catch(() => {})
+            f.delete({ ignoreNotFound: true }).catch(() => { })
           )
         );
       }
@@ -167,7 +167,7 @@ async function processUpload(
       const rootFile = bucket.file(finalKey);
       const [exists] = await rootFile.exists();
       if (exists && !overwrite) {
-        await fs.unlink(tmp).catch(() => {});
+        await fs.unlink(tmp).catch(() => { });
         res.status(409).json({
           error: `File '${sanitizedName}' already exists under office '${officeId}'. Pass overwrite=true to replace.`,
           existing: [finalKey],
@@ -175,7 +175,7 @@ async function processUpload(
         return;
       }
       if (exists && overwrite) {
-        await rootFile.delete({ ignoreNotFound: true }).catch(() => {});
+        await rootFile.delete({ ignoreNotFound: true }).catch(() => { });
       }
     }
 
@@ -206,7 +206,7 @@ async function processUpload(
         action: "read",
         expires: Date.now() + minutes * 60 * 1000,
       });
-      await fs.unlink(tmp).catch(() => {});
+      await fs.unlink(tmp).catch(() => { });
       res.status(201).json({
         ok: true,
         bucket: BUCKET,
@@ -224,7 +224,7 @@ async function processUpload(
         "Signed URL generation failed:",
         signError?.message || signError
       );
-      await fs.unlink(tmp).catch(() => {});
+      await fs.unlink(tmp).catch(() => { });
       res.status(201).json({
         ok: true,
         bucket: BUCKET,
@@ -243,7 +243,7 @@ async function processUpload(
     }
   } catch (err: any) {
     console.error("Upload processing error:", err?.message || err);
-    await fs.unlink(tmp).catch(() => {});
+    await fs.unlink(tmp).catch(() => { });
     await cleanup();
     res.status(500).json({
       error: "Upload failed during processing",
@@ -281,16 +281,20 @@ async function fetchUniqueSvg(bucket: Bucket, prefix: string): Promise<File> {
 
 // --- single controller for both cases ---
 export async function getFloorplan(req: Request, res: Response): Promise<void> {
-  try {
+  try { 
     const officeId = (req.params.officeId || "").trim();
-    const floorId  = (req.params.floorId  || "").trim();
+    const floorId = (req.params.floorId || "").trim();
+    console.log("route : /api/floorplans officeId",officeId)
+    console.log("route : /api/floorplans floorId",floorId )
+
+    console.log()
 
     if (!officeId) {
       res.status(400).json({ error: "officeId is required" });
       return;
     }
 
-    const wantRaw    = String(req.query.raw || "") === "1";              // only valid for single
+    const wantRaw = String(req.query.raw || "") === "1";              // only valid for single
     const wantSigned = String(req.query.signed ?? "true") !== "false";
     const expiresMin = clampInt(Number(req.query.expires || 60), 1, 4320);
 
@@ -298,6 +302,7 @@ export async function getFloorplan(req: Request, res: Response): Promise<void> {
     if (floorId) {
       const prefix = `${officeId}/${floorId}/`;
       const file = await fetchUniqueSvg(bucket, prefix);
+      console.log("getFloorplan : file", file)
 
       if (wantRaw) {
         res.setHeader("Content-Type", "image/svg+xml");
@@ -402,10 +407,10 @@ export async function getFloorplan(req: Request, res: Response): Promise<void> {
 export async function getAllFloorplans(req: Request, res: Response) {
   try {
     console.log("getAllFloorplans: Starting to fetch floorplans from bucket:", BUCKET);
-    
+
     const officePrefixes = await listPrefixes(bucket, "");
     console.log("getAllFloorplans: Found office prefixes:", officePrefixes);
-    
+
     const offices: any[] = [];
 
     for (const op of officePrefixes) {
@@ -437,8 +442,8 @@ export async function getAllFloorplans(req: Request, res: Response) {
   } catch (err: any) {
     console.error("getAllFloorplans error:", err?.message || err);
     console.error("getAllFloorplans stack:", err?.stack);
-    res.status(500).json({ 
-      error: "Internal error", 
+    res.status(500).json({
+      error: "Internal error",
       message: err?.message || "Unknown error",
       bucket: BUCKET
     });

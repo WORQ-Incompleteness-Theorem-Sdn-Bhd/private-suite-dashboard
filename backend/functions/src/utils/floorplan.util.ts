@@ -146,6 +146,7 @@ export async function fetchUniqueSvg(
 
   const [files] = await bucket.getFiles(opts);
   const svgs = files.filter((f) => f.name.toLowerCase().endsWith(".svg"));
+  console.log("fetchUniqueSvg : svgs",svgs)
 
   if (svgs.length === 0) {
     const err: any = new Error(`No SVG found at ${prefix}`);

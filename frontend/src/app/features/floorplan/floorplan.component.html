@@ -73,7 +73,8 @@
       </div>
 
       <!-- Floor selector: visible only when the outlet has more than 1 floor SVG -->
-      <div *ngIf="selectedOutletSvgs.length > 1" class="pt-2 border-t">
+      <div *ngIf="floors.length > 1" class="pt-2 border-t"> 
+        <!-- why this check svg instead of floor?????????????????? -->
         <label class="block font-semibold text-gray-700">Floor</label>
         <select class="w-full p-2 border outline-none rounded-xl focus:ring-2 focus:ring-orange-500"
           [value]="selectedFloorSvg" (change)="onFloorChange($event)">

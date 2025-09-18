@@ -9,8 +9,7 @@ const app = express();
 
 app.use(cors({ origin: true }));
 
-app.use("/api/floorplans", requireAuth, floorplanRoutes);
-
+app.use("/api/floorplans", requireAuth, floorplanRoutes); 
 app.use("/api/token", express.json({ limit: "10mb" }), authRoutes);
 app.use("/api/bigquery", express.json({ limit: "10mb" }), requireAuth, bqRoutes);
 

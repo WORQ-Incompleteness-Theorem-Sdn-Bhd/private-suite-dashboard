@@ -4,7 +4,7 @@ import { generateToken } from "../middleware/auth";
 
 export async function handleToken(req: Request, res: Response): Promise<void> {
   try {
-    const { uid } = req.body.uid;
+    const { uid } = req.body; 
 
     if (!uid) {
       res.status(400).json({ error: "UID is required" });

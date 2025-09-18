@@ -34,14 +34,14 @@ export interface OfficeFloorplans {
   providedIn: 'root'
 })
 export class FirebaseSvgService {
-  private baseUrl = environment.baseUrl;//.replace('/api/bigquery', '/api/floorplans'); // Floorplan API URL
+  private baseUrl = environment.baseUrl.replace('/api/bigquery', '/api/floorplans'); // Floorplan API URL
   private bqUrl = environment.bqUrl;
-  private floorplanUrl = environment.floorplanUrl;
+  // private floorplanUrl = environment.floorplanUrl;
   constructor(private http: HttpClient) { }
 
   // Get all floorplans for all offices
   getAllFloorplans(): Observable<OfficeFloorplans[]> {
-    return this.http.get<OfficeFloorplans[]>(`${this.floorplanUrl}`).pipe(
+    return this.http.get<OfficeFloorplans[]>(`${this.baseUrl}`).pipe(
       catchError(error => {
         console.error('Error fetching floorplans:', error);
         return of([]);
@@ -52,8 +52,8 @@ export class FirebaseSvgService {
   // Get floorplan for specific office and floor
   getFloorplan(officeId: string, floorId?: string): Observable<FirebaseSvgResponse> {
     const url = floorId
-      ? `${this.floorplanUrl}/${officeId}/${floorId}`
-      : `${this.floorplanUrl}/${officeId}`;
+      ? `${this.baseUrl}/${officeId}/${floorId}`
+      : `${this.baseUrl}/${officeId}`;
 
     console.log("getFloorplan url", url)
     console.log('🔥 Firebase SVG Service - Fetching floorplan:', { officeId, floorId, url });

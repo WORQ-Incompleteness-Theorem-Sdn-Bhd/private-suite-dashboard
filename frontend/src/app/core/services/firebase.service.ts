@@ -36,7 +36,7 @@ export interface OfficeFloorplans {
 export class FirebaseSvgService {
   private baseUrl = environment.bqUrl.replace('/api/bigquery', '/api/floorplans'); // Floorplan API URL
 
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient) { }
 
   // Get all floorplans for all offices
   getAllFloorplans(): Observable<OfficeFloorplans[]> {
@@ -50,12 +50,12 @@ export class FirebaseSvgService {
 
   // Get floorplan for specific office and floor
   getFloorplan(officeId: string, floorId?: string): Observable<FirebaseSvgResponse> {
-    const url = floorId 
+    const url = floorId
       ? `${this.baseUrl}/floorplans/${officeId}/${floorId}`
       : `${this.baseUrl}/floorplans/${officeId}`;
-    
+
     console.log('🔥 Firebase SVG Service - Fetching floorplan:', { officeId, floorId, url });
-    
+
     return this.http.get<FirebaseSvgResponse>(url).pipe(
       tap(response => console.log('✅ Firebase SVG Response:', response)),
       catchError(error => {
@@ -84,7 +84,7 @@ export class FirebaseSvgService {
         if (!office) return [];
 
         const urls: string[] = [];
-        
+
         // Add office-level SVG if exists
         if (office.officeSvg?.signedUrl) {
           urls.push(office.officeSvg.signedUrl);
@@ -125,7 +125,7 @@ export class FirebaseSvgService {
 
         offices.forEach(office => {
           const officeMap = new Map<string, string[]>();
-          
+
           // Add office-level SVG
           if (office.officeSvg?.signedUrl) {
             officeMap.set('office', [office.officeSvg.signedUrl]);

@@ -1,12 +1,6 @@
 import {
   Component,
   OnInit,
-  AfterViewInit,
-  ElementRef,
-  ViewChildren,
-  QueryList,
-  ViewChild,
-  NgZone,
   signal,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -21,12 +15,13 @@ import { HttpClientModule } from '@angular/common/http';
 import { Observable, of } from 'rxjs';
 import { catchError, finalize, tap } from 'rxjs/operators';
 import { Room } from '../../core/models/room.model';
-import { RoomService, ResourceParams } from '../../core/services/room.service';
-import { OfficeService } from '../../core/services/office.service';
-import { ToastService } from '../../shared/services/toast.service';
-import { BQService, UploadResponse } from './bq.service';
-import { forkJoin } from 'rxjs';
+import { RoomService, ResourceParams } from '../../core/services/room.service'; 
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
+import { Floor } from '../../core/models/floor.model';
+import { OfficeService } from '../../core/services/office.service';
+import { FloorService } from '../../core/services/floor.service';
+import { ToastComponent } from '../../shared/components/toast.component';
+import { BQService, UploadResponse } from './bq.service';
 
 type Option = { label: string; value: string };
 
@@ -48,7 +43,7 @@ interface FloorplanMeta {
 @Component({
   selector: 'app-floorplan-upload',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, HttpClientModule, FormsModule],
+  imports: [CommonModule, ReactiveFormsModule, HttpClientModule, FormsModule, ToastComponent],
   templateUrl: './floorplan-management.component.html',
 })
 export class FloorplanManagementComponent implements OnInit {
@@ -72,7 +67,9 @@ export class FloorplanManagementComponent implements OnInit {
   constructor(
     private fb: FormBuilder,
     private uploader: BQService,
-    private sanitizer: DomSanitizer
+    private sanitizer: DomSanitizer,
+    private officeService: OfficeService,
+    private floorService: FloorService
   ) {
     this.form = this.fb.group({
       officeId: ['', Validators.required],
@@ -86,20 +83,54 @@ export class FloorplanManagementComponent implements OnInit {
     this.loadDropdown();
   }
 
-  //change getlocation and getfloor if not using the bq.service.ts
-
   loadDropdown() {
-    forkJoin({
-      locations: this.uploader.getLocation(),
-      floors: this.uploader.getFloor(),
-    }).subscribe({
-      next: ({ locations, floors }) => {
-        this.locations = locations;
-        this.floors = floors;
+    console.log('Loading dropdown data...');
+    
+    // Load offices using OfficeService
+    this.officeService.loadOffices().subscribe({
+      next: (response) => {
+        console.log('Office service response:', response);
+        if (response.success && response.data) {
+          this.locations = response.data.map(office => ({
+            label: office.displayName,
+            value: office.id
+          }));
+          console.log('Mapped locations:', this.locations);
+        } else {
+          console.warn('No office data received or success=false');
+          this.locations = [];
+        }
       },
       error: (err) => {
-        console.error('Error loading dropdown data:', err);
+        console.error('Error loading offices:', err);
+        this.locations = [];
+      }
+    });
+
+    // Load floors using FloorService
+    console.log('Calling floorService.getFloors()...');
+    this.floorService.getFloors().subscribe({
+      next: (floors) => {
+        console.log('Floor service response:', floors);
+        console.log('Floors array length:', floors?.length || 0);
+        console.log('First floor object:', floors?.[0]);
+        
+        if (floors && floors.length > 0) {
+          this.floors = floors.map(floor => ({
+            label: floor.floor_no,
+            value: floor.floor_id
+          }));
+          console.log('Mapped floors:', this.floors);
+        } else {
+          console.warn('No floors data received or empty array');
+          this.floors = [];
+        }
       },
+      error: (err) => {
+        console.error('Error loading floors:', err);
+        console.error('Error details:', err.status, err.statusText, err.url);
+        this.floors = [];
+      }
     });
   }
 

@@ -1,8 +1,8 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { BehaviorSubject, Observable, tap } from 'rxjs';
+import { BehaviorSubject, Observable, tap, catchError, of } from 'rxjs';
 import { Room } from '../models/room.model';
-import { environment } from '../../environments/environment.prod';
+import { environment } from '../../environments/environment.dev';
 import { OfficeService } from './office.service';
 
 export interface ResourceParams {
@@ -117,6 +117,13 @@ export class RoomService {
         console.log('Mapped resources:', mapped);
         this.roomsSubject.next(mapped);
         this.loadingSubject.next(false);
+      }),
+      catchError(error => {
+        console.error('Error fetching resources from backend:', error);
+        this.loadingSubject.next(false);
+        // Return empty array on error
+        this.roomsSubject.next([]);
+        return of({ data: [] });
       })
     );
   }

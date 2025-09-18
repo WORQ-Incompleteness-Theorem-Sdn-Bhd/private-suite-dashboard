@@ -12,7 +12,7 @@ export function initializeStorage(): Storage {
       "Failed to use default credentials, trying explicit credentials"
     );
 
-    const email = process.env.F1REBASE_CLIENT_EMAIL;
+    const email = process.env.F1REBASE_CLIENT_EMAIL ?? 'firebase-adminsdk-fbsvc@floorplan-dashboard-2a468.iam.gserviceaccount.com';
     const key = process.env.F1REBASE_PRIVATE_KEY;
     const projectId = process.env.F1REBASE_PROJECT_ID;
 

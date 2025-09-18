@@ -1,10 +1,12 @@
-import { inject } from '@angular/core';
 import { HttpInterceptorFn, HttpErrorResponse } from '@angular/common/http';
-import { environment } from '../../environments/environment.prod';
+import { environment } from '../../environments/environment.dev';
 import { catchError, throwError } from 'rxjs';
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
-  const allowedDomains = [environment.baseUrl];
+  const allowedDomains = [
+    environment.baseUrl 
+  ];
+
   const userAccessToken = sessionStorage.getItem('userAccessToken');
 
   if (
@@ -18,5 +20,14 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
     });
   }
 
-  return next(req);
+  return next(req).pipe(
+    catchError((error: HttpErrorResponse) => {
+      if (error.status === 401) {
+        // Token expired or invalid - clear it and redirect to login
+        sessionStorage.removeItem('userAccessToken');
+        console.error('Authentication failed - token expired or invalid');
+      }
+      return throwError(() => error);
+    })
+  );
 };

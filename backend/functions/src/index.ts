@@ -10,6 +10,8 @@ console.log('Environment variables check:');
 console.log('FIREBASE_PROJECT_ID exists:', !!process.env.F1REBASE_PROJECT_ID);
 console.log('FIREBASE_CLIENT_EMAIL exists:', !!process.env.F1REBASE_CLIENT_EMAIL);
 console.log('FIREBASE_PRIVATE_KEY exists:', !!process.env.F1REBASE_PRIVATE_KEY);
+console.log('FLOORPLAN_BUCKET : exists', !!process.env.FLOORPLAN_BUCKET) 
+
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert({

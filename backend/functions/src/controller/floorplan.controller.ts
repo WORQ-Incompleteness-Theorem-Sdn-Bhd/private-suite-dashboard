@@ -15,7 +15,7 @@ import {
 } from "../utils/floorplan.util";
 
 /** CONFIG */
-const BUCKET = process.env.FLOORPLAN_BUCKET || 'floorplan-dashboard-2a468.appspot.com';
+const BUCKET =  process.env.FLOORPLAN_BUCKET || 'floorplan-dashboard-2a468.appspot.com';
 
 const storage: Storage = initializeStorage();
 const bucket = storage.bucket(BUCKET);

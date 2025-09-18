@@ -34,7 +34,7 @@ export interface OfficeFloorplans {
   providedIn: 'root'
 })
 export class FirebaseSvgService {
-  private baseUrl = environment.baseUrl.replace('/api/bigquery', '/api/floorplans'); // Floorplan API URL
+  private baseUrl = environment.floorplanUrl
   private bqUrl = environment.bqUrl;
   // private floorplanUrl = environment.floorplanUrl;
   constructor(private http: HttpClient) { }

@@ -55,6 +55,7 @@ export class FirebaseSvgService {
       ? `${this.floorplanUrl}/${officeId}/${floorId}`
       : `${this.floorplanUrl}/${officeId}`;
 
+    console.log("getFloorplan url", url)
     console.log('🔥 Firebase SVG Service - Fetching floorplan:', { officeId, floorId, url });
 
     return this.http.get<FirebaseSvgResponse>(url).pipe(

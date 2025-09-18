@@ -17,9 +17,8 @@ import {
   FormGroup,
   FormsModule,
 } from '@angular/forms';
-import { HttpClientModule } from '@angular/common/http';
-import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
-import { Observable, of, forkJoin } from 'rxjs';
+import { HttpClientModule } from '@angular/common/http'; 
+import { Observable, of } from 'rxjs';
 import { catchError, finalize, tap } from 'rxjs/operators';
 import { Room } from '../../core/models/room.model';
 import { RoomService, ResourceParams } from '../../core/services/room.service';

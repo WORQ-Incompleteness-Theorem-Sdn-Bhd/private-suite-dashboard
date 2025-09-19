@@ -1,3 +1,4 @@
+//Displaying loading animation
 import { Component, Input, ElementRef, ViewChild, AfterViewInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import lottie from 'lottie-web';

@@ -1,3 +1,8 @@
+//Routes for floorplan
+//Handles requests to floorplan API
+//Uses the getAllFloorplans, getFloorplan, and handleUpload functions from the floorplan.controller.ts file
+//Uses the Router from the express library
+//Exports the router for use in the main application
 import { Router } from "express";
 import {
   getAllFloorplans,

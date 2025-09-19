@@ -13,34 +13,86 @@ import { environment } from '../../environments/environment.prod';
 //   updated: string;
 //   metadata: any;
 // }
+// export type FirebaseSvgItem = {
+//   path: string;
+//   signedUrl?: string | null;
+//   contentType?: string;
+//   size?: number;
+//   updated?: string;
+//   metadata?: {
+//     officeId: string;
+//     originalName: string;
+//     firebaseStorageDownloadTokens?: string;
+//   };
+//   bucket?: any;
+// };
+
+// --- Core item type coming from backend
 export type FirebaseSvgItem = {
   path: string;
   signedUrl?: string | null;
-  contentType?: string;
-  size?: number;
-  updated?: string;
-  metadata?: Record<string, any> | null;
+  contentType?: string | null;
+  size?: number | null;
+  updated?: string | null;
+  metadata?: {
+    officeId?: string;
+    originalName?: string;
+    firebaseStorageDownloadTokens?: string;
+    [key: string]: unknown;
+  } | null;
+};
+
+
+// Optional: If you want to pass bucket along with items
+export type BucketScopedItem = FirebaseSvgItem & {
+  bucket?: string | null;
+};
+
+// --- Response shape (discriminated union)
+export type FirebaseSvgResponseSingle = {
+  ok: boolean;
+  scope: "single";
+  bucket: string;
+  path: string;
+  signedUrl?: string | null;
+  contentType?: string | null;
+  size?: number | null;
+  updated?: string | null;
+  metadata?: FirebaseSvgItem["metadata"];
+};
+
+export type FirebaseSvgResponseList = {
+  ok: boolean;
+  scope: "list";
+  bucket: string;
+  items: FirebaseSvgItem[];
 };
 
 export type FirebaseSvgResponse =
-  | {
-    ok: boolean;
-    scope: "single";
-    bucket: string;
-    path: string;
-    signedUrl?: string | null;
-    contentType?: string;
-    size?: number;
-    updated?: string;
-    metadata?: Record<string, any> | null;
-  }
-  | {
-    ok: boolean;
-    scope: "list";
-    bucket: string;
-    count: number;
-    items: FirebaseSvgItem[];
-  };
+  | FirebaseSvgResponseSingle
+  | FirebaseSvgResponseList;
+
+
+
+// export type FirebaseSvgResponse =
+//   | {
+//     ok: boolean;
+//     scope: "single";
+//     bucket: string;
+//     path: string;
+//     signedUrl?: string | null;
+//     contentType?: string;
+//     size?: number;
+//     updated?: string;
+//     metadata?: Record<string, any> | null;
+//   }
+//   | {
+//     ok: boolean;
+//     scope: "list";
+//     bucket: string;
+//     count: number;
+//     items: FirebaseSvgItem[];
+//   };
 export interface FloorplanEntry {
   officeId: string;
   floorId?: string;
@@ -97,7 +149,7 @@ export class FirebaseSvgService {
   // Get SVG URL for a specific office and floor
   getSvgUrl(officeId: string, floorId?: string): Observable<string | null> {
     return this.getFloorplan(officeId, floorId).pipe(
-      map((response:any) => response.signedUrl),
+      map((response: any) => response.signedUrl),
       catchError(error => {
         console.error('Error getting SVG URL:', error);
         return of(null);
@@ -138,7 +190,7 @@ export class FirebaseSvgService {
   // Get SVG URLs for specific floor
   getFloorSvgUrls(officeId: string, floorId: string): Observable<string[]> {
     return this.getFloorplan(officeId, floorId).pipe(
-      map((response:any) => response.signedUrl ? [response.signedUrl] : []),
+      map((response: any) => response.signedUrl ? [response.signedUrl] : []),
       catchError(error => {
         console.error('Error getting floor SVG URLs:', error);
         return of([]);
@@ -179,5 +231,5 @@ export class FirebaseSvgService {
       })
     );
   }
- 
+
 }

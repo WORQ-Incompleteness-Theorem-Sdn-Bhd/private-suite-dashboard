@@ -183,18 +183,24 @@ export class FloorService {
       })
     );
   }
-
-
-
-  // --- helper to build a usable URL
+ 
+  // --- helper to build a usable URL 
   private buildSvgUrl(bucket: string, item: FirebaseSvgItem): string {
-    if (item.signedUrl) return item.signedUrl!;
-    // const token = item.metadata?.firebaseStorageDownloadTokens;
-    // const encodedPath = encodeURIComponent(item.path);
-    // if (token) {
-    //   return `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodedPath}?alt=media&token=${token}`;
-    // }
-    // only works if object is public
-    return `https://storage.googleapis.com/${bucket}/${item.path}`;
+    // Prefer server-provided signed URL if present
+    if (item.signedUrl && item.signedUrl.trim()) return item.signedUrl; 
+    // For the Firebase REST (v0) API, the object path must be fully URI-encoded (slashes included)
+    const encodedPath = encodeURIComponent(item.path);
+
+    // firebaseStorageDownloadTokens can be a comma-separated list; use the first token
+    const rawToken = item.metadata?.firebaseStorageDownloadTokens ?? "";
+    const token = rawToken.split(",")[0]?.trim();
+
+    if (token) {
+      return `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o/${encodedPath}?alt=media&token=${encodeURIComponent(token)}`;
+    }
+
+    // Public GCS path style URL — keep slashes, so use encodeURI on the path
+    return `https://storage.googleapis.com/${encodeURIComponent(bucket)}/${encodeURI(item.path)}`;
   }
+
 }

@@ -223,7 +223,7 @@ export class FloorplanManagementComponent implements OnInit {
       },
       error: (err) => {
         console.error(err);
-        this.error = 'Failed to load floorplan.';
+        this.error = 'Failed to load floorplan. jjjjjjjjjjj';
         this.loading = false;
       },
     });

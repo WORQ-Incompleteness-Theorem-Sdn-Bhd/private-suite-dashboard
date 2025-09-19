@@ -1,4 +1,3 @@
-
 <!-- Toast notifications -->
 <app-toast></app-toast>
 
@@ -40,40 +39,29 @@
       <div *ngIf="filters.outlet !== 'Select Outlet' && suiteOptions.length > 0" class="pt-2 border-t">
         <div class="flex items-center justify-between mb-2">
           <label class="block font-semibold text-gray-700">Suites</label>
-          <button 
-            *ngIf="selectedSuites.length > 0"
-            (click)="clearSuiteSelection()"
-            class="text-xs text-orange-600 hover:text-orange-700 underline"
-          >
+          <button *ngIf="selectedSuites.length > 0" (click)="clearSuiteSelection()"
+            class="text-xs text-orange-600 hover:text-orange-700 underline">
             Reset ({{ selectedSuites.length }} selected)
           </button>
         </div>
-        
+
         <!-- Search box for suites -->
-        <input 
-          type="text" 
-          [(ngModel)]="suiteSearchTerm" 
-          (input)="onSuiteSearchChange()"
-          placeholder="Search suites..."
-          class="w-full p-2 mb-2 border outline-none rounded-xl focus:ring-2 focus:ring-orange-500"
-        />
-        
+        <input type="text" [(ngModel)]="suiteSearchTerm" (input)="onSuiteSearchChange()" placeholder="Search suites..."
+          class="w-full p-2 mb-2 border outline-none rounded-xl focus:ring-2 focus:ring-orange-500" />
+
         <!-- Suite checkboxes -->
         <div class="max-h-32 overflow-y-auto border rounded-xl p-2 space-y-1">
-          <label *ngFor="let suite of suiteOptions" class="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-1 rounded">
-            <input 
-              type="checkbox" 
-              [checked]="isSuiteSelected(suite)"
-              (change)="toggleSuiteSelection(suite)"
-              class="text-orange-600 focus:ring-orange-500"
-            />
+          <label *ngFor="let suite of suiteOptions"
+            class="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-1 rounded">
+            <input type="checkbox" [checked]="isSuiteSelected(suite)" (change)="toggleSuiteSelection(suite)"
+              class="text-orange-600 focus:ring-orange-500" />
             <span class="text-sm">{{ suite }}</span>
           </label>
         </div>
       </div>
 
       <!-- Floor selector: visible only when the outlet has more than 1 floor SVG -->
-      <div *ngIf="floors.length > 1" class="pt-2 border-t"> 
+      <div *ngIf="floors.length > 1" class="pt-2 border-t">
         <!-- why this check svg instead of floor?????????????????? -->
         <label class="block font-semibold text-gray-700">Floor</label>
         <select class="w-full p-2 border outline-none rounded-xl focus:ring-2 focus:ring-orange-500"
@@ -125,7 +113,7 @@
                 <div><strong>Area:</strong> {{ room.area }} sqft</div>
                 <div><strong>Price:</strong> RM {{ room.price }}</div>
                 <div><strong>Deposit:</strong> RM {{ room.deposit }}</div>
-                <div *ngIf="room.video"><strong>Video:</strong> 
+                <div *ngIf="room.video"><strong>Video:</strong>
                   <a [href]="room.video" target="_blank" class="text-blue-600 hover:underline text-xs">
                     {{ room.video }}
                   </a>
@@ -184,7 +172,8 @@
     </div>
 
     <!-- Pax Color Legend - Right Panel -->
-    <div *ngIf="filters.outlet !== 'Select Outlet' && filters.status === 'Available' && filteredRooms.length > 0" class="mb-4 p-3 border bg-blue-50 rounded-xl">
+    <div *ngIf="filters.outlet !== 'Select Outlet' && filters.status === 'Available' && filteredRooms.length > 0"
+      class="mb-4 p-3 border bg-blue-50 rounded-xl">
       <h3 class="mb-2 text-sm font-semibold text-blue-700">Pax Capacity Colors</h3>
       <div class="grid grid-cols-2 gap-2">
         <div *ngFor="let bucket of paxBuckets; let i = index" class="flex items-center space-x-2 text-xs">
@@ -197,7 +186,7 @@
 
     <div class="mt-4">
       <div (click)="showDownloadMenu = false"></div>
-      
+
       <!-- Loading state for resources -->
       <div *ngIf="isLoadingResources" class="flex items-center justify-center p-8 bg-gray-50 rounded-xl">
         <div class="flex items-center space-x-2">
@@ -208,17 +197,24 @@
 
       <ng-container *ngIf="filters.outlet !== 'Select Outlet' && !isLoadingResources; else askToPick">
         <div>
-          <div *ngFor="let svg of displayedSvgs; trackBy: trackBySvgUrl" class="mb-4">
-            <!-- Individual Floor Label -->
+          <div *ngFor="let svgUrl of displayedSvgs; trackBy: trackBySvgUrl" class="mb-4">
+            <div class="mb-2 p-2 bg-orange-100 border border-orange-300 rounded-lg">
+              <span class="text-sm font-semibold text-orange-800">🏢 {{ getFloorLabel(svgUrl) }}</span>
+            </div>
+
+            <!-- Inline the SVG text -->
+            <div class="svg-host" #svgHost [innerHTML]="svgHtmlMap.get(svgUrl)"></div>
+          </div>
+
+          <!-- <div *ngFor="let svg of displayedSvgs; trackBy: trackBySvgUrl" class="mb-4"> 
             <div class="mb-2 p-2 bg-orange-100 border border-orange-300 rounded-lg">
               <span class="text-sm font-semibold text-orange-800">
-               🏢 {{ getFloorLabel(svg) }}
+                🏢 {{ getFloorLabel(svg) }}
               </span>
-            </div>
-            <!-- SVG Floorplan -->
-            <object #svgObject [data]="getSafeUrl(svg)"
-              type="image/svg+xml" width="800" height="800" style="max-width: 100%; height: auto;"></object>
-          </div>
+            </div> 
+            <div #svgContainer class="inline-svg-wrapper" [innerHTML]="inlineSafeSvgs[i]"
+              style="max-width:100%; overflow:auto"></div>
+          </div> -->
         </div>
       </ng-container>
 
@@ -233,19 +229,17 @@
 
     <!-- Popup -->
     <div *ngIf="showPopup && selectedRoom"
-      class="absolute bg-white rounded-lg shadow-xl p-2 text-xs z-[9999] w-48 max-w-xs"
-      [style.left.px]="popupX"
-      [style.top.px]="popupY" 
-      (click)="$event.stopPropagation()"
-      style="pointer-events: auto;">
-      <button class="absolute font-bold text-gray-500 top-0.5 right-1 hover:text-red-600 text-sm leading-none" (click)="closePopup()">
+      class="absolute bg-white rounded-lg shadow-xl p-2 text-xs z-[9999] w-48 max-w-xs" [style.left.px]="popupX"
+      [style.top.px]="popupY" (click)="$event.stopPropagation()" style="pointer-events: auto;">
+      <button class="absolute font-bold text-gray-500 top-0.5 right-1 hover:text-red-600 text-sm leading-none"
+        (click)="closePopup()">
         &times;
       </button>
       <h3 class="mb-1 font-semibold text-orange-600 text-sm truncate">
         {{ selectedRoom.name }}
       </h3>
       <div class="space-y-0.5">
-        <p class="text-xs"><strong>Status:</strong> 
+        <p class="text-xs"><strong>Status:</strong>
           <span [class]="selectedRoom.status === 'Available' ? 'text-green-600' : 'text-red-600'">
             {{ selectedRoom.status }}
           </span>
@@ -259,15 +253,9 @@
         -->
         <!-- Watch on YouTube link -->
         <ng-container *ngIf="getYouTubeWatchUrlFor(selectedRoom) as ytUrl">
-          <a
-            [href]="ytUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            (click)="$event.stopPropagation()"
+          <a [href]="ytUrl" target="_blank" rel="noopener noreferrer" (click)="$event.stopPropagation()"
             class="mt-2 inline-flex items-center gap-2 rounded-md border border-gray-300 px-2 py-1 text-[13px] text-blue-600 hover:underline"
-            aria-label="Open walkthrough video on YouTube"
-            title="Open walkthrough video on YouTube"
-          >
+            aria-label="Open walkthrough video on YouTube" title="Open walkthrough video on YouTube">
             <!-- play icon -->
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path d="M8 5v14l11-7z"></path>

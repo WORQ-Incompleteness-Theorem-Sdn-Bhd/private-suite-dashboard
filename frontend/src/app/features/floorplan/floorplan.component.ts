@@ -22,6 +22,8 @@ import { catchError, finalize } from 'rxjs/operators';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { ToastComponent } from '../../shared/components/toast.component';
+import { HttpClient } from '@angular/common/http';
+import { getStorage, ref, getDownloadURL } from 'firebase/storage';
 
 type FilterKey = 'outlet' | 'status' | 'pax';
 
@@ -177,6 +179,8 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       'SPM.svg': 'Floor 4',
     },
   };
+  svgHtmlMap = new Map<string, SafeResourceUrl>(); // or SafeHtml
+  @ViewChildren('svgHost') svgHosts!: QueryList<ElementRef<HTMLDivElement>>;
 
   private basename(path: string): string {
     return (path || '').split(/[\\/]/).pop() || path;
@@ -187,7 +191,8 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     private floorService: FloorService,
     private toastService: ToastService,
     public sanitizer: DomSanitizer,
-    private ngZone: NgZone
+    private ngZone: NgZone,
+    private http: HttpClient,
   ) { }
 
   getSafeUrl(url: string): SafeResourceUrl {
@@ -413,7 +418,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     this.floorService.getAllSvgFilesForOutlet(outletId).pipe( // problem
       catchError(error => {
         console.error('Error loading outlet SVGs:', error);
-        this.toastService.error('Failed to load floorplan SVGs');
+        this.toastService.error('Failed to load floorplan SVGs bbbbbbbbbbbbb');
         return of([]);
       })
     ).subscribe(svgs => {
@@ -652,41 +657,38 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
 
   private updateDisplayedSvgs() {
     const outletId = this.filters.outlet;
-
-    // guards
     if (!outletId || outletId === 'Select Outlet') {
       this.displayedSvgs = [];
       return;
     }
+
     if (this.selectedFloorSvg === 'all') {
-      // If you have an office-wide listing endpoint, call it here:
-      // this.floorService.getFloorplanUrls(outletId).subscribe(urls => this.displayedSvgs = urls);
-      // Temporary: keep whatever you had before for "all"
       this.displayedSvgs = this.selectedOutletSvgs?.slice?.() ?? [];
+      this.loadInlineSvgs(this.displayedSvgs);   // ✅ call here
       return;
     }
 
-    // extract floorId from "9|<floorId>" or treat as legacy value (no pipe)
     const parts = (this.selectedFloorSvg || '').split('|');
     const floorId = parts.length > 1 ? (parts[1] || '').trim() : '';
 
-    // legacy fallback (old behavior)
     if (!floorId) {
       this.displayedSvgs = (this.selectedOutletSvgs || []).filter(p => p === this.selectedFloorSvg);
+      this.loadInlineSvgs(this.displayedSvgs);   // ✅ and here
       return;
     }
 
-    // ✅ call API and render the SVG from the response
     this.floorService.getFloorplanUrls(outletId, floorId).pipe(
       catchError(err => {
-        console.error('Error loading floor SVG:', err);
-        this.toastService.error('Failed to load floor SVG');
+        console.error('Error loading floor SVG aaaaaaaaaaaa:', err);
+        this.toastService.error('Failed to load floor SVG aaaaaaaaaaaaaaa');
         return of<string[]>([]);
       })
     ).subscribe(urls => {
-      this.displayedSvgs = urls; // direct render-ready SVG URLs
+      this.displayedSvgs = urls;
+      this.loadInlineSvgs(this.displayedSvgs);   // ✅ MUST be inside subscribe
     });
   }
+
 
   // onFloorChange(event: Event) {
   //   const select = event.target as HTMLSelectElement | null;
@@ -801,76 +803,86 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
 
   applyFilters() {
     this.filteredRooms = this.rooms
-      .filter(
-        (r) => {
-          const outletMatch = (() => {
-            if (this.filters.outlet === 'Select Outlet') return true;
-            const selectedOffice = this.officeService.getOffices().find(office => office.id === this.filters.outlet);
-            return selectedOffice && r.outlet === selectedOffice.displayName;
-          })();
-          return outletMatch &&
-            (this.filters.status === 'Select Status' ||
-              r.status === this.filters.status) &&
-            (this.filters.pax === 'Select Pax' ||
-              r.capacity.toString() === this.filters.pax) &&
-
-            (this.selectedSuites.length === 0 ||
-              this.selectedSuites.includes(r.name));
-        }
-      )
-      .sort((a: any, b: any) => {
-        // Sort by Pax (capacity) if Pax filter is active
-        if (this.filters.pax !== 'Select Pax') {
-          return a.capacity - b.capacity;
-        }
-        // Sort by Suite name if Suite filter is active
-        if (this.selectedSuites.length > 0) {
-          return a.name.localeCompare(b.name);
-        }
-        return 0; // No sorting if no filter
+      .filter((r) => {
+        const outletMatch = (() => {
+          if (this.filters.outlet === 'Select Outlet') return true;
+          const selectedOffice = this.officeService.getOffices().find(o => o.id === this.filters.outlet);
+          return selectedOffice && r.outlet === selectedOffice.displayName;
+        })();
+        return outletMatch &&
+          (this.filters.status === 'Select Status' || r.status === this.filters.status) &&
+          (this.filters.pax === 'Select Pax' || String(r.capacity) === this.filters.pax) &&
+          (this.selectedSuites.length === 0 || this.selectedSuites.includes(r.name));
+      })
+      .sort((a, b) => {
+        if (this.filters.pax !== 'Select Pax') return a.capacity - b.capacity;
+        if (this.selectedSuites.length > 0) return a.name.localeCompare(b.name, undefined, { numeric: true });
+        return 0;
       });
 
-    this.Occupied = this.filteredRooms.filter(
-      (r) => r.status === 'Occupied'
-    ).length;
-    this.Available = this.filteredRooms.filter(
-      (r) => r.status === 'Available'
-    ).length;
-    console.log('Filtered rooms:', this.filteredRooms.length);
-    console.log('Occupied:', this.Occupied);
-    console.log('Available:', this.Available);
+    this.Occupied = this.filteredRooms.filter(r => r.status === 'Occupied').length;
+    this.Available = this.filteredRooms.filter(r => r.status === 'Available').length;
 
-    // Update SVG colors after filtering
-    this.updateSvgColors();
+    // Re-color after the view updates so <object> is loaded
+    setTimeout(() => {
+      // <object>-embedded SVGs
+      this.updateSvgColors();
+
+      // Inline SVGs
+      if (this.svgHosts) {
+        this.svgHosts.forEach(hostRef => {
+          const rootSvg = hostRef.nativeElement.querySelector('svg') as SVGSVGElement | null;
+          if (rootSvg) this.updateSvgColorsInline(rootSvg);
+        });
+      }
+    }, 0);
   }
+
 
   updateSvgColors(svgDoc?: Document) {
     const applyColors = (doc: Document) => {
       this.rooms.forEach((room) => {
-        const el = doc.getElementById(room.id);
-        if (el) {
-          if (this.filteredRooms.includes(room)) {
-            // Selected → colored with pax-based palette for available rooms
-            let color: string;
-            if (room.status === 'Occupied') {
-              color = '#ef4444'; // Red for occupied
-            } else if (this.filters.status === 'Available') {
-              // Use pax-based palette for available rooms
-              color = this.getPaxColor(room.capacity);
-            } else {
-              color = '#22c55e'; // Green for available (default)
-            }
+        const el =
+          doc.getElementById(room.id) ||
+          doc.querySelector(`[data-id="${room.id}"], [data-room="${room.id}"]`);
+        if (!el) return;
 
-            el.setAttribute('fill', color);
-            el.setAttribute('opacity', '0.7');
-            (el as any).style.pointerEvents = 'auto';
-          } else {
-            // Not selected → transparent fill but remain clickable
-            el.setAttribute('fill', 'none');
-            el.setAttribute('opacity', '0.35');
-            (el as any).style.pointerEvents = 'auto';
+        // pick your color as you already do
+        let color: string;
+        if (this.filteredRooms.includes(room)) {
+          color = room.status === 'Occupied'
+            ? '#ef4444'
+            : (this.filters.status === 'Available'
+              ? this.getPaxColor(room.capacity)
+              : '#22c55e');
+        } else {
+          color = 'none';
+        }
+
+        const tag = el.tagName.toLowerCase();
+
+        // Strong inline style to beat CSS in the SVG
+        (el as any).style.setProperty('fill', color, 'important');
+        (el as any).style.setProperty('pointer-events', 'auto', 'important');
+        el.setAttribute('opacity', this.filteredRooms.includes(room) ? '0.7' : '0.35');
+
+        // If this is a stroke-only shape, apply stroke too
+        if (tag === 'line' || tag === 'polyline') {
+          (el as any).style.setProperty('stroke', color, 'important');
+          if (color !== 'none') el.setAttribute('stroke-width', '2');
+        }
+
+        // If it's a <use>, also style the referenced node
+        if (tag === 'use') {
+          const href =
+            (el as any).getAttribute('href') || (el as any).getAttribute('xlink:href');
+          if (href && href.startsWith('#')) {
+            const ref = doc.getElementById(href.slice(1));
+            if (ref) {
+              (ref as any).style.setProperty('fill', color, 'important');
+              (ref as any).style.setProperty('pointer-events', 'auto', 'important');
+            }
           }
-          (el as any).style.cursor = 'pointer';
         }
       });
     };
@@ -878,15 +890,15 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     if (svgDoc) {
       applyColors(svgDoc);
     } else {
-      const objectEls = document.querySelectorAll<HTMLObjectElement>(
-        'object[type="image/svg+xml"]'
-      );
-      objectEls.forEach((objectEl) => {
-        const doc = objectEl.contentDocument;
-        if (doc) applyColors(doc);
-      });
+      document
+        .querySelectorAll<HTMLObjectElement>('object[type="image/svg+xml"]')
+        .forEach((objectEl) => {
+          const doc = objectEl.contentDocument;
+          if (doc) applyColors(doc);
+        });
     }
   }
+
 
   // Get color based on pax capacity
   getPaxColor(capacity: number): string {
@@ -1781,4 +1793,193 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       return raw;
     }
   }
+
+  private loadInlineSvgs(urls: string[]) {
+    const toFetch = urls.filter(u => !this.svgHtmlMap.has(u));
+    toFetch.forEach(url => {
+      this.http.get(url, { responseType: 'text' }).subscribe({
+        next: (svgText) => {
+          // Trusting here to keep consistent with your existing sanitizer usage.
+          const safe = this.sanitizer.bypassSecurityTrustHtml(svgText);
+          this.svgHtmlMap.set(url, safe);
+
+          // Wait for Angular to render, then attach listeners & color
+          setTimeout(() => this.attachAndColorAllInline(), 0);
+        },
+        error: (err) => {
+          console.error('Failed to fetch SVG cccccccccccccc', url, err);
+          this.toastService.error('Failed to load floorplan SVG cccccccccccccc');
+        }
+      });
+    });
+
+    // If everything already cached, still (re)attach/color
+    if (toFetch.length === 0) {
+      setTimeout(() => this.attachAndColorAllInline(), 0);
+    }
+  }
+
+  private attachAndColorAllInline() {
+    if (!this.svgHosts) return;
+
+    // For each inlined SVG root, run listeners + color
+    this.svgHosts.forEach(hostRef => {
+      const host = hostRef.nativeElement;
+      const rootSvg = host.querySelector('svg') as SVGSVGElement | null;
+      if (!rootSvg) return;
+
+      // Attach click handlers on this inline SVG
+      this.attachRoomListenersInline(rootSvg);
+
+      // Color rooms on this inline SVG
+      this.updateSvgColorsInline(rootSvg);
+    });
+  }
+
+  private attachRoomListenersInline(rootSvg: SVGSVGElement) {
+    const svgDoc = rootSvg.ownerDocument!;
+    // Use your existing logic, but operate within rootSvg:
+    //  - Instead of searching in object.contentDocument,
+    //  - search within rootSvg
+    const handleClick = (event: MouseEvent) => {
+      let target = event.target as Element | null;
+      const root = rootSvg as Element;
+      while (target && target !== root) {
+        const el = target as HTMLElement;
+        let candidate = el.id || el.getAttribute?.('data-id') || el.getAttribute?.('data-room') || '';
+        if (!candidate) {
+          const href = el.getAttribute?.('href') || el.getAttribute?.('xlink:href') || '';
+          if (href && href.startsWith('#')) candidate = href.slice(1);
+        }
+        if (candidate) {
+          const normalized = this.normalizeId(candidate);
+          const room = this.roomIdIndex.get(normalized);
+          if (room) {
+            this.openPopupFromRoom(room, event);
+            return;
+          }
+        }
+        target = target.parentElement;
+      }
+      this.closePopup();
+    };
+
+    // Avoid double-binding
+    if (!(rootSvg as any).__ps_click_bound__) {
+      rootSvg.addEventListener('click', (ev) => this.ngZone.run(() => handleClick(ev as MouseEvent)));
+      (rootSvg as any).__ps_click_bound__ = true;
+    }
+
+    // Strong bindings on specific room elements
+    this.rooms.forEach(room => {
+      const el = this.findRoomElementInline(rootSvg, room) as HTMLElement | null;
+      if (!el) return;
+      el.style.cursor = 'pointer';
+      el.style.pointerEvents = 'auto';
+      if (!(el as any).__ps_room_bound__) {
+        el.addEventListener('click', (ev: MouseEvent) =>
+          this.ngZone.run(() => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            this.openPopupFromRoom(room, ev);
+          })
+        );
+        (el as any).__ps_room_bound__ = true;
+      }
+    });
+  }
+
+  private findRoomElementInline(rootSvg: SVGSVGElement, room: Room): Element | null {
+    // Same logic as findRoomElementInDoc, but scoped to rootSvg
+    const byId = rootSvg.querySelector(`#${CSS.escape(room.id)}`);
+    if (byId) return byId;
+
+    const variants = [
+      room.name,
+      room.name.replace(/\s+/g, ''),
+      room.name.replace(/\s+/g, '-'),
+      room.name.replace(/\s+/g, '_'),
+    ];
+    for (const v of variants) {
+      const el = rootSvg.querySelector(`#${CSS.escape(v)}`);
+      if (el) return el;
+    }
+    return null;
+  }
+
+  private updateSvgColorsInline(rootSvg: SVGSVGElement) {
+    this.rooms.forEach(room => {
+      const el = this.findRoomElementInline(rootSvg, room);
+      if (!el) return;
+
+      // Skip elements inside <defs>/<clipPath>/<mask> (they won’t render directly)
+      const containerTag = (el.closest('defs,clipPath,mask') as Element | null)?.tagName?.toLowerCase();
+      if (containerTag) return;
+
+      const isSelected = this.filteredRooms.includes(room);
+      let color = 'none';
+      if (isSelected) {
+        color = room.status === 'Occupied'
+          ? '#ef4444'
+          : (this.filters.status === 'Available' ? this.getPaxColor(room.capacity) : '#22c55e');
+      }
+
+      const tag = el.tagName.toLowerCase();
+
+      // 🔥 Use inline style with !important to beat embedded SVG CSS
+      (el as HTMLElement).style.setProperty('fill', color, 'important');
+      (el as HTMLElement).style.setProperty('pointer-events', 'auto', 'important');
+      el.setAttribute('opacity', isSelected ? '0.7' : '0.35');
+
+      // Stroke-only shapes
+      if (tag === 'line' || tag === 'polyline') {
+        (el as HTMLElement).style.setProperty('stroke', color, 'important');
+        if (color !== 'none') el.setAttribute('stroke-width', '2');
+      }
+
+      // If it's a <use>, style the referenced element too
+      if (tag === 'use') {
+        const href = (el as any).getAttribute('href') || (el as any).getAttribute('xlink:href');
+        if (href && href.startsWith('#')) {
+          const ref = rootSvg.querySelector(href) as HTMLElement | null;
+          if (ref) {
+            ref.style.setProperty('fill', color, 'important');
+            ref.style.setProperty('pointer-events', 'auto', 'important');
+          }
+        }
+      }
+
+      (el as HTMLElement).style.cursor = 'pointer';
+    });
+  }
+
+private async normalizeToDownloadUrl(url: string): Promise<string> {
+  if (!url) return url;
+
+  // Already a Firebase download URL
+  if (url.includes('firebasestorage.googleapis.com/v0/b/')) return url;
+
+  // gs://bucket/path.svg  -> downloadURL
+  if (url.startsWith('gs://')) {
+    const withoutScheme = url.slice('gs://'.length);          // bucket/path
+    const firstSlash = withoutScheme.indexOf('/');
+    const bucket = withoutScheme.slice(0, firstSlash);
+    const objectPath = withoutScheme.slice(firstSlash + 1);
+    const storage = getStorage(undefined, `gs://${bucket}`);
+    return getDownloadURL(ref(storage, objectPath));
+  }
+
+  // https://storage.googleapis.com/bucket/path.svg -> downloadURL
+  const m = url.match(/^https:\/\/storage\.googleapis\.com\/([^/]+)\/(.+)$/);
+  if (m) {
+    const [, bucket, objectPath] = m;
+    const storage = getStorage(undefined, `gs://${bucket}`);
+    return getDownloadURL(ref(storage, objectPath));
+  }
+
+  // Anything else: return as-is
+  return url;
+}
+
+
 }

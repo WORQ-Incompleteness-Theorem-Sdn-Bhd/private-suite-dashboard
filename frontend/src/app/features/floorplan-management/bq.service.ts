@@ -7,9 +7,14 @@ export interface UploadResponse {
   ok: boolean;
   bucket: string;
   path: string;
-  gsUri: string;
   signedUrl?: string;
-  signedUrlExpiresInMinutes?: number;
+  signedUrlError?: string;
+  metadata: {
+    originalName: string;
+    size: number;
+    uploadId: string;
+    overwrote?: boolean;
+  };
 }
 
 @Injectable({
@@ -20,11 +25,11 @@ export class BQService {
   private floorplanUrl = environment.floorplanUrl;
 
   constructor(private http: HttpClient) {}
-  // remove if not in use
   getLocation(): Observable<{ label: string; value: string }[]> {
     return this.http.get<any>(`${this.bqUrl}/locations`).pipe(
       map((res) => {
-        const arr = Array.isArray(res) ? res : res.data ?? res.rows ?? [];
+        // Backend returns { data: [...] } structure
+        const arr = res.data || [];
         return arr.map((loc: any) => ({
           label: loc.location_name,
           value: loc.location_id,
@@ -33,14 +38,14 @@ export class BQService {
     );
   }
 
-  // remove if not in use
   getFloor(): Observable<{ label: string; value: string }[]> {
     return this.http.get<any>(`${this.bqUrl}/floors`).pipe(
       map((res) => {
-        const arr = Array.isArray(res) ? res : res.data ?? res.rows ?? [];
-        return arr.map((loc: any) => ({
-          label: loc.floor_name,
-          value: loc.floor_id,
+        // Backend returns { data: [...] } structure
+        const arr = res.data || [];
+        return arr.map((floor: any) => ({
+          label: floor.floor_name,
+          value: floor.floor_id,
         }));
       })
     );

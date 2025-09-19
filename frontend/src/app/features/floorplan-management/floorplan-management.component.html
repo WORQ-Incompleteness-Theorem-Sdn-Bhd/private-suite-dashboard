@@ -1,109 +1,246 @@
-<form [formGroup]="form" (ngSubmit)="submit()" class="max-w-xl p-4 space-y-4">
-  <!-- Office dropdown -->
-  <div class="grid gap-2">
-    <label class="font-medium">Office</label>
-    <select formControlName="officeId" class="w-full p-2 border rounded">
-      <option value="" disabled selected>Select Office</option>
-      <option *ngFor="let loc of locations" [value]="loc.value">
-        {{ loc.label }}
-      </option>
-    </select>
-    <small *ngIf="form.controls['officeId'].touched && form.controls['officeId'].invalid" class="text-red-600">
-      Office is required
-    </small>
-  </div>
 
-  <!-- Floor dropdown -->
-  <div class="grid gap-2">
-    <div class="flex flex-row items-center gap-2">
-      <label class="font-medium">Floor</label> <span class="text-xs italic font-medium text-gray-800">*Please only
-        select
-        floor if
-        there are multiple floors for that
-        location</span>
-    </div>
-    <select formControlName="floorId" class="w-full p-2 border rounded">
-      <option value="" disabled selected>Select Floor</option>
-      <option *ngFor="let fl of floors" [value]="fl.value">
-        {{ fl.label }}
-      </option>
-    </select>
-  </div>
+<div class="grid grid-cols-1 gap-6 py-6 mx-auto lg:grid-cols-12 max-w-7xl">
+  <!-- Left Panel - Management Controls -->
+  <div class="flex flex-col p-6 transition-all duration-500 bg-white shadow-lg rounded-2xl lg:col-span-4">
+    <h1 class="mb-4 text-2xl font-bold text-orange-600">
+      PS Management
+      <span class="block mt-1 text-sm text-gray-500">Floorplan Administration</span>
+    </h1>
 
-  <!-- Custom file name -->
-  <div class="grid gap-2">
-    <label class="font-medium">Custom File Name (optional, no extension)</label>
-    <input type="text" formControlName="fileName" class="w-full p-2 border rounded" placeholder="e.g., floorplan_v2" />
-  </div>
-
-  <!-- File upload -->
-  <div class="grid gap-2">
-    <label class="font-medium">SVG File</label>
-    <input type="file" accept=".svg,image/svg+xml" (change)="onFileChange($event)" />
-    <small *ngIf="form.controls['file'].touched && form.controls['file'].invalid" class="text-red-600">
-      File is required
-    </small>
-  </div>
-
-  <button class="px-4 py-2 text-white bg-black rounded disabled:opacity-50" [disabled]="uploading() || form.invalid"
-    type="submit">
-    {{ uploading() ? 'Uploading…' : 'Upload' }}
-  </button>
-
-  <!-- Progress -->
-  <div *ngIf="uploading()" class="mt-3">
-    <div class="h-2 bg-gray-200 rounded">
-      <div class="h-2 bg-green-600 rounded" [style.width.%]="progress()"></div>
-    </div>
-    <div class="mt-1 text-sm">{{ progress() }}%</div>
-  </div>
-
-  <!-- Error -->
-  <p *ngIf="errorMsg()" class="mt-3 text-red-600">{{ errorMsg() }}</p>
-
-  <!-- Result -->
-  <div *ngIf="result()" class="mt-4 space-y-1">
-    <div class="font-semibold text-green-700">Upload complete</div>
-    <div><strong>Bucket:</strong> {{ result()!.bucket }}</div>
-    <div><strong>Path:</strong> {{ result()!.path }}</div>
-    <div><strong>gsURI:</strong> {{ result()!.gsUri }}</div>
-
-    <ng-container *ngIf="result()!.signedUrl">
-      <div class="mt-2">
-        <a [href]="result()!.signedUrl" target="_blank" rel="noopener" class="text-blue-600 underline">
-          Open preview (signed URL)
-        </a>
+    <!-- Management Tabs -->
+    <div class="mb-6">
+      <div class="flex space-x-1 bg-gray-100 rounded-lg p-1">
+        <button 
+          (click)="setActiveTab('overview')"
+          class="flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors"
+          [class]="activeTab === 'overview' 
+            ? 'bg-white text-orange-600 shadow-sm' 
+            : 'text-gray-600 hover:text-gray-900'">
+          Overview
+        </button>
+        <button 
+          (click)="setActiveTab('upload')"
+          class="flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors"
+          [class]="activeTab === 'upload' 
+            ? 'bg-white text-orange-600 shadow-sm' 
+            : 'text-gray-600 hover:text-gray-900'">
+          Upload
+        </button>
       </div>
-      <small class="text-gray-600">
-        Expires in {{ result()!.signedUrlExpiresInMinutes }} minutes
-      </small>
-    </ng-container>
-  </div>
-</form>
-
-<div class="flex flex-col items-start w-screen p-4">
-  <h1 class="font-bold text-mdmb-4">View SVG</h1>
-  <div class="flex flex-col gap-4 justify-items-start">
-    <div class="flex flex-row items-center gap-2"><span>Office</span>
-      <select class="p-2 font-bold border shadow min-w-60" [(ngModel)]="selectedOffice" (ngModelChange)="onSelected()">
-        <option value="">-- Select Office --</option>
-        <option *ngFor="let loc of locations" [value]="loc.value">
-          {{ loc.label }}
-        </option>
-      </select>
     </div>
-    <div class="flex flex-row items-center gap-2"><span>Floor</span>
-      <select class="p-2 font-bold border shadow min-w-60" [(ngModel)]="selectedFloor" (ngModelChange)="onSelected()">
-        <option value="">-- Select Floor --</option>
-        <option *ngFor="let loc of floors" [value]="loc.value">
-          {{ loc.label }}
-        </option>
-      </select>
+
+    <!-- Overview Tab -->
+    <div *ngIf="activeTab === 'overview'" class="space-y-4">
+      <!-- Overview -->
+      <div class="p-4 bg-gradient-to-r from-orange-50 to-orange-100 rounded-xl border border-orange-200">
+        <h3 class="mb-3 text-lg font-semibold text-orange-800">Overview</h3>
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-sm text-gray-600">Total Outlets</span>
+            <span class="text-lg font-bold text-orange-600">{{ locations.length }}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-sm text-gray-600">Total Floors</span>
+            <span class="text-lg font-bold text-blue-600">{{ floors.length }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Actions -->
+      <div class="space-y-2">
+        <h3 class="text-lg font-semibold text-gray-700">Quick Actions</h3>
+        <button 
+          (click)="setActiveTab('upload')"
+          class="w-full px-4 py-2 text-sm font-medium text-white bg-orange-600 rounded-lg hover:bg-orange-700 transition-colors">
+          📤 Upload New Floorplan
+        </button>
+        <button 
+          (click)="refreshData()"
+          class="w-full px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+          🔄 Refresh Data
+        </button>
+      </div>
+    </div>
+
+    <!-- Upload Tab -->
+    <div *ngIf="activeTab === 'upload'" class="space-y-4">
+      <h3 class="text-lg font-semibold text-gray-700">Upload Floorplan</h3>
+      
+      <form [formGroup]="form" (ngSubmit)="submit()" class="space-y-4">
+        <!-- Outlet dropdown -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Outlet</label>
+          <select formControlName="officeId" class="w-full p-2 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500">
+            <option value="" disabled selected>Select Outlet</option>
+            <option *ngFor="let loc of locations" [value]="loc.value">{{ loc.label }}</option>
+          </select>
+          <small *ngIf="form.controls['officeId'].touched && form.controls['officeId'].invalid" class="text-red-600 text-xs">
+            Outlet is required
+          </small>
+        </div>
+
+        <!-- Floor dropdown -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Floor (Optional)</label>
+          <select formControlName="floorId" class="w-full p-2 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500">
+            <option value="" disabled selected>Select Floor</option>
+            <option *ngFor="let fl of floors" [value]="fl.value">{{ fl.label }}</option>
+          </select>
+        </div>
+
+        <!-- Custom file name -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Custom File Name (Optional)</label>
+          <input 
+            type="text" 
+            formControlName="fileName" 
+            class="w-full p-2 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500" 
+            placeholder="e.g., floorplan_v2" />
+        </div>
+
+        <!-- File upload -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">SVG File</label>
+          <div class="relative">
+            <input 
+              type="file" 
+              accept=".svg,image/svg+xml" 
+              (change)="onFileChange($event)"
+              class="w-full p-2 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500" />
+          </div>
+          <small *ngIf="form.controls['file'].touched && form.controls['file'].invalid" class="text-red-600 text-xs">
+            File is required
+          </small>
+        </div>
+
+        <button 
+          type="submit"
+          class="w-full px-4 py-2 text-sm font-medium text-white bg-orange-600 rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          [disabled]="uploading() || form.invalid">
+          {{ uploading() ? 'Uploading…' : 'Upload Floorplan' }}
+        </button>
+
+        <!-- Progress -->
+        <div *ngIf="uploading()" class="mt-3">
+          <div class="h-2 bg-gray-200 rounded">
+            <div class="h-2 bg-orange-600 rounded transition-all duration-300" [style.width.%]="progress()"></div>
+          </div>
+          <div class="mt-1 text-sm text-center text-gray-600">{{ progress() }}%</div>
+        </div>
+
+        <!-- Error -->
+        <p *ngIf="errorMsg()" class="text-red-600 text-sm">{{ errorMsg() }}</p>
+
+        <!-- Result -->
+        <div *ngIf="result()" class="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+          <div class="font-semibold text-green-700 text-sm">Upload Complete!</div>
+          <div class="text-xs text-green-600 mt-1">
+            <div><strong>Bucket:</strong> {{ result()!.bucket }}</div>
+            <div><strong>Path:</strong> {{ result()!.path }}</div>
+            <div><strong>File:</strong> {{ result()!.metadata.originalName }}</div>
+            <div><strong>Size:</strong> {{ result()!.metadata.size | number }} bytes</div>
+            <div *ngIf="result()!.metadata.overwrote" class="text-orange-600">
+              <strong>Note:</strong> File was overwritten
+            </div>
+          </div>
+          <ng-container *ngIf="result()!.signedUrl">
+            <div class="mt-2">
+              <a [href]="result()!.signedUrl" target="_blank" rel="noopener" class="text-blue-600 underline text-xs">
+                Open preview (signed URL)
+              </a>
+            </div>
+            <small class="text-gray-600 text-xs">
+              Signed URL expires in 60 minutes
+            </small>
+          </ng-container>
+          <div *ngIf="result()!.signedUrlError" class="mt-2 text-orange-600 text-xs">
+            <strong>Note:</strong> {{ result()!.signedUrlError }}
+          </div>
+        </div>
+      </form>
     </div>
   </div>
 
-  <div *ngIf="loading" class="p-2 text-sm">Loading…</div>
-  <div *ngIf="error" class="p-2 text-sm text-red-600">{{ error }}</div>
+  <!-- Right Panel - Floorplan Visualization -->
+  <div class="relative p-4 transition-all duration-500 bg-white shadow-lg rounded-2xl lg:col-span-8">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-xl font-semibold text-gray-800">Floorplan Viewer</h2>
+      <div class="flex gap-2">
+        <button 
+          (click)="refreshData()" 
+          class="px-3 py-1.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+          Refresh
+        </button>
+      </div>
+    </div>
 
-  <img *ngIf="safeSvgUrl" [src]="safeSvgUrl" class="w-full h-auto bg-white border rounded" alt="Floorplan">
+    <!-- Floor Selection -->
+    <div class="mb-4 space-y-3">
+      <div class="flex flex-col space-y-2">
+        <label class="text-sm font-medium text-gray-700">Outlet</label>
+        <select 
+          class="p-2 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500" 
+          [(ngModel)]="selectedOffice" 
+          (ngModelChange)="onSelected()">
+          <option value="">-- Select Outlet --</option>
+          <option *ngFor="let loc of locations" [value]="loc.value">
+            {{ loc.label }}
+          </option>
+        </select>
+      </div>
+      
+      <div class="flex flex-col space-y-2">
+        <label class="text-sm font-medium text-gray-700">Floor</label>
+        <select 
+          class="p-2 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500" 
+          [(ngModel)]="selectedFloor" 
+          (ngModelChange)="onSelected()">
+          <option value="">-- Select Floor --</option>
+          <option *ngFor="let fl of floors" [value]="fl.value">
+            {{ fl.label }}
+          </option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Loading state -->
+    <div *ngIf="loading" class="flex items-center justify-center p-8 bg-gray-50 rounded-xl">
+      <div class="flex items-center space-x-2">
+        <app-lottie-loading 
+          width="60px" 
+          height="60px" 
+          loadingText="Loading floorplan..."
+          [showText]="true">
+        </app-lottie-loading>
+      </div>
+    </div>
+
+    <!-- Error state -->
+    <div *ngIf="error" class="p-4 text-center text-red-600 bg-red-50 border border-red-200 rounded-xl">
+      <div class="text-4xl mb-2">⚠️</div>
+      <div class="text-sm">{{ error }}</div>
+    </div>
+
+  
+    <!-- Floorplan Display -->
+    <div *ngIf="safeSvgUrl && !loading && !error" class="bg-white border rounded-xl overflow-hidden">
+      <div class="p-3 bg-orange-100 border-b border-orange-200">
+        <span class="text-sm font-semibold text-orange-800">
+          🏢 {{ getSelectedOfficeLabel() }}
+          <span *ngIf="selectedFloor" class="ml-2 text-gray-600">
+            - {{ getSelectedFloorLabel() }}
+          </span>
+        </span>
+      </div>
+      <div class="p-4">
+        <img [src]="safeSvgUrl" class="w-full h-auto max-h-96 object-contain" alt="Floorplan">
+      </div>
+    </div>
+
+    <!-- Empty state -->
+    <div *ngIf="!safeSvgUrl && !loading && !error" class="p-8 text-center text-gray-600 bg-gray-50 rounded-xl">
+      <div class="text-4xl mb-4">🏢</div>
+      <div>Select an outlet to view its floorplan</div>
+    </div>
+  </div>
 </div>

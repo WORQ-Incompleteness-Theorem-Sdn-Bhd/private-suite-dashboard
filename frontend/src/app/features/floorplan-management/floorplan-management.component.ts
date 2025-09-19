@@ -1,12 +1,6 @@
 import {
   Component,
   OnInit,
-  AfterViewInit,
-  ElementRef,
-  ViewChildren,
-  QueryList,
-  ViewChild,
-  NgZone,
   signal,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -19,15 +13,9 @@ import {
 } from '@angular/forms';
 import { HttpClientModule } from '@angular/common/http';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
-import { Observable, of, forkJoin } from 'rxjs';
-import { catchError, finalize, tap } from 'rxjs/operators';
-import { Room } from '../../core/models/room.model';
-import { RoomService, ResourceParams } from '../../core/services/room.service';
-import { OfficeService } from '../../core/services/office.service';
-import { ToastService } from '../../shared/services/toast.service';
-import { BQService, UploadResponse } from './bq.service';
 import { forkJoin } from 'rxjs';
-import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
+import { BQService, UploadResponse } from './bq.service';
+import { LottieLoadingComponent } from '../../shared/components/lottie-loading.component';
 
 type Option = { label: string; value: string };
 
@@ -49,7 +37,7 @@ interface FloorplanMeta {
 @Component({
   selector: 'app-floorplan-upload',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, HttpClientModule, FormsModule],
+  imports: [CommonModule, ReactiveFormsModule, HttpClientModule, FormsModule, LottieLoadingComponent],
   templateUrl: './floorplan-management.component.html',
 })
 export class FloorplanManagementComponent implements OnInit {
@@ -69,6 +57,9 @@ export class FloorplanManagementComponent implements OnInit {
   // Dropdown options
   locations: Option[] = [];
   floors: Option[] = [];
+
+  // Tab management
+  activeTab: 'overview' | 'upload' = 'overview';
 
   constructor(
     private fb: FormBuilder,
@@ -197,5 +188,31 @@ export class FloorplanManagementComponent implements OnInit {
         this.loading = false;
       },
     });
+  }
+
+  // Tab management
+  setActiveTab(tab: 'overview' | 'upload') {
+    this.activeTab = tab;
+  }
+
+  // Refresh data
+  refreshData() {
+    this.loadDropdown();
+    if (this.selectedOffice) {
+      this.onSelected();
+    }
+  }
+
+  // Helper methods for template
+  getSelectedOfficeLabel(): string {
+    if (!this.selectedOffice) return 'No Outlet Selected';
+    const office = this.locations.find(l => l.value === this.selectedOffice);
+    return office?.label || 'Selected Outlet';
+  }
+
+  getSelectedFloorLabel(): string {
+    if (!this.selectedFloor) return '';
+    const floor = this.floors.find(f => f.value === this.selectedFloor);
+    return floor?.label || 'Selected Floor';
   }
 }

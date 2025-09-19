@@ -13,11 +13,13 @@
     <!-- Filters -->
     <div class="space-y-4">
       <!-- Loading overlay for offices -->
-      <div *ngIf="isLoadingOffices" class="flex items-center justify-center p-4 bg-gray-100 rounded-xl">
-        <div class="flex items-center space-x-2">
-          <div class="w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-          <span class="text-sm text-gray-600">Loading offices...</span>
-        </div>
+      <div *ngIf="isLoadingOffices">
+        <app-lottie-loading 
+          width="150px" 
+          height="150px" 
+          loadingText="Loading offices..."
+          [showText]="true">
+        </app-lottie-loading>
       </div>
 
       <ng-container *ngFor="let filter of filtersConfig">
@@ -34,6 +36,18 @@
             {{ opt }}
           </option>
         </select>
+
+        <!-- Date range selector placed directly below Outlet dropdown -->
+        <div *ngIf="filter.key === 'outlet'" class="pt-2">
+          <label class="block font-semibold text-gray-700">Date (Not Functioning Properly)</label>
+          <div class="grid grid-cols-2 gap-2">
+            <input type="date" class="w-full p-2 border outline-none rounded-xl focus:ring-2 focus:ring-orange-500"
+              [ngModel]="selectedStartDate" (ngModelChange)="onDateChange('start', $event)" />
+            <input type="date" class="w-full p-2 border outline-none rounded-xl focus:ring-2 focus:ring-orange-500"
+              [ngModel]="selectedEndDate" (ngModelChange)="onDateChange('end', $event)" />
+          </div>
+          <p class="mt-1 text-xs text-gray-500">Pick start or range to show room availability.</p>
+        </div>
       </ng-container>
 
       <!-- Multi-select Suite with checkboxes -->
@@ -120,6 +134,11 @@
               <td class="p-2 text-sm text-gray-600 min-w-[200px]">
                 <div><strong>Type:</strong> {{ room.type }}</div>
                 <div><strong>Status:</strong> {{ room.status }}</div>
+                <div *ngIf="selectedStartDate"><strong>Availability (Selected):</strong>
+                  <span [class]="(availabilityByRoomId.get(room.id) === 'free') ? 'text-green-600' : 'text-red-600'">
+                    {{ availabilityByRoomId.get(room.id) === 'free' ? 'Available' : 'Occupied' }}
+                  </span> <!--New functions availability by room id-->
+                </div>
                 <div><strong>Pax:</strong> {{ room.capacity }}</div>
                 <div><strong>Area:</strong> {{ room.area }} sqft</div>
                 <div><strong>Price:</strong> RM {{ room.price }}</div>
@@ -198,11 +217,13 @@
       <div (click)="showDownloadMenu = false"></div>
       
       <!-- Loading state for resources -->
-      <div *ngIf="isLoadingResources" class="flex items-center justify-center p-8 bg-gray-50 rounded-xl">
-        <div class="flex items-center space-x-2">
-          <div class="w-6 h-6 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-          <span class="text-gray-600">Loading resources...</span>
-        </div>
+      <div *ngIf="isLoadingResources">
+        <app-lottie-loading 
+          width="200px" 
+          height="200px" 
+          loadingText="Loading resources..."
+          [showText]="true">
+        </app-lottie-loading>
       </div>
 
       <ng-container *ngIf="filters.outlet !== 'Select Outlet' && !isLoadingResources; else askToPick">

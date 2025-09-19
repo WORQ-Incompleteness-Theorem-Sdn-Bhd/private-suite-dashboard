@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { BehaviorSubject, Observable, tap } from 'rxjs';
+import { BehaviorSubject, Observable, range, tap } from 'rxjs';
 import { Room } from '../models/room.model';
 import { environment } from '../../environments/environment.prod';
 import { OfficeService } from './office.service';
@@ -119,5 +119,16 @@ export class RoomService {
         this.loadingSubject.next(false);
       })
     );
+  }
+//New function 
+  // Fetch availability for a date or date range (YYYY-MM-DD)
+  getAvailability(params: { start: string; end: string; officeId?: string; }): Observable<any> {
+    let httpParams = new HttpParams()
+      .set('start', params.start)
+      .set('end', params.end || params.start);
+    if (params.officeId) {
+      httpParams = httpParams.set('office_id', params.officeId);
+    }
+    return this.http.get<any>(`${this.url}/availability`, { params: httpParams });
   }
 }

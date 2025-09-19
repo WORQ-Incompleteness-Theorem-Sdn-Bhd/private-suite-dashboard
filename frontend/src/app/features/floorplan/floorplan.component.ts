@@ -22,6 +22,7 @@ import { catchError, finalize } from 'rxjs/operators';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { ToastComponent } from '../../shared/components/toast.component';
+import { LottieLoadingComponent } from '../../shared/components/lottie-loading.component';
 
 type FilterKey = 'outlet' | 'status' | 'pax';
 
@@ -33,7 +34,7 @@ interface FilterConfig {
 
 @Component({
   standalone: true,
-  imports: [CommonModule, FormsModule, ToastComponent],
+  imports: [CommonModule, FormsModule, ToastComponent, LottieLoadingComponent],
   selector: 'app-floorplan',
   templateUrl: './floorplan.component.html',
   styleUrls: ['./floorplan.component.scss'],
@@ -86,6 +87,10 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     pax: 'Select Pax',
     svg: 'all',
   };
+  // Date filters
+  selectedStartDate: string = ''; //Added date filters
+  selectedEndDate: string = ''; //Added date filters
+  availabilityByRoomId: Map<string, 'free' | 'occupied'> = new Map(); //Added date filters
   outletOptions: string[] = [];
   statusOptions: string[] = [];
   paxOptions: string[] = [];
@@ -276,6 +281,11 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
 
     // 3) Fetch resources for this outlet using office.id
     this.loadResources({ officeId });
+
+    // If date already chosen, refresh availability for the outlet
+    if (this.selectedStartDate) {
+      this.fetchAvailabilityForCurrentSelection();
+    }
   }
 
   // Fetch resources for selected outlet
@@ -615,6 +625,41 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     }
   }
 
+  // Date change handlers
+  onDateChange(which: 'start' | 'end', value: string) {
+    if (which === 'start') this.selectedStartDate = value;
+    if (which === 'end') this.selectedEndDate = value;
+    // If only start picked, treat as single day
+    if (this.selectedStartDate) {
+      this.fetchAvailabilityForCurrentSelection();
+    }
+  }
+//New function to fetch availability for current selection
+  private fetchAvailabilityForCurrentSelection() {
+    const outlet = this.filters.outlet;
+    const officeId = this.getOfficeIdFromOutletName(outlet);
+    if (!officeId || !this.selectedStartDate) return;
+    const start = this.selectedStartDate;
+    const end = this.selectedEndDate || this.selectedStartDate;
+    this.roomService.getAvailability({ start, end, officeId }).subscribe({
+      next: (resp) => {
+        // resp.rows expected: [{ resource_id, days: [{date, status}, ...] }, ...]
+        const map = new Map<string, 'free' | 'occupied'>();
+        const rows = resp?.rows || resp?.data || [];
+        rows.forEach((r: any) => {
+          const days = r.days || [];
+          const allFree = days.length > 0 && days.every((d: any) => (d.status || '').toLowerCase() === 'free');
+          map.set(r.resource_id, allFree ? 'free' : 'occupied');
+        });
+        this.availabilityByRoomId = map;
+        // Do not mutate base status; just refresh colors/metrics if needed
+        this.applyFilters();
+        setTimeout(() => this.updateSvgColors(), 50);
+      },
+      error: (e) => console.error('Failed to fetch availability', e)
+    });
+  }
+
   // Floor selection handler
   onFloorChange(event: Event) {
     const select = event.target as HTMLSelectElement | null;
@@ -703,17 +748,26 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         const el = doc.getElementById(room.id);
         if (el) {
           if (this.filteredRooms.includes(room)) {
-            // Selected → colored with pax-based palette for available rooms
+          
+            // Compute effective status based on selected-date availability if provided
+            const avail = this.selectedStartDate ? this.availabilityByRoomId.get(room.id) : undefined;
+            let effectiveStatus: 'Occupied' | 'Available';
+            if (avail) {
+              effectiveStatus = (avail === 'free') ? 'Available' : 'Occupied'; //find what this function does
+            } else {
+              effectiveStatus = this.toStatusUnion(room.status);
+            }
+
             let color: string;
-            if (room.status === 'Occupied') {
+            if (effectiveStatus === 'Occupied') {  //change from room.status to effectiveStatus
               color = '#ef4444'; // Red for occupied
             } else if (this.filters.status === 'Available') {
-              // Use pax-based palette for available rooms
+              // Use pax-based palette for available rooms when filtering by Available
               color = this.getPaxColor(room.capacity);
             } else {
               color = '#22c55e'; // Green for available (default)
             }
-            
+
             el.setAttribute('fill', color);
             el.setAttribute('opacity', '0.7');
             (el as any).style.pointerEvents = 'auto';
@@ -739,6 +793,10 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         if (doc) applyColors(doc);
       });
     }
+  }
+
+  private toStatusUnion(status: string): 'Available' | 'Occupied' { //find what this function does
+    return status === 'Available' ? 'Available' : 'Occupied';
   }
 
   // Get color based on pax capacity

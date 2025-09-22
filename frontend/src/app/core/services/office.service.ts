@@ -14,7 +14,7 @@ export class OfficeService {
   loading$ = this.loadingSubject.asObservable();
 
   // Static office data based on the existing outletMap
-  private readonly staticOffices: Office[] = [
+ /* private readonly staticOffices: Office[] = [
     {
       id: '67ad665a9aa9ef620e693aa0',
       name: '8FA',
@@ -54,7 +54,7 @@ export class OfficeService {
         'assets/STO-Level12.svg',
         'assets/STO-Level14.svg',
       ],
-    },*/
+    },
     {
       id: '62a9832b43c9f437e373e9dd',
       name: 'KLS',
@@ -94,7 +94,7 @@ export class OfficeService {
       displayName: 'SV2',
       svg: 'assets/SV2.svg',
     },
-  ];
+  ];*/
 
   constructor(private http: HttpClient) {}
 

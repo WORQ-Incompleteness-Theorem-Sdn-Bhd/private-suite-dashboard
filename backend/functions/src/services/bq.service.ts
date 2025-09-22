@@ -1,45 +1,50 @@
-import { bq } from "../clients/bq-client";
+import { bq } from "../clients/bq-client"; //BigQuery client
 
-type Filters = Record<string, string | number | boolean>;
+//Function to fetch data from BigQuery
+//Fetches data from BigQuery tables with built-in SQL injection protection
+//Supports filtering, pagination, and column selection
+//Enforces security through allowlists for columns and filters
 
-interface FetchOptions {
-  dataset?: string;
-  table?: string;
-  select?: string[];
-  filters?: Filters;
+type Filters = Record<string, string | number | boolean>; //Filters for BigQuery
 
-  allowedSelect?: string[];
-  allowedFilter?: string[];
-  location?: string;
-  dataProjectId?: string;
+interface FetchOptions { //Options for BigQuery
+  dataset?: string; //Dataset for BigQuery
+  table?: string; //Table for BigQuery
+  select?: string[]; //Select for BigQuery
+  filters?: Filters; //Filters for BigQuery
 
-  limit?: number;
-  offset?: number;
+  allowedSelect?: string[]; //Allowed select for BigQuery
+  allowedFilter?: string[]; //Allowed filter for BigQuery
+  location?: string; //Location for BigQuery
+  dataProjectId?: string; //Data project id for BigQuery
+
+  limit?: number; //Limit for BigQuery
+  offset?: number; //Offset for BigQuery
 }
 
-export async function fetchFromTable(opts: FetchOptions) {
+export async function fetchFromTable(opts: FetchOptions) { //Fetch from table
   const {
-    dataset = process.env.BIGQUERY_DATASET_ID || "",
-    table = "",
-    select = ["*"],
-    filters = {},
+    dataset = process.env.BIGQUERY_DATASET_ID || "", //Dataset for BigQuery
+    table = "", //Table for BigQuery
+    select = ["*"], //Select for BigQuery
+    filters = {}, //Filters for BigQuery
 
-    allowedSelect = [],
-    allowedFilter = [],
-    location = process.env.BIGQUERY_LOCATION || "asia-southeast1",
-    dataProjectId = process.env.BIGQUERY_PROJECT_ID || "",
+    allowedSelect = [], //Allowed select for BigQuery
+    allowedFilter = [], //Allowed filter for BigQuery
+    location = process.env.BIGQUERY_LOCATION || "asia-southeast1", //Location for BigQuery
+    dataProjectId = process.env.BIGQUERY_PROJECT_ID || "", //Data project id for BigQuery
 
-    limit,
-    offset,
-  } = opts;
+    limit, //Limit for BigQuery
+    offset, //Offset for BigQuery
+  } = opts; 
 
-  if (!dataProjectId) throw new Error("Missing data project id");
-  if (!dataset) throw new Error("Missing dataset id");
-  if (!table) throw new Error("Missing table id");
+  if (!dataProjectId) throw new Error("Missing data project id"); //Missing data project id
+  if (!dataset) throw new Error("Missing dataset id"); //Missing dataset id
+  if (!table) throw new Error("Missing table id"); //Missing table id
 
   // --- Safe SELECT ---
-  let safeSelect: string;
-  if (allowedSelect.length > 0) {
+  let safeSelect: string; //Safe select for BigQuery
+  if (allowedSelect.length > 0) { //Allowed select for BigQuery
     const picked =
       select[0] === "*"
         ? allowedSelect

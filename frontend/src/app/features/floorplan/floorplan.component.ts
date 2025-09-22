@@ -22,7 +22,6 @@ import { catchError, finalize } from 'rxjs/operators';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { ToastComponent } from '../../shared/components/toast.component';
-import { LottieLoadingComponent } from '../../shared/components/lottie-loading.component';
 
 type FilterKey = 'outlet' | 'status' | 'pax';
 
@@ -34,7 +33,7 @@ interface FilterConfig {
 
 @Component({
   standalone: true,
-  imports: [CommonModule, FormsModule, ToastComponent, LottieLoadingComponent],
+  imports: [CommonModule, FormsModule, ToastComponent],
   selector: 'app-floorplan',
   templateUrl: './floorplan.component.html',
   styleUrls: ['./floorplan.component.scss'],

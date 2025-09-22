@@ -2,7 +2,18 @@
 <!-- Toast notifications -->
 <app-toast></app-toast>
 
-<div class="grid grid-cols-1 gap-6 py-6 mx-auto lg:grid-cols-12 max-w-7xl">
+<!-- Full page loading overlay -->
+<div *ngIf="isLoadingOffices || isLoadingResources" class="fixed inset-0 z-50 flex items-center justify-center bg-white bg-opacity-95">
+  <div class="text-center">
+    <div class="animate-spin rounded-full h-16 w-16 border-b-4 border-orange-600 mx-auto mb-4"></div>
+    <p class="text-lg font-medium text-gray-700 mb-2">
+      {{ isLoadingOffices ? 'Loading offices...' : 'Loading resources...' }}
+    </p>
+    <p class="text-sm text-gray-500">Please wait while we fetch the data</p>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 gap-6 py-6 mx-auto lg:grid-cols-12 max-w-7xl" [class.opacity-50]="isLoadingOffices || isLoadingResources">
   <!-- Left Panel -->
   <div class="flex flex-col p-6 transition-all duration-500 bg-white shadow-lg rounded-2xl lg:col-span-4">
     <h1 class="mb-4 text-2xl font-bold text-orange-600">
@@ -12,16 +23,6 @@
 
     <!-- Filters -->
     <div class="space-y-4">
-      <!-- Loading overlay for offices -->
-      <div *ngIf="isLoadingOffices">
-        <app-lottie-loading 
-          width="150px" 
-          height="150px" 
-          loadingText="Loading offices..."
-          [showText]="true">
-        </app-lottie-loading>
-      </div>
-
       <ng-container *ngFor="let filter of filtersConfig">
         <label class="block font-semibold text-gray-700">{{
           filter.label
@@ -216,16 +217,6 @@
     <div class="mt-4">
       <div (click)="showDownloadMenu = false"></div>
       
-      <!-- Loading state for resources -->
-      <div *ngIf="isLoadingResources">
-        <app-lottie-loading 
-          width="200px" 
-          height="200px" 
-          loadingText="Loading resources..."
-          [showText]="true">
-        </app-lottie-loading>
-      </div>
-
       <ng-container *ngIf="filters.outlet !== 'Select Outlet' && !isLoadingResources; else askToPick">
         <div>
           <div *ngFor="let svg of displayedSvgs; trackBy: trackBySvgUrl" class="mb-4">

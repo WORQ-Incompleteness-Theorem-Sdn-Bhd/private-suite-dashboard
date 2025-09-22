@@ -15,7 +15,6 @@ import { HttpClientModule } from '@angular/common/http';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { forkJoin } from 'rxjs';
 import { BQService, UploadResponse } from './bq.service';
-import { LottieLoadingComponent } from '../../shared/components/lottie-loading.component';
 
 type Option = { label: string; value: string };
 
@@ -37,7 +36,7 @@ interface FloorplanMeta {
 @Component({
   selector: 'app-floorplan-upload',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, HttpClientModule, FormsModule, LottieLoadingComponent],
+  imports: [CommonModule, ReactiveFormsModule, HttpClientModule, FormsModule],
   templateUrl: './floorplan-management.component.html',
 })
 export class FloorplanManagementComponent implements OnInit {

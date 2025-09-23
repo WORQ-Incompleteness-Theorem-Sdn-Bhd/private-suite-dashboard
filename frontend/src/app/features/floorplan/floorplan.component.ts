@@ -642,9 +642,9 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     const end = this.selectedEndDate || this.selectedStartDate;
     this.roomService.getAvailability({ start, end, officeId }).subscribe({
       next: (resp) => {
-        // resp.rows expected: [{ resource_id, days: [{date, status}, ...] }, ...]
+        // resp.resources expected: [{ resource_id, days: [{date, status}, ...] }, ...]
         const map = new Map<string, 'free' | 'occupied'>();
-        const rows = resp?.rows || resp?.data || [];
+        const rows = resp?.resources || resp?.rows || resp?.data || [];
         rows.forEach((r: any) => {
           const days = r.days || [];
           const allFree = days.length > 0 && days.every((d: any) => (d.status || '').toLowerCase() === 'free');

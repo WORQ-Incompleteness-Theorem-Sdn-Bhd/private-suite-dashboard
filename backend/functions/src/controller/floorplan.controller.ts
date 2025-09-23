@@ -103,44 +103,21 @@ async function processUpload(
   await fs.writeFile(tmp, file.buffer);
 
   try {
-    // 1) Ensure office exists
-    const [officeProbe] = await bucket.getFiles({
-      prefix: `${officeId}/`,
-      maxResults: 1,
-      autoPaginate: false,
-    });
-
-    if ((officeProbe || []).length === 0) {
-      await fs.unlink(tmp).catch(() => {});
-      res.status(404).json({ error: `officeId '${officeId}' not found` });
-      return;
-    }
-
     // Build final destination key
     const sanitizedName = sanitizeBaseName(fileName) + ".svg";
     const finalKey = floorId
       ? `${officeId}/${floorId}/${sanitizedName}`
       : `${officeId}/${sanitizedName}`;
 
-    // 2) If floorId provided, handle floor existence and replacement
+    // 1) If floorId provided, handle existing SVG replacement
     if (floorId) {
+      // Check for existing SVGs under this floor
       const [floorListing] = await bucket.getFiles({
         prefix: `${officeId}/${floorId}/`,
         autoPaginate: false,
-        // We may need to fetch more than 1; keep at a reasonable cap
         maxResults: 100,
       });
 
-      const floorExists = (floorListing || []).length > 0;
-      if (!floorExists) {
-        await fs.unlink(tmp).catch(() => {});
-        res.status(404).json({
-          error: `floorId '${floorId}' under office '${officeId}' not found`,
-        });
-        return;
-      }
-
-      // Find any existing SVG(s) under this floor
       const existingSvgs = (floorListing || []).filter((f) =>
         f.name.toLowerCase().endsWith(".svg")
       );
@@ -164,7 +141,7 @@ async function processUpload(
         );
       }
     } else {
-      // 3) No floorId (uploading under office root). Block if same-name file exists unless overwrite.
+      // 2) No floorId (uploading under office root). Block if same-name file exists unless overwrite.
       const rootFile = bucket.file(finalKey);
       const [exists] = await rootFile.exists();
       if (exists && !overwrite) {
@@ -180,7 +157,7 @@ async function processUpload(
       }
     }
 
-    // 4) Upload the new file
+    // 3) Upload the new file
     console.log("☁️ Uploading to:", finalKey);
     await bucket.upload(tmp, {
       destination: finalKey,
@@ -199,7 +176,7 @@ async function processUpload(
     // Only now set cloudFile for potential cleanup-on-error
     const cloudFile = bucket.file(finalKey);
 
-    // 5) Try to sign a URL (optional)
+    // 4) Try to sign a URL (optional)
     try {
       const minutes = 60;
       const [signedUrl] = await cloudFile.getSignedUrl({

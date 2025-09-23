@@ -17,7 +17,7 @@ export async function getResources(req: Request, res: Response): Promise<void> {
   const outlet = pick(["outlet", "office_id"]);
   const status = pick(["status"]);
   const pax = pick(["pax", "pax_size"]);
-  const suite = pick(["suite", "resource_id"]); //tukar id
+  const suite = pick(["suite", "resource_id"]); 
   const floorId = pick(["floor", "floor_id"]);
   const resourceTypeOverride = pick(["resource_type"]);
 
@@ -75,8 +75,8 @@ export async function getResources(req: Request, res: Response): Promise<void> {
 
     res.json({
       data: rows,
-      limit: limit ?? null,
-      offset: limit ? offset : null,
+      limit: limit || undefined,
+      offset: limit ? offset : undefined,
       filtersApplied: filters,
     });
   } catch (err: any) {
@@ -106,22 +106,41 @@ export async function getLocations(req: Request, res: Response): Promise<void> {
   const today = new Date().toISOString().split("T")[0];
 
   try {
-    const rows = await fetchFromTable({
-      limit,
-      offset,
-      allowedSelect: ["extraction_date", "location_id", "location_name"],
-      allowedFilter: ["extraction_date"],
-      filters: {
-        extraction_date: today,
+    const projectId = process.env.BIGQUERY_PROJECT_ID!;
+    const datasetId = process.env.BIGQUERY_DATASET_ID!;
+    const tableId = process.env.BQ_LOCATION_TABLE_ID!;
+    const tableFQN = `\`${projectId}.${datasetId}.${tableId}\``;
+
+    const baseSql = `
+      SELECT extraction_date, location_id, location_name
+      FROM ${tableFQN}
+      WHERE extraction_date = @today
+        AND location_id IS NOT NULL
+        AND location_id != @excluded_id
+    `;
+
+    const sql =
+      typeof limit === "number"
+        ? `${baseSql}\nLIMIT @limit OFFSET @offset`
+        : baseSql;
+
+    const rows = await queryRows({
+      sql,
+      params: {
+        today,
+        excluded_id: "5e97e43db77c8a004526efa8",
+        ...(typeof limit === "number"
+          ? { limit: Math.min(limit, 1000), offset }
+          : {}),
       },
-      table: process.env.BQ_LOCATION_TABLE_ID,
+      location: process.env.BIGQUERY_LOCATION || "asia-southeast1",
     });
 
     res.json({
       data: rows,
-      limit: limit ?? null,
-      offset: limit ? offset : null,
-      filtersApplied: null,
+      limit: limit || undefined,
+      offset: limit ? offset : undefined,
+      filtersApplied: undefined,
     });
   } catch (err: any) {
     const msg = String(err?.message || err);
@@ -162,9 +181,9 @@ export async function getFloors(req: Request, res: Response): Promise<void> {
 
     res.json({
       data: rows,
-      limit: limit ?? null,
-      offset: limit ? offset : null,
-      filtersApplied: null,
+      limit: limit || undefined,
+      offset: limit ? offset : undefined,
+      filtersApplied: undefined,
     });
   } catch (err: any) {
     const msg = String(err?.message || err);
@@ -201,7 +220,7 @@ export async function getAvailability(req: Request, res: Response) {
     const officeId =
       req.query.office_id ?? req.query.outlet
         ? String(req.query.office_id ?? req.query.outlet)
-        : null;
+        : undefined;
 
     if (!startStr || !endStr) {
       return res
@@ -254,6 +273,7 @@ export async function getAvailability(req: Request, res: Response) {
     COALESCE(DATE(end_date), DATE '9999-12-31') AS end_date  
   FROM ${MEM_FQN}
   WHERE extraction_date = @today
+    AND resource_id IS NOT NULL
 ),
 
       grid AS (

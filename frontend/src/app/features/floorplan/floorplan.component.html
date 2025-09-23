@@ -40,7 +40,7 @@
 
         <!-- Date range selector placed directly below Outlet dropdown -->
         <div *ngIf="filter.key === 'outlet'" class="pt-2">
-          <label class="block font-semibold text-gray-700">Date (Not Functioning Properly)</label>
+          <label class="block font-semibold text-gray-700">Date</label>
           <div class="grid grid-cols-2 gap-2">
             <input type="date" class="w-full p-2 border outline-none rounded-xl focus:ring-2 focus:ring-orange-500"
               [ngModel]="selectedStartDate" (ngModelChange)="onDateChange('start', $event)" />
@@ -113,7 +113,7 @@
       </div>
     </div>
 
-    <!-- Room Table -->
+    <!-- Room Table 
     <div class="p-4 mt-6 border border-gray-200 bg-gray-50 rounded-xl">
       <table class="w-full border">
         <thead class="text-gray-700 bg-gray-100">
@@ -128,17 +128,17 @@
         <table class="w-full">
           <tbody>
             <tr *ngFor="let room of filteredRooms" class="transition border-b hover:bg-orange-50">
-              <!-- Room Name -->
+              <!-- Room Name 
               <td class="p-2 font-semibold">{{ room.name }}</td>
 
-              <!-- Room Details -->
+              <!-- Room Details 
               <td class="p-2 text-sm text-gray-600 min-w-[200px]">
                 <div><strong>Type:</strong> {{ room.type }}</div>
                 <div><strong>Status:</strong> {{ room.status }}</div>
                 <div *ngIf="selectedStartDate"><strong>Availability (Selected):</strong>
                   <span [class]="(availabilityByRoomId.get(room.id) === 'free') ? 'text-green-600' : 'text-red-600'">
                     {{ availabilityByRoomId.get(room.id) === 'free' ? 'Available' : 'Occupied' }}
-                  </span> <!--New functions availability by room id-->
+                  </span> <!--New functions availability by room id
                 </div>
                 <div><strong>Pax:</strong> {{ room.capacity }}</div>
                 <div><strong>Area:</strong> {{ room.area }} sqft</div>
@@ -153,7 +153,7 @@
               </td>
             </tr>
 
-            <!-- Show when no rooms match -->
+            <!-- Show when no rooms match 
             <tr *ngIf="filteredRooms.length === 0">
               <td colspan="2" class="p-4 text-center text-gray-500">
                 No rooms found.
@@ -162,7 +162,7 @@
           </tbody>
         </table>
       </div>
-    </div>
+    </div> -->
 
     <!-- PDF Export Section -->
     <div class="p-4 mt-6 border border-orange-200 bg-orange-50 rounded-xl">
@@ -256,11 +256,18 @@
         {{ selectedRoom.name }}
       </h3>
       <div class="space-y-0.5">
-        <p class="text-xs"><strong>Status:</strong> 
+        <p class="text-xs"><strong>Status now:</strong> 
           <span [class]="selectedRoom.status === 'Available' ? 'text-green-600' : 'text-red-600'">
             {{ selectedRoom.status }}
           </span>
         </p>
+        <!-- availability check -->
+        <div *ngIf="selectedStartDate" class="text-xs mt-1">
+          <strong>Status on selected date:</strong>
+          <span [class]="(availabilityByRoomId.get(selectedRoom.id) === 'free') ? 'text-green-600' : 'text-red-600'">
+            {{ availabilityByRoomId.get(selectedRoom.id) === 'free' ? 'Available' : 'Occupied' }}
+          </span>
+        </div>
         <p class="text-xs"><strong>Capacity:</strong> {{ selectedRoom.capacity }} pax</p>
         <p class="text-xs"><strong>Area:</strong> {{ selectedRoom.area }} sqft</p>
         <!--

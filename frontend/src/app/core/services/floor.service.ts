@@ -24,11 +24,11 @@ export class FloorService {
       'floor_21': ['assets/KLS-L21.svg'],
       'floor_28': ['assets/KLS-L28.svg']
     },
-    '63f5de531f29f60007ca8209': { // MUB
+    /*'63f5de531f29f60007ca8209': { // MUB
       'floor_9': ['assets/MUB-level9.svg'],
       'floor_12': ['assets/MUB-level12.svg'],
       'floor_17': ['assets/MUB-level17.svg']
-    },
+    },*/
     '66dfd21d5ec307e20a9b761c': { // UBP3A
       'floor_13a': ['assets/UBP-L13A.svg'],
       'floor_13a_airit': ['assets/UBP-L13AAIRIT.svg']

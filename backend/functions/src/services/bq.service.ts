@@ -64,6 +64,9 @@ export async function fetchFromTable(opts: FetchOptions) { //Fetch from table
   const params: Record<string, any> = {};
   let paramIndex = 0;
 
+  // Always exclude null office_id values for PS management
+  whereParts.push(`office_id IS NOT NULL`);
+
   for (const [key, value] of Object.entries(filters)) {
     if (allowedFilter.length > 0 && !allowedFilter.includes(key)) continue;
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;

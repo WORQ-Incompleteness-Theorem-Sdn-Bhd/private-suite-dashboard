@@ -12,12 +12,7 @@ import {
   FormsModule,
 } from '@angular/forms';
 import { HttpClientModule } from '@angular/common/http'; 
-import { Observable, of } from 'rxjs';
-import { catchError, finalize, tap } from 'rxjs/operators';
-import { Room } from '../../core/models/room.model';
-import { RoomService, ResourceParams } from '../../core/services/room.service'; 
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
-import { Floor } from '../../core/models/floor.model';
 import { OfficeService } from '../../core/services/office.service';
 import { FloorService } from '../../core/services/floor.service';
 import { ToastComponent } from '../../shared/components/toast.component';
@@ -223,7 +218,7 @@ export class FloorplanManagementComponent implements OnInit {
       },
       error: (err) => {
         console.error(err);
-        this.error = 'Failed to load floorplan. jjjjjjjjjjj';
+        this.error = 'Failed to load floorplan.';
         this.loading = false;
       },
     });

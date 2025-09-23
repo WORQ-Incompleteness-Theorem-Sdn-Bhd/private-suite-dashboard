@@ -102,18 +102,9 @@ async function processUpload(
   await fs.writeFile(tmp, file.buffer);
 
   try {
-    // 1) Ensure office exists
-    const [officeProbe] = await bucket.getFiles({
-      prefix: `${officeId}/`,
-      maxResults: 1,
-      autoPaginate: false,
-    });
-
-    if ((officeProbe || []).length === 0) {
-      await fs.unlink(tmp).catch(() => { });
-      res.status(404).json({ error: `officeId '${officeId}' not found` });
-      return;
-    }
+    // 1) Check if office exists in static data (optional validation)
+    // Note: We'll allow uploads even if office folder doesn't exist yet
+    // The folder will be created automatically when the file is uploaded
 
     // Build final destination key
     const sanitizedName = sanitizeBaseName(fileName) + ".svg";
@@ -123,21 +114,15 @@ async function processUpload(
 
     // 2) If floorId provided, handle floor existence and replacement
     if (floorId) {
+      // Allow floor creation - don't require existing floor folder
+      // The folder will be created automatically when the file is uploaded
+      
+      // Check for existing SVGs under this floor
       const [floorListing] = await bucket.getFiles({
         prefix: `${officeId}/${floorId}/`,
         autoPaginate: false,
-        // We may need to fetch more than 1; keep at a reasonable cap
         maxResults: 100,
       });
-
-      const floorExists = (floorListing || []).length > 0;
-      if (!floorExists) {
-        await fs.unlink(tmp).catch(() => { });
-        res.status(404).json({
-          error: `floorId '${floorId}' under office '${officeId}' not found`,
-        });
-        return;
-      }
 
       // Find any existing SVG(s) under this floor
       const existingSvgs = (floorListing || []).filter((f) =>

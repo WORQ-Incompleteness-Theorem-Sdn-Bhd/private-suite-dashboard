@@ -17,7 +17,7 @@ import { ToastService } from '../../shared/services/toast.service';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
-import { Observable, of } from 'rxjs'; 
+import { Observable, of, forkJoin } from 'rxjs'; 
 import { catchError, finalize } from 'rxjs/operators';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -626,8 +626,52 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
 
   // Date change handlers
   onDateChange(which: 'start' | 'end', value: string) {
-    if (which === 'start') this.selectedStartDate = value;
-    if (which === 'end') this.selectedEndDate = value;
+    if (which === 'start') {
+      // If user clears the start date, reset both dates and availability
+      if (!value) {
+        this.selectedStartDate = '';
+        this.selectedEndDate = '';
+        this.availabilityByRoomId.clear();
+        this.applyFilters();
+        setTimeout(() => this.updateSvgColors(), 50);
+        return;
+      }
+      this.selectedStartDate = value;
+      // If end date is before new start date, clear it
+      if (this.selectedEndDate && this.selectedEndDate < value) {
+        this.selectedEndDate = '';
+      }
+    }
+    if (which === 'end') {
+      // If user clears the end date, treat it as single-day selection
+      if (!value) {
+        this.selectedEndDate = '';
+        if (this.selectedStartDate) {
+          this.fetchAvailabilityForCurrentSelection();
+        } else {
+          // No start date either → clear availability and reset
+          this.availabilityByRoomId.clear();
+          this.applyFilters();
+          setTimeout(() => this.updateSvgColors(), 50);
+        }
+        return;
+      }
+      this.selectedEndDate = value;
+    }
+    
+    // Validate date range (max 366 days inclusive; leap-year friendly)
+    if (this.selectedStartDate && this.selectedEndDate) {
+      const startDate = new Date(this.selectedStartDate);
+      const endDate = new Date(this.selectedEndDate);
+      const dayCount = Math.round((endDate.getTime() - startDate.getTime()) / 86400000) + 1;
+      
+      if (dayCount > 366) {
+        this.toastService.error('Date range too large. Please select a range of 366 days or less.');
+        this.selectedEndDate = '';
+        return;
+      }
+    }
+    
     // If only start picked, treat as single day
     if (this.selectedStartDate) {
       this.fetchAvailabilityForCurrentSelection();
@@ -638,24 +682,93 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     const outlet = this.filters.outlet;
     const officeId = this.getOfficeIdFromOutletName(outlet);
     if (!officeId || !this.selectedStartDate) return;
+    
     const start = this.selectedStartDate;
-    const end = this.selectedEndDate || this.selectedStartDate;
+    const end = this.selectedEndDate || this.selectedStartDate; // Use start date as end if no end date selected
+    
+    // Build day count to decide whether to chunk requests (handles backends with shorter limits)
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const totalDays = Math.round((endDate.getTime() - startDate.getTime()) / 86400000) + 1;
+
+    const MAX_WINDOW = 31; // compatible with stricter backends
+    if (totalDays > MAX_WINDOW) {
+      // Split into <=31-day windows and combine results client-side
+      const windows: Array<{ s: string; e: string }> = [];
+      let cursor = new Date(startDate);
+      while (cursor <= endDate) {
+        const winStart = new Date(cursor);
+        const winEnd = new Date(Math.min(
+          endDate.getTime(),
+          new Date(cursor.getTime() + (MAX_WINDOW - 1) * 86400000).getTime()
+        ));
+        const toISO = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+        windows.push({ s: toISO(winStart), e: toISO(winEnd) });
+        cursor = new Date(winEnd.getTime() + 86400000);
+      }
+
+      const calls = windows.map(w => this.roomService.getAvailability({ start: w.s, end: w.e, officeId }));
+      forkJoin(calls).subscribe({
+        next: (responses: any[]) => {
+          // Initialize all rooms as occupied; mark as free only if ALL days across ALL windows are free
+          const combined = new Map<string, 'free' | 'occupied'>();
+          this.rooms.forEach(r => combined.set(r.id, 'occupied'));
+          responses.forEach(resp => {
+            const rows = resp?.resources || resp?.rows || resp?.data || [];
+            rows.forEach((r: any) => {
+              const days = r.days || [];
+              const allFree = days.length > 0 && days.every((d: any) => (d.status || '').toLowerCase() === 'free');
+              if (allFree) combined.set(r.resource_id, 'free');
+            });
+          });
+          this.availabilityByRoomId = combined;
+          this.applyFilters();
+          setTimeout(() => this.updateSvgColors(), 50);
+        },
+        error: (e) => {
+          console.error('Failed to fetch chunked availability', e);
+          this.toastService.error('Failed to fetch availability data. Please try again.');
+          this.availabilityByRoomId.clear();
+          this.applyFilters();
+          setTimeout(() => this.updateSvgColors(), 50);
+        }
+      });
+      return;
+    }
+
+    // Simple single-call case
     this.roomService.getAvailability({ start, end, officeId }).subscribe({
       next: (resp) => {
         // resp.resources expected: [{ resource_id, days: [{date, status}, ...] }, ...]
-        const map = new Map<string, 'free' | 'occupied'>();
+        // Initialize all rooms as occupied; mark free only if ALL days are free
+        const map = new Map<string, 'free' | 'occupied'>(); 
+        this.rooms.forEach(r => map.set(r.id, 'occupied'));
         const rows = resp?.resources || resp?.rows || resp?.data || [];
         rows.forEach((r: any) => {
           const days = r.days || [];
-          const allFree = days.length > 0 && days.every((d: any) => (d.status || '').toLowerCase() === 'free');
-          map.set(r.resource_id, allFree ? 'free' : 'occupied');
+          // For date range: room is available if ALL days in the range are free
+          // For single date: room is available if that specific date is free
+          const isAvailable = days.length > 0 && days.every((d: any) => (d.status || '').toLowerCase() === 'free');
+          if (isAvailable) map.set(r.resource_id, 'free');
         });
         this.availabilityByRoomId = map;
         // Do not mutate base status; just refresh colors/metrics if needed
         this.applyFilters();
         setTimeout(() => this.updateSvgColors(), 50);
       },
-      error: (e) => console.error('Failed to fetch availability', e)
+      error: (e) => {
+        console.error('Failed to fetch availability', e);
+        // Check if it's a range too large error
+        if (e.error && e.error.error && e.error.error.includes('Range too large')) {
+          this.toastService.error('Date range too large. Please select a range of 366 days or less.');
+        } else {
+          this.toastService.error('Failed to fetch availability data. Please try again.');
+        }
+        // Clear availability data on error
+        this.availabilityByRoomId.clear();
+        this.applyFilters();
+        setTimeout(() => this.updateSvgColors(), 50);
+      }
     });
   }
 
@@ -701,20 +814,27 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   }
 
   applyFilters() {
+    // Helper to compute effective status based on selected date range
+    const getEffectiveStatus = (room: Room): 'Available' | 'Occupied' => {
+      if (this.selectedStartDate) {
+        const avail = this.availabilityByRoomId.get(room.id);
+        if (avail) return avail === 'free' ? 'Available' : 'Occupied';
+      }
+      return this.toStatusUnion(room.status);
+    };
+
     this.filteredRooms = this.rooms
-      .filter(
-        (r) =>
-          (this.filters.outlet === 'Select Outlet' ||
-            r.outlet === this.filters.outlet) &&
-          (this.filters.status === 'Select Status' ||
-            r.status === this.filters.status) &&
-          (this.filters.pax === 'Select Pax' ||
-            r.capacity.toString() === this.filters.pax) &&
-
-          (this.selectedSuites.length === 0 ||
-            this.selectedSuites.includes(r.name))
-      )
-
+      .filter((r) => {
+        const outletOk =
+          this.filters.outlet === 'Select Outlet' || r.outlet === this.filters.outlet;
+        const effectiveStatus = getEffectiveStatus(r);
+        const statusOk =
+          this.filters.status === 'Select Status' || effectiveStatus === this.filters.status;
+        const paxOk =
+          this.filters.pax === 'Select Pax' || r.capacity.toString() === this.filters.pax;
+        const suiteOk = this.selectedSuites.length === 0 || this.selectedSuites.includes(r.name);
+        return outletOk && statusOk && paxOk && suiteOk;
+      })
       .sort((a, b) => {
         // Sort by Pax (capacity) if Pax filter is active
         if (this.filters.pax !== 'Select Pax') {
@@ -727,15 +847,13 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         return 0; // No sorting if no filter
       });
 
+    // Metrics reflect effective availability
     this.Occupied = this.filteredRooms.filter(
-      (r) => r.status === 'Occupied'
+      (r) => getEffectiveStatus(r) === 'Occupied'
     ).length;
     this.Available = this.filteredRooms.filter(
-      (r) => r.status === 'Available'
+      (r) => getEffectiveStatus(r) === 'Available'
     ).length;
-    console.log('Filtered rooms:', this.filteredRooms.length);
-    console.log('Occupied:', this.Occupied);
-    console.log('Available:', this.Available);
     
     // Update SVG colors after filtering
     this.updateSvgColors();
@@ -761,7 +879,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
             if (effectiveStatus === 'Occupied') {  //change from room.status to effectiveStatus
               color = '#ef4444'; // Red for occupied
             } else if (this.filters.status === 'Available') {
-              // Use pax-based palette for available rooms when filtering by Available
+              // Use pax-based palette for available rooms when filtering by Available (even with date range)
               color = this.getPaxColor(room.capacity);
             } else {
               color = '#22c55e'; // Green for available (default)
@@ -1330,48 +1448,100 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
           yPos += 8;
         }
         if (this.selectedSuites.length > 0) {
-          pdf.text(`Suites: ${this.selectedSuites.join(', ')}`, 20, yPos);
-          yPos += 8;
-        }
+          const suitesLabel = 'Suites: ';
+          const suitesText = this.selectedSuites.join(', ');
+          // Use smaller font and wrap when too many suites are selected
+          const manySuites = this.selectedSuites.length > 8;
+          const originalFont = 12;
+          const smallFont = 8;
+          const fontToUse = manySuites ? smallFont : originalFont;
 
-        // Add dynamic Pax legend if there are available rooms
-        const dynamicLegend = this.getDynamicPaxLegend();
-        if (dynamicLegend.length > 0) {
-          yPos += 4;
-          pdf.setFontSize(10);
+          pdf.setFontSize(fontToUse);
+          const infoBlockWidth = pageWidth - 120; // leave space for right-side legend
+          const wrapped = pdf.splitTextToSize(suitesText, infoBlockWidth - suitesLabel.length * (fontToUse / 2));
+          // Print label on first line, then continuation lines indented
+          if (wrapped.length > 0) {
+            pdf.text(`${suitesLabel}${wrapped[0]}`, 20, yPos);
+            let yy = yPos;
+            for (let i = 1; i < wrapped.length; i++) {
+              yy += manySuites ? 5 : 6; // tighter line height for small font
+              pdf.text(`        ${wrapped[i]}`, 20, yy);
+            }
+            yPos = yy + (manySuites ? 5 : 6);
+          } else {
+            pdf.text(`${suitesLabel}`, 20, yPos);
+            yPos += manySuites ? 5 : 6;
+          }
+          // Restore default font for subsequent lines
+          pdf.setFontSize(12);
+        }
+        
+        // Add date range information
+        if (this.selectedStartDate) {
+          if (this.selectedEndDate && this.selectedEndDate !== this.selectedStartDate) {
+            pdf.text(`Date Range: ${this.selectedStartDate} to ${this.selectedEndDate}`, 20, yPos);
+          }}
+
+        // Add compact Pax legend (always compact, based on currently available rooms)
+        const buildPdfPaxLegend = (): Array<{label: string, color: string}> => {
+          const legend: Array<{label: string, color: string}> = [];
+          // Effective status helper
+          const effStatus = (room: Room): 'Available' | 'Occupied' => {
+            if (this.selectedStartDate) {
+              const avail = this.availabilityByRoomId.get(room.id);
+              if (avail) return avail === 'free' ? 'Available' : 'Occupied';
+            }
+            return this.toStatusUnion(room.status);
+          };
+          const usedPax = new Set<number>();
+          this.filteredRooms.forEach(r => {
+            if (effStatus(r) === 'Available') usedPax.add(r.capacity);
+          });
+          if (usedPax.size === 0) return legend;
+          this.paxBuckets.forEach((bucket, i) => {
+            const has = Array.from(usedPax).some(p => {
+              if (i === 0) return p >= 2 && p <= bucket.max;
+              const prev = this.paxBuckets[i - 1];
+              return p > prev.max && p <= bucket.max;
+            });
+            if (has) legend.push({ label: bucket.label, color: this.paxPalette[i] });
+          });
+          return legend;
+        };
+
+        const pdfLegend = buildPdfPaxLegend();
+        if (pdfLegend.length > 0) {
+          // Render legend on the right side beside the header info
+          const rightMargin = 15;
+          const legendAreaWidth = 85; // compact block
+          const legendStartX = pageWidth - rightMargin - legendAreaWidth;
+          let legendY = 35; // align with header top
+
+          pdf.setFontSize(9);
           pdf.setTextColor(0, 0, 0);
-          pdf.text('Pax Capacity Colors:', 20, yPos);
-          yPos += 6;
-          
-          // Draw legend items in a compact grid layout
-          const legendStartX = 20;
-          const legendItemWidth = 40; // Reduced from 60 to 40
-          const legendItemHeight = 6; // Reduced from 8 to 6
+          pdf.text('Pax (Available):', legendStartX, legendY);
+          legendY += 5;
+
+          const legendItemWidth = 36;
+          const legendItemHeight = 5;
           let currentX = legendStartX;
-          let currentY = yPos;
+          let currentY = legendY;
           
-          dynamicLegend.forEach((item, index) => {
-            // Check if we need to move to next row
-            if (currentX + legendItemWidth > pageWidth - 20) {
+          pdfLegend.forEach((item) => {
+            if (currentX + legendItemWidth > legendStartX + legendAreaWidth) {
               currentX = legendStartX;
-              currentY += legendItemHeight + 1; // Reduced gap from 2 to 1
+              currentY += legendItemHeight + 1;
             }
-            
-            // Draw color box
-            const colorRgb = this.hexToRgb(item.color);
-            if (colorRgb) {
-              pdf.setFillColor(colorRgb.r, colorRgb.g, colorRgb.b);
-              pdf.rect(currentX, currentY - 2, 4, 4, 'F');
+            const rgb = this.hexToRgb(item.color);
+            if (rgb) {
+              pdf.setFillColor(rgb.r, rgb.g, rgb.b);
+              pdf.rect(currentX, currentY - 2, 3, 3, 'F');
             }
-            
-            // Draw label
-            pdf.setFillColor(0, 0, 0);
-            pdf.text(item.label, currentX + 5, currentY); // Reduced gap from 6 to 5
-            
+            pdf.setTextColor(0,0,0);
+            pdf.text(item.label, currentX + 5, currentY);
             currentX += legendItemWidth;
           });
-          
-          yPos = currentY + 8;
+          // keep yPos unchanged to avoid pushing down the image; legend lives on the right
         }
 
         // Clone and reset viewBox to original
@@ -1414,9 +1584,11 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       }
 
       // Save PDF with compression
-      const fileName = `floorplan-${
+      let fileName = `floorplan-${
         this.filters.outlet !== 'Select Outlet' ? this.filters.outlet : 'all'
-      }-${new Date().toISOString().split('T')[0]}.pdf`;
+      }`;
+    
+      fileName += '.pdf';
       this.savePdfSmart(pdf, fileName);
 
       // Show success message with file size info
@@ -1502,16 +1674,26 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   private getDynamicPaxLegend(): Array<{label: string, color: string}> {
     const legend: Array<{label: string, color: string}> = [];
     
-    // Only show legend if user has selected "Available" status
-    if (this.filters.status !== 'Available') {
+    // Only show legend if user has selected "Available" status AND no date filter is applied
+    // When a date is selected we color by availability (green/red), not pax palette
+    if (this.filters.status !== 'Available' || this.selectedStartDate) {
       return legend;
     }
 
     const usedPaxSizes = new Set<number>();
 
     // Collect all Pax sizes from filtered rooms
+    // Use effective status for accuracy
+    const getEffectiveStatus = (room: Room): 'Available' | 'Occupied' => {
+      if (this.selectedStartDate) {
+        const avail = this.availabilityByRoomId.get(room.id);
+        if (avail) return avail === 'free' ? 'Available' : 'Occupied';
+      }
+      return this.toStatusUnion(room.status);
+    };
+
     this.filteredRooms.forEach(room => {
-      if (room.status === 'Available') {
+      if (getEffectiveStatus(room) === 'Available') {
         usedPaxSizes.add(room.capacity);
       }
     });

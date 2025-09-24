@@ -234,9 +234,10 @@ export async function getAvailability(req: Request, res: Response) {
     if (isNaN(+startD) || isNaN(+endD) || endD < startD) {
       return res.status(400).json({ error: "Invalid date range" });
     }
-    const dayCount = Math.round((+endD - +startD) / 86400000) + 1;
-    if (dayCount > 31) {
-      return res.status(400).json({ error: "Range too large (<= 31 days)" });
+    const dayCount = Math.round((+endD - +startD) / 86400000) + 1; // inclusive
+    // Allow up to 366 days to account for inclusive end date and leap years
+    if (dayCount > 366) {
+      return res.status(400).json({ error: "Range too large (<= 366 days)" });
     }
 
     const toISODate = (d: Date) =>
@@ -257,7 +258,7 @@ export async function getAvailability(req: Request, res: Response) {
         SELECT range_start, range_end
       ),
       days AS (
-        SELECT d AS day FROM params, UNNEST(GENERATE_DATE_ARRAY(range_start, range_end)) d
+        SELECT d AS day FROM params, UNNEST(GENERATE_DATE_ARRAY(range_start, range_end))
       ),
       resources AS (
         SELECT DISTINCT resource_id, resource_name AS name, office_id
@@ -273,7 +274,7 @@ export async function getAvailability(req: Request, res: Response) {
     COALESCE(DATE(end_date), DATE '9999-12-31') AS end_date  
   FROM ${MEM_FQN}
   WHERE extraction_date = @today
-    AND resource_id IS NOT NULL
+  
 ),
 
       grid AS (

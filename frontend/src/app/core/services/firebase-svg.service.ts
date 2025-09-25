@@ -1,3 +1,4 @@
+// firebase-svg.service.ts handle firebase cloud storage svg urls from backend
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, map, catchError, of, tap } from 'rxjs';

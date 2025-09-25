@@ -2,6 +2,8 @@
 import { Request, Response } from "express";
 import { fetchFromTable, queryRows } from "../services/bq.service";
 import { parseLimit } from "../utils/bigquery.utils";
+import { enrichWithYoutube, type ResourceRow } from "../utils/enrichment";
+import { clearSheetCache, getCacheStatus } from "../sheets";
 export async function getResources(req: Request, res: Response): Promise<void> {
   const q = req.query ?? {};
   const b = (req.body ?? {}) as Record<string, any>;
@@ -73,8 +75,11 @@ export async function getResources(req: Request, res: Response): Promise<void> {
       table: process.env.BQ_RESOURCE_TABLE_ID,
     });
 
+    // Enrich rows with YouTube data from Google Sheets
+    const enrichedRows = await enrichWithYoutube(rows as ResourceRow[]);
+
     res.json({
-      data: rows,
+      data: enrichedRows,
       limit: limit || undefined,
       offset: limit ? offset : undefined,
       filtersApplied: filters,
@@ -333,5 +338,37 @@ export async function getAvailability(req: Request, res: Response) {
     }
     console.error("[getAvailability]", msg);
     return res.status(500).json({ error: "Internal Server Error" });
+  }
+}
+
+/**
+ * Admin endpoint to reload the Google Sheets cache
+ * This should be protected in production
+ */
+export async function reloadSheetsCache(req: Request, res: Response): Promise<void> {
+  try {
+    clearSheetCache();
+    const status = getCacheStatus();
+    
+    res.json({
+      message: "Sheet cache cleared successfully",
+      cacheStatus: status,
+    });
+  } catch (error: any) {
+    console.error("[reloadSheetsCache] Error:", error.message);
+    res.status(500).json({ error: "Failed to clear cache" });
+  }
+}
+
+/**
+ * Admin endpoint to get cache status
+ */
+export async function getSheetsCacheStatus(req: Request, res: Response): Promise<void> {
+  try {
+    const status = getCacheStatus();
+    res.json({ cacheStatus: status });
+  } catch (error: any) {
+    console.error("[getSheetsCacheStatus] Error:", error.message);
+    res.status(500).json({ error: "Failed to get cache status" });
   }
 }

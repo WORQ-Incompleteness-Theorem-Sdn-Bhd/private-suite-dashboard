@@ -22,6 +22,7 @@ import { catchError, finalize } from 'rxjs/operators';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { ToastComponent } from '../../shared/components/toast.component';
+import { YoutubeModalComponent } from '../../shared/components/youtube-modal.component';
 
 type FilterKey = 'outlet' | 'status' | 'pax';
 
@@ -33,7 +34,7 @@ interface FilterConfig {
 
 @Component({
   standalone: true,
-  imports: [CommonModule, FormsModule, ToastComponent],
+  imports: [CommonModule, FormsModule, ToastComponent, YoutubeModalComponent],
   selector: 'app-floorplan',
   templateUrl: './floorplan.component.html',
   styleUrls: ['./floorplan.component.scss'],
@@ -101,6 +102,11 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   showDownloadMenu = false;
   popupX = 0;
   popupY = 0;
+
+  // YouTube Modal
+  showYoutubeModal = false;
+  selectedVideoUrl: string | null = null;
+  selectedRoomName: string = '';
 
   // PDF export loading states
   isExportingFloorplan = false;
@@ -1320,6 +1326,22 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     });
   }
 
+  // YouTube Modal Methods
+  openYoutubeModal(room: Room) {
+    if (room.video) {
+      this.selectedVideoUrl = room.video;
+      this.selectedRoomName = room.name;
+      this.showYoutubeModal = true;
+      this.closePopup(); // Close the room popup when opening video modal
+    }
+  }
+
+  closeYoutubeModal() {
+    this.showYoutubeModal = false;
+    this.selectedVideoUrl = null;
+    this.selectedRoomName = '';
+  }
+
   // Download current outlet's SVG
   downloadFloorplan() {
     if (!this.selectedOutletSvgs || this.selectedOutletSvgs.length === 0) {
@@ -1480,7 +1502,11 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         if (this.selectedStartDate) {
           if (this.selectedEndDate && this.selectedEndDate !== this.selectedStartDate) {
             pdf.text(`Date Range: ${this.selectedStartDate} to ${this.selectedEndDate}`, 20, yPos);
-          }}
+          } else {
+            pdf.text(`Date: ${this.selectedStartDate}`, 20, yPos);
+          }
+          yPos += 8;
+        }
 
         // Add compact Pax legend (always compact, based on currently available rooms)
         const buildPdfPaxLegend = (): Array<{label: string, color: string}> => {
@@ -1551,6 +1577,9 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
           svgClone.setAttribute('viewBox', originalViewBox);
         }
 
+        // Add YouTube links to rooms that have videos
+        this.addYouTubeLinksToSvg(svgClone);
+
         try {
           let canvas = await this.svgToCanvas(svgClone);
           canvas = this.downscaleCanvasIfNeeded(canvas);
@@ -1571,6 +1600,12 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
           // Use PNG for crisp vectors; jsPDF will compress
           const imgData = canvas.toDataURL('image/png');
           pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'MEDIUM');
+
+          // Add clickable YouTube links for rooms with videos
+          this.addYouTubeLinksToPdf(pdf, imgX, imgY, imgWidth, imgHeight, svgClone);
+
+          // Add YouTube links summary at the bottom of the page
+          this.addYouTubeLinksSummary(pdf, pageWidth, pageHeight);
         } catch (canvasError) {
           console.warn(
             'Failed to convert SVG to canvas on page',
@@ -1605,6 +1640,156 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       this.isExportingFloorplan = false;
     }
   }
+  // Add YouTube links to SVG for PDF export (visual elements)
+  private addYouTubeLinksToSvg(svgElement: SVGSVGElement): void {
+    // Find rooms with YouTube videos
+    const roomsWithVideos = this.filteredRooms.filter(room => room.video && room.video.trim() !== '');
+    
+    if (roomsWithVideos.length === 0) return;
+
+    roomsWithVideos.forEach(room => {
+      const roomElement = svgElement.getElementById(room.id) as SVGGraphicsElement;
+      if (!roomElement) return;
+
+      // Get room's bounding box
+      const bbox = roomElement.getBBox();
+      if (!bbox) return;
+
+      // Create "Watch Tour" text overlay (compact for smaller rooms)
+      const roomSize = Math.min(bbox.width, bbox.height);
+      const fontSize = Math.max(8, roomSize * 0.1); // Minimum 8px font size
+      const textContent = roomSize < 50 ? '▶' : roomSize < 80 ? 'Tour' : 'Watch Tour';
+      
+      const textElement = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      textElement.setAttribute('x', (bbox.x + bbox.width / 2).toString());
+      textElement.setAttribute('y', (bbox.y + bbox.height / 2).toString());
+      textElement.setAttribute('text-anchor', 'middle');
+      textElement.setAttribute('dominant-baseline', 'middle');
+      textElement.setAttribute('font-family', 'Arial, sans-serif');
+      textElement.setAttribute('font-size', fontSize.toString());
+      textElement.setAttribute('font-weight', 'bold');
+      textElement.setAttribute('fill', '#ff0000'); // Red color for YouTube
+      textElement.setAttribute('stroke', '#ffffff'); // White stroke for visibility
+      textElement.setAttribute('stroke-width', '0.8');
+      textElement.setAttribute('paint-order', 'stroke fill');
+      textElement.textContent = textContent;
+      
+      // Add text to SVG
+      svgElement.appendChild(textElement);
+      
+      // Add play icon only for larger rooms
+      if (roomSize >= 60) {
+        const iconSize = Math.min(bbox.width, bbox.height) * 0.12;
+        const playIcon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        const iconX = bbox.x + bbox.width - iconSize - 2;
+        const iconY = bbox.y + 2;
+        playIcon.setAttribute('points', 
+          `${iconX},${iconY} ${iconX + iconSize},${iconY + iconSize/2} ${iconX},${iconY + iconSize}`
+        );
+        playIcon.setAttribute('fill', '#ff0000');
+        playIcon.setAttribute('stroke', '#ffffff');
+        playIcon.setAttribute('stroke-width', '0.8');
+        svgElement.appendChild(playIcon);
+      }
+    });
+  }
+
+  // Add clickable YouTube links to PDF
+  private addYouTubeLinksToPdf(pdf: any, imgX: number, imgY: number, imgWidth: number, imgHeight: number, svgElement: SVGSVGElement): void {
+    // Find rooms with YouTube videos
+    const roomsWithVideos = this.filteredRooms.filter(room => room.video && room.video.trim() !== '');
+    
+    if (roomsWithVideos.length === 0) return;
+
+    // Get SVG viewBox for coordinate mapping
+    const viewBox = svgElement.getAttribute('viewBox');
+    if (!viewBox) return;
+    
+    const [svgX, svgY, svgWidth, svgHeight] = viewBox.split(' ').map(Number);
+    
+    roomsWithVideos.forEach(room => {
+      const roomElement = svgElement.getElementById(room.id) as SVGGraphicsElement;
+      if (!roomElement) return;
+
+      // Get room's bounding box in SVG coordinates
+      const bbox = roomElement.getBBox();
+      if (!bbox) return;
+
+      // Convert SVG coordinates to PDF coordinates
+      const pdfX = imgX + (bbox.x - svgX) * (imgWidth / svgWidth);
+      const pdfY = imgY + (bbox.y - svgY) * (imgHeight / svgHeight);
+      const pdfWidth = bbox.width * (imgWidth / svgWidth);
+      const pdfHeight = bbox.height * (imgHeight / svgHeight);
+
+      // Ensure coordinates are within the image bounds
+      if (pdfX >= imgX && pdfY >= imgY && 
+          pdfX + pdfWidth <= imgX + imgWidth && 
+          pdfY + pdfHeight <= imgY + imgHeight) {
+        
+        // Add clickable link to PDF
+        pdf.link(pdfX, pdfY, pdfWidth, pdfHeight, {
+          url: room.video,
+          target: '_blank'
+        });
+      }
+    });
+  }
+
+  // Add YouTube links summary to PDF
+  private addYouTubeLinksSummary(pdf: any, pageWidth: number, pageHeight: number): void {
+    // Find rooms with YouTube videos
+    const roomsWithVideos = this.filteredRooms.filter(room => room.video && room.video.trim() !== '');
+    
+    if (roomsWithVideos.length === 0) return;
+
+    // Position summary at the bottom of the page
+    let yPos = pageHeight - 20;
+    
+    // Add separator line
+    pdf.setDrawColor(200, 200, 200);
+    pdf.line(20, yPos - 5, pageWidth - 20, yPos - 5);
+    yPos -= 10;
+
+    // Add title
+    pdf.setFontSize(10);
+    pdf.setTextColor(255, 102, 0); // Orange color
+    pdf.text('Virtual Tour Links:', 20, yPos);
+    yPos += 6;
+
+    // Add room links
+    pdf.setFontSize(8);
+    pdf.setTextColor(0, 0, 0);
+    
+    roomsWithVideos.forEach((room, index) => {
+      // Check if we need a new page
+      if (yPos > pageHeight - 15) {
+        pdf.addPage('landscape');
+        yPos = 20;
+      }
+
+      // Room name
+      const roomName = room.name.length > 30 ? room.name.substring(0, 30) + '...' : room.name;
+      pdf.text(`${roomName}:`, 20, yPos);
+      
+      // YouTube link (clickable)
+      const linkText = 'Watch Tour';
+      const linkWidth = pdf.getTextWidth(linkText);
+      const linkX = 20 + pdf.getTextWidth(roomName + ': ') + 2;
+      
+      // Add clickable link
+      pdf.setTextColor(0, 0, 255); // Blue color for links
+      pdf.textWithLink(linkText, linkX, yPos, {
+        url: room.video,
+        target: '_blank'
+      });
+      
+      yPos += 4;
+    });
+
+    // Reset text color
+    pdf.setTextColor(0, 0, 0);
+  }
+
   // Helper method to convert SVG to canvas more reliably
   private async svgToCanvas(
     svgElement: SVGSVGElement

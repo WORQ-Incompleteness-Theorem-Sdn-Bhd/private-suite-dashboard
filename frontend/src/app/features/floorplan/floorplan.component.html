@@ -287,25 +287,30 @@
         <p><strong>Price:</strong> RM {{ selectedRoom.price }}</p>
         <p><strong>Deposit:</strong> RM {{ selectedRoom.deposit }}</p>
         -->
-        <!-- Watch on YouTube link -->
-        <ng-container *ngIf="getYouTubeWatchUrlFor(selectedRoom) as ytUrl">
-          <a
-            [href]="ytUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            (click)="$event.stopPropagation()"
-            class="mt-2 inline-flex items-center gap-2 rounded-md border border-gray-300 px-2 py-1 text-[13px] text-blue-600 hover:underline"
-            aria-label="Open walkthrough video on YouTube"
-            title="Open walkthrough video on YouTube"
+        <!-- Watch Video Button -->
+        <ng-container *ngIf="selectedRoom.video">
+          <button
+            (click)="openYoutubeModal(selectedRoom); $event.stopPropagation()"
+            class="mt-2 inline-flex items-center gap-2 rounded-md border border-gray-300 px-2 py-1 text-[13px] text-blue-600 hover:bg-blue-50 hover:border-blue-400 transition-colors"
+            aria-label="Watch virtual tour video"
+            title="Watch virtual tour video"
           >
             <!-- play icon -->
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path d="M8 5v14l11-7z"></path>
             </svg>
             Watch Tour
-          </a>
+          </button>
         </ng-container>
       </div>
     </div>
   </div>
 </div>
+
+<!-- YouTube Video Modal -->
+<app-youtube-modal
+  [isOpen]="showYoutubeModal"
+  [videoUrl]="selectedVideoUrl"
+  [roomName]="selectedRoomName"
+  (close)="closeYoutubeModal()"
+></app-youtube-modal>

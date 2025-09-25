@@ -1,4 +1,8 @@
-import { Component, OnInit, signal } from '@angular/core';
+import {
+  Component,
+  OnInit,
+  signal,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
   FormBuilder,
@@ -8,9 +12,9 @@ import {
   FormsModule,
 } from '@angular/forms';
 import { HttpClientModule } from '@angular/common/http';
-import { BQService, UploadResponse } from './bq.service';
-import { forkJoin } from 'rxjs';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
+import { forkJoin } from 'rxjs';
+import { BQService, UploadResponse } from './bq.service';
 
 type Option = { label: string; value: string };
 
@@ -52,6 +56,9 @@ export class FloorplanManagementComponent implements OnInit {
   // Dropdown options
   locations: Option[] = [];
   floors: Option[] = [];
+
+  // Tab management
+  activeTab: 'overview' | 'upload' = 'overview';
 
   constructor(
     private fb: FormBuilder,
@@ -180,5 +187,31 @@ export class FloorplanManagementComponent implements OnInit {
         this.loading = false;
       },
     });
+  }
+
+  // Tab management
+  setActiveTab(tab: 'overview' | 'upload') {
+    this.activeTab = tab;
+  }
+
+  // Refresh data
+  refreshData() {
+    this.loadDropdown();
+    if (this.selectedOffice) {
+      this.onSelected();
+    }
+  }
+
+  // Helper methods for template
+  getSelectedOfficeLabel(): string {
+    if (!this.selectedOffice) return 'No Outlet Selected';
+    const office = this.locations.find(l => l.value === this.selectedOffice);
+    return office?.label || 'Selected Outlet';
+  }
+
+  getSelectedFloorLabel(): string {
+    if (!this.selectedFloor) return '';
+    const floor = this.floors.find(f => f.value === this.selectedFloor);
+    return floor?.label || 'Selected Floor';
   }
 }

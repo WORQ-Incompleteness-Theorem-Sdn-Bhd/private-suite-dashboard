@@ -11,15 +11,18 @@ import {
 import { Room } from '../../core/models/room.model';
 import { RoomService, ResourceParams } from '../../core/services/room.service';
 import { OfficeService } from '../../core/services/office.service';
+import { FloorService } from '../../core/services/floor.service';
+import { Floor } from '../../core/models/floor.model';
 import { ToastService } from '../../shared/services/toast.service';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
-import { Observable, of } from 'rxjs'; 
+import { Observable, of, forkJoin } from 'rxjs'; 
 import { catchError, finalize } from 'rxjs/operators';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { ToastComponent } from '../../shared/components/toast.component';
+import { YoutubeModalComponent } from '../../shared/components/youtube-modal.component';
 
 type FilterKey = 'outlet' | 'status' | 'pax';
 
@@ -31,7 +34,7 @@ interface FilterConfig {
 
 @Component({
   standalone: true,
-  imports: [CommonModule, FormsModule, ToastComponent],
+  imports: [CommonModule, FormsModule, ToastComponent, YoutubeModalComponent],
   selector: 'app-floorplan',
   templateUrl: './floorplan.component.html',
   styleUrls: ['./floorplan.component.scss'],
@@ -45,6 +48,8 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   displayedSvgs: string[] = [];
   selectedFloorSvg: string = 'all';
   floorOptions: string[] = [];
+  floors: Floor[] = [];
+  floorIdToFloorMap: Map<string, Floor> = new Map();
 
   // Loading states
   isLoadingOffices = false;
@@ -82,6 +87,10 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     pax: 'Select Pax',
     svg: 'all',
   };
+  // Date filters
+  selectedStartDate: string = ''; //Added date filters
+  selectedEndDate: string = ''; //Added date filters
+  availabilityByRoomId: Map<string, 'free' | 'occupied'> = new Map(); //Added date filters
   outletOptions: string[] = [];
   statusOptions: string[] = [];
   paxOptions: string[] = [];
@@ -93,6 +102,11 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   showDownloadMenu = false;
   popupX = 0;
   popupY = 0;
+
+  // YouTube Modal
+  showYoutubeModal = false;
+  selectedVideoUrl: string | null = null;
+  selectedRoomName: string = '';
 
   // PDF export loading states
   isExportingFloorplan = false;
@@ -127,24 +141,24 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   // Friendly labels for specific outlets/files
   private floorLabelOverrides: Record<string, Record<string, string>> = {
     TTDI: {
-      'TTDI-Level1.svg': 'Level 1',
-      'TTDI-Level3A.svg': 'Level 3A',
+      'TTDI-Level1.svg': 'Floor 1',
+      'TTDI-Level3A.svg': 'Floor 3A',
       'Sibelco Office - L1.svg': 'Sibelco Office',
     },
     KLS: {
-      'KLS- L20.svg': 'Level 20',
-      'KLS-ByteDance.svg': 'Level 21 ByteDance',
-      'KLS-L21.svg': 'Level 21',
-      'KLS-L28.svg': 'Level 28',
+      'KLS- L20.svg': 'Floor 20',
+      'KLS-ByteDance.svg': 'Floor 21 ByteDance',
+      'KLS-L21.svg': 'Floor 21',
+      'KLS-L28.svg': 'Floor 28',
     },
     MUB: {
-      'MUB-level9.svg': 'Level 9',
-      'MUB-level12.svg': 'Level 12',
-      'MUB-level17.svg': 'Level 17',
+      'MUB-level9.svg': 'Floor  9',
+      'MUB-level12.svg': 'Floor 12',
+      'MUB-level17.svg': 'Floor 17',
     },
     UBP3A: {
-      'UBP-L13A.svg': 'Level 13A',
-      'UBP-L13AAIRIT.svg': 'Level 13A AIRIT',
+      'UBP-L13A.svg': 'Floor 13A',
+      'UBP-L13AAIRIT.svg': 'Floor 13A AIRIT',
     },
     '8FA': {
       '8FA.svg': 'Floor 15',
@@ -172,6 +186,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   constructor(
     private roomService: RoomService,
     private officeService: OfficeService,
+    private floorService: FloorService,
     private toastService: ToastService,
     public sanitizer: DomSanitizer,
     private ngZone: NgZone
@@ -188,8 +203,9 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   trackBySvgUrl = (_: number, url: string) => url;
 
   ngOnInit() {
-    // 1) Load outlets first
+    // 1) Load outlets and floors first
     this.loadOffices();
+    this.loadFloors();
 
     // 2) Subscribe to rooms changes
     this.roomService.rooms$.subscribe((rooms) => {
@@ -229,6 +245,25 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     });
   }
 
+  // Load floors from backend
+  loadFloors() {
+    this.floorService.getFloors().pipe(
+      catchError((error) => {
+        console.error('Error loading floors:', error);
+        this.toastService.error('Failed to load floors. Please try again.');
+        return of([]);
+      })
+    ).subscribe((floors) => {
+      this.floors = floors;
+      // Build floor ID to floor mapping for quick lookup
+      this.floorIdToFloorMap.clear();
+      floors.forEach(floor => {
+        this.floorIdToFloorMap.set(floor.floor_id, floor);
+      });
+      console.log('Floors loaded:', floors);
+    });
+  }
+
   // When user selects an outlet
   onOutletChange(outletDisplayName: string) {
     if (!outletDisplayName || outletDisplayName === 'Select Outlet') {
@@ -251,6 +286,11 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
 
     // 3) Fetch resources for this outlet using office.id
     this.loadResources({ officeId });
+
+    // If date already chosen, refresh availability for the outlet
+    if (this.selectedStartDate) {
+      this.fetchAvailabilityForCurrentSelection();
+    }
   }
 
   // Fetch resources for selected outlet
@@ -328,13 +368,62 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       this.floorOptions = [];
       return;
     }
-    const set = new Set<string>();
-    this.rooms
-      .filter((r) => r.outlet === outlet)
-      .forEach((r) => r.svg.forEach((p) => set.add(p)));
-
-    this.selectedOutletSvgs = Array.from(set);
-    this.floorOptions = this.selectedOutletSvgs.slice();
+    
+    // Get the office ID for the selected outlet
+    const officeId = this.getOfficeIdFromOutletName(outlet);
+    if (!officeId) {
+      console.error('Office ID not found for outlet:', outlet);
+      return;
+    }
+    
+    // Get rooms for the selected outlet
+    const outletRooms = this.rooms.filter((r) => r.outlet === outlet);
+    
+    // Extract unique floor IDs from rooms
+    const floorIds = new Set<string>();
+    outletRooms.forEach(room => {
+      if (room.floor_id) {
+        floorIds.add(room.floor_id);
+      }
+    });
+    
+    // Build floor options from backend floor data
+    this.floorOptions = Array.from(floorIds)
+      .map(floorId => {
+        const floor = this.floorIdToFloorMap.get(floorId);
+        if (floor) {
+          const floorLabel = this.floorService.getFloorDisplayLabel(floorId, this.floors);
+          return `${floorLabel}|${floorId}`; // Format: "Sibelco Office|floor_id" for display and ID
+        }
+        return null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => {
+        // Sort by floor label (Sibelco Office will come first alphabetically)
+        const aLabel = a!.split('|')[0];
+        const bLabel = b!.split('|')[0];
+        
+        // Special sorting: Sibelco Office first, then numeric floors
+        if (aLabel === 'Sibelco Office') return -1;
+        if (bLabel === 'Sibelco Office') return 1;
+        
+        // For numeric floors, sort by number
+        const aNum = parseInt(aLabel) || 999;
+        const bNum = parseInt(bLabel) || 999;
+        return aNum - bNum;
+      }) as string[];
+    
+    // Get all SVG files for this outlet from floor service
+    this.floorService.getAllSvgFilesForOutlet(officeId).subscribe(svgs => {
+      this.selectedOutletSvgs = svgs;
+      this.updateDisplayedSvgs();
+    });
+    
+    // If no floor options from backend, fall back to SVG-based approach
+    if (this.floorOptions.length === 0) {
+      this.floorOptions = this.selectedOutletSvgs.slice();
+    }
+    
     // default to all floors when outlet changes
     this.selectedFloorSvg = 'all';
     this.updateDisplayedSvgs();
@@ -541,6 +630,154 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     }
   }
 
+  // Date change handlers
+  onDateChange(which: 'start' | 'end', value: string) {
+    if (which === 'start') {
+      // If user clears the start date, reset both dates and availability
+      if (!value) {
+        this.selectedStartDate = '';
+        this.selectedEndDate = '';
+        this.availabilityByRoomId.clear();
+        this.applyFilters();
+        setTimeout(() => this.updateSvgColors(), 50);
+        return;
+      }
+      this.selectedStartDate = value;
+      // If end date is before new start date, clear it
+      if (this.selectedEndDate && this.selectedEndDate < value) {
+        this.selectedEndDate = '';
+      }
+    }
+    if (which === 'end') {
+      // If user clears the end date, treat it as single-day selection
+      if (!value) {
+        this.selectedEndDate = '';
+        if (this.selectedStartDate) {
+          this.fetchAvailabilityForCurrentSelection();
+        } else {
+          // No start date either → clear availability and reset
+          this.availabilityByRoomId.clear();
+          this.applyFilters();
+          setTimeout(() => this.updateSvgColors(), 50);
+        }
+        return;
+      }
+      this.selectedEndDate = value;
+    }
+    
+    // Validate date range (max 366 days inclusive; leap-year friendly)
+    if (this.selectedStartDate && this.selectedEndDate) {
+      const startDate = new Date(this.selectedStartDate);
+      const endDate = new Date(this.selectedEndDate);
+      const dayCount = Math.round((endDate.getTime() - startDate.getTime()) / 86400000) + 1;
+      
+      if (dayCount > 366) {
+        this.toastService.error('Date range too large. Please select a range of 366 days or less.');
+        this.selectedEndDate = '';
+        return;
+      }
+    }
+    
+    // If only start picked, treat as single day
+    if (this.selectedStartDate) {
+      this.fetchAvailabilityForCurrentSelection();
+    }
+  }
+//New function to fetch availability for current selection
+  private fetchAvailabilityForCurrentSelection() {
+    const outlet = this.filters.outlet;
+    const officeId = this.getOfficeIdFromOutletName(outlet);
+    if (!officeId || !this.selectedStartDate) return;
+    
+    const start = this.selectedStartDate;
+    const end = this.selectedEndDate || this.selectedStartDate; // Use start date as end if no end date selected
+    
+    // Build day count to decide whether to chunk requests (handles backends with shorter limits)
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const totalDays = Math.round((endDate.getTime() - startDate.getTime()) / 86400000) + 1;
+
+    const MAX_WINDOW = 31; // compatible with stricter backends
+    if (totalDays > MAX_WINDOW) {
+      // Split into <=31-day windows and combine results client-side
+      const windows: Array<{ s: string; e: string }> = [];
+      let cursor = new Date(startDate);
+      while (cursor <= endDate) {
+        const winStart = new Date(cursor);
+        const winEnd = new Date(Math.min(
+          endDate.getTime(),
+          new Date(cursor.getTime() + (MAX_WINDOW - 1) * 86400000).getTime()
+        ));
+        const toISO = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+        windows.push({ s: toISO(winStart), e: toISO(winEnd) });
+        cursor = new Date(winEnd.getTime() + 86400000);
+      }
+
+      const calls = windows.map(w => this.roomService.getAvailability({ start: w.s, end: w.e, officeId }));
+      forkJoin(calls).subscribe({
+        next: (responses: any[]) => {
+          // Initialize all rooms as occupied; mark as free only if ALL days across ALL windows are free
+          const combined = new Map<string, 'free' | 'occupied'>();
+          this.rooms.forEach(r => combined.set(r.id, 'occupied'));
+          responses.forEach(resp => {
+            const rows = resp?.resources || resp?.rows || resp?.data || [];
+            rows.forEach((r: any) => {
+              const days = r.days || [];
+              const allFree = days.length > 0 && days.every((d: any) => (d.status || '').toLowerCase() === 'free');
+              if (allFree) combined.set(r.resource_id, 'free');
+            });
+          });
+          this.availabilityByRoomId = combined;
+          this.applyFilters();
+          setTimeout(() => this.updateSvgColors(), 50);
+        },
+        error: (e) => {
+          console.error('Failed to fetch chunked availability', e);
+          this.toastService.error('Failed to fetch availability data. Please try again.');
+          this.availabilityByRoomId.clear();
+          this.applyFilters();
+          setTimeout(() => this.updateSvgColors(), 50);
+        }
+      });
+      return;
+    }
+
+    // Simple single-call case
+    this.roomService.getAvailability({ start, end, officeId }).subscribe({
+      next: (resp) => {
+        // resp.resources expected: [{ resource_id, days: [{date, status}, ...] }, ...]
+        // Initialize all rooms as occupied; mark free only if ALL days are free
+        const map = new Map<string, 'free' | 'occupied'>(); 
+        this.rooms.forEach(r => map.set(r.id, 'occupied'));
+        const rows = resp?.resources || resp?.rows || resp?.data || [];
+        rows.forEach((r: any) => {
+          const days = r.days || [];
+          // For date range: room is available if ALL days in the range are free
+          // For single date: room is available if that specific date is free
+          const isAvailable = days.length > 0 && days.every((d: any) => (d.status || '').toLowerCase() === 'free');
+          if (isAvailable) map.set(r.resource_id, 'free');
+        });
+        this.availabilityByRoomId = map;
+        // Do not mutate base status; just refresh colors/metrics if needed
+        this.applyFilters();
+        setTimeout(() => this.updateSvgColors(), 50);
+      },
+      error: (e) => {
+        console.error('Failed to fetch availability', e);
+        // Check if it's a range too large error
+        if (e.error && e.error.error && e.error.error.includes('Range too large')) {
+          this.toastService.error('Date range too large. Please select a range of 366 days or less.');
+        } else {
+          this.toastService.error('Failed to fetch availability data. Please try again.');
+        }
+        // Clear availability data on error
+        this.availabilityByRoomId.clear();
+        this.applyFilters();
+        setTimeout(() => this.updateSvgColors(), 50);
+      }
+    });
+  }
+
   // Floor selection handler
   onFloorChange(event: Event) {
     const select = event.target as HTMLSelectElement | null;
@@ -559,27 +796,51 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     if (this.selectedFloorSvg === 'all') {
       this.displayedSvgs = this.selectedOutletSvgs.slice();
     } else {
-      this.displayedSvgs = this.selectedOutletSvgs.filter(
-        (p) => p === this.selectedFloorSvg
-      );
+      // Check if selectedFloorSvg is in the new format (floorNumber|floorId)
+      if (this.selectedFloorSvg.includes('|')) {
+        const floorId = this.selectedFloorSvg.split('|')[1];
+        const outlet = this.filters.outlet;
+        const officeId = this.getOfficeIdFromOutletName(outlet);
+        
+        if (officeId) {
+          // Get SVG files for the specific floor
+          this.floorService.getSvgFilesForFloor(officeId, floorId, this.floors).subscribe(floorSvgs => {
+            this.displayedSvgs = floorSvgs.length > 0 ? floorSvgs : this.selectedOutletSvgs.slice();
+          });
+        } else {
+          this.displayedSvgs = this.selectedOutletSvgs.slice();
+        }
+      } else {
+        // Fallback to old SVG-based filtering
+        this.displayedSvgs = this.selectedOutletSvgs.filter(
+          (p) => p === this.selectedFloorSvg
+        );
+      }
     }
   }
 
   applyFilters() {
+    // Helper to compute effective status based on selected date range
+    const getEffectiveStatus = (room: Room): 'Available' | 'Occupied' => {
+      if (this.selectedStartDate) {
+        const avail = this.availabilityByRoomId.get(room.id);
+        if (avail) return avail === 'free' ? 'Available' : 'Occupied';
+      }
+      return this.toStatusUnion(room.status);
+    };
+
     this.filteredRooms = this.rooms
-      .filter(
-        (r) =>
-          (this.filters.outlet === 'Select Outlet' ||
-            r.outlet === this.filters.outlet) &&
-          (this.filters.status === 'Select Status' ||
-            r.status === this.filters.status) &&
-          (this.filters.pax === 'Select Pax' ||
-            r.capacity.toString() === this.filters.pax) &&
-
-          (this.selectedSuites.length === 0 ||
-            this.selectedSuites.includes(r.name))
-      )
-
+      .filter((r) => {
+        const outletOk =
+          this.filters.outlet === 'Select Outlet' || r.outlet === this.filters.outlet;
+        const effectiveStatus = getEffectiveStatus(r);
+        const statusOk =
+          this.filters.status === 'Select Status' || effectiveStatus === this.filters.status;
+        const paxOk =
+          this.filters.pax === 'Select Pax' || r.capacity.toString() === this.filters.pax;
+        const suiteOk = this.selectedSuites.length === 0 || this.selectedSuites.includes(r.name);
+        return outletOk && statusOk && paxOk && suiteOk;
+      })
       .sort((a, b) => {
         // Sort by Pax (capacity) if Pax filter is active
         if (this.filters.pax !== 'Select Pax') {
@@ -592,15 +853,13 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         return 0; // No sorting if no filter
       });
 
+    // Metrics reflect effective availability
     this.Occupied = this.filteredRooms.filter(
-      (r) => r.status === 'Occupied'
+      (r) => getEffectiveStatus(r) === 'Occupied'
     ).length;
     this.Available = this.filteredRooms.filter(
-      (r) => r.status === 'Available'
+      (r) => getEffectiveStatus(r) === 'Available'
     ).length;
-    console.log('Filtered rooms:', this.filteredRooms.length);
-    console.log('Occupied:', this.Occupied);
-    console.log('Available:', this.Available);
     
     // Update SVG colors after filtering
     this.updateSvgColors();
@@ -612,17 +871,26 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         const el = doc.getElementById(room.id);
         if (el) {
           if (this.filteredRooms.includes(room)) {
-            // Selected → colored with pax-based palette for available rooms
+          
+            // Compute effective status based on selected-date availability if provided
+            const avail = this.selectedStartDate ? this.availabilityByRoomId.get(room.id) : undefined;
+            let effectiveStatus: 'Occupied' | 'Available';
+            if (avail) {
+              effectiveStatus = (avail === 'free') ? 'Available' : 'Occupied'; //find what this function does
+            } else {
+              effectiveStatus = this.toStatusUnion(room.status);
+            }
+
             let color: string;
-            if (room.status === 'Occupied') {
+            if (effectiveStatus === 'Occupied') {  //change from room.status to effectiveStatus
               color = '#ef4444'; // Red for occupied
             } else if (this.filters.status === 'Available') {
-              // Use pax-based palette for available rooms
+              // Use pax-based palette for available rooms when filtering by Available (even with date range)
               color = this.getPaxColor(room.capacity);
             } else {
               color = '#22c55e'; // Green for available (default)
             }
-            
+
             el.setAttribute('fill', color);
             el.setAttribute('opacity', '0.7');
             (el as any).style.pointerEvents = 'auto';
@@ -648,6 +916,10 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         if (doc) applyColors(doc);
       });
     }
+  }
+
+  private toStatusUnion(status: string): 'Available' | 'Occupied' { //find what this function does
+    return status === 'Available' ? 'Available' : 'Occupied';
   }
 
   // Get color based on pax capacity
@@ -1054,6 +1326,22 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     });
   }
 
+  // YouTube Modal Methods
+  openYoutubeModal(room: Room) {
+    if (room.video) {
+      this.selectedVideoUrl = room.video;
+      this.selectedRoomName = room.name;
+      this.showYoutubeModal = true;
+      this.closePopup(); // Close the room popup when opening video modal
+    }
+  }
+
+  closeYoutubeModal() {
+    this.showYoutubeModal = false;
+    this.selectedVideoUrl = null;
+    this.selectedRoomName = '';
+  }
+
   // Download current outlet's SVG
   downloadFloorplan() {
     if (!this.selectedOutletSvgs || this.selectedOutletSvgs.length === 0) {
@@ -1182,48 +1470,104 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
           yPos += 8;
         }
         if (this.selectedSuites.length > 0) {
-          pdf.text(`Suites: ${this.selectedSuites.join(', ')}`, 20, yPos);
+          const suitesLabel = 'Suites: ';
+          const suitesText = this.selectedSuites.join(', ');
+          // Use smaller font and wrap when too many suites are selected
+          const manySuites = this.selectedSuites.length > 8;
+          const originalFont = 12;
+          const smallFont = 8;
+          const fontToUse = manySuites ? smallFont : originalFont;
+
+          pdf.setFontSize(fontToUse);
+          const infoBlockWidth = pageWidth - 120; // leave space for right-side legend
+          const wrapped = pdf.splitTextToSize(suitesText, infoBlockWidth - suitesLabel.length * (fontToUse / 2));
+          // Print label on first line, then continuation lines indented
+          if (wrapped.length > 0) {
+            pdf.text(`${suitesLabel}${wrapped[0]}`, 20, yPos);
+            let yy = yPos;
+            for (let i = 1; i < wrapped.length; i++) {
+              yy += manySuites ? 5 : 6; // tighter line height for small font
+              pdf.text(`        ${wrapped[i]}`, 20, yy);
+            }
+            yPos = yy + (manySuites ? 5 : 6);
+          } else {
+            pdf.text(`${suitesLabel}`, 20, yPos);
+            yPos += manySuites ? 5 : 6;
+          }
+          // Restore default font for subsequent lines
+          pdf.setFontSize(12);
+        }
+        
+        // Add date range information
+        if (this.selectedStartDate) {
+          if (this.selectedEndDate && this.selectedEndDate !== this.selectedStartDate) {
+            pdf.text(`Date Range: ${this.selectedStartDate} to ${this.selectedEndDate}`, 20, yPos);
+          } else {
+            pdf.text(`Date: ${this.selectedStartDate}`, 20, yPos);
+          }
           yPos += 8;
         }
 
-        // Add dynamic Pax legend if there are available rooms
-        const dynamicLegend = this.getDynamicPaxLegend();
-        if (dynamicLegend.length > 0) {
-          yPos += 4;
-          pdf.setFontSize(10);
+        // Add compact Pax legend (always compact, based on currently available rooms)
+        const buildPdfPaxLegend = (): Array<{label: string, color: string}> => {
+          const legend: Array<{label: string, color: string}> = [];
+          // Effective status helper
+          const effStatus = (room: Room): 'Available' | 'Occupied' => {
+            if (this.selectedStartDate) {
+              const avail = this.availabilityByRoomId.get(room.id);
+              if (avail) return avail === 'free' ? 'Available' : 'Occupied';
+            }
+            return this.toStatusUnion(room.status);
+          };
+          const usedPax = new Set<number>();
+          this.filteredRooms.forEach(r => {
+            if (effStatus(r) === 'Available') usedPax.add(r.capacity);
+          });
+          if (usedPax.size === 0) return legend;
+          this.paxBuckets.forEach((bucket, i) => {
+            const has = Array.from(usedPax).some(p => {
+              if (i === 0) return p >= 2 && p <= bucket.max;
+              const prev = this.paxBuckets[i - 1];
+              return p > prev.max && p <= bucket.max;
+            });
+            if (has) legend.push({ label: bucket.label, color: this.paxPalette[i] });
+          });
+          return legend;
+        };
+
+        const pdfLegend = buildPdfPaxLegend();
+        if (pdfLegend.length > 0) {
+          // Render legend on the right side beside the header info
+          const rightMargin = 15;
+          const legendAreaWidth = 85; // compact block
+          const legendStartX = pageWidth - rightMargin - legendAreaWidth;
+          let legendY = 35; // align with header top
+
+          pdf.setFontSize(9);
           pdf.setTextColor(0, 0, 0);
-          pdf.text('Pax Capacity Colors:', 20, yPos);
-          yPos += 6;
-          
-          // Draw legend items in a compact grid layout
-          const legendStartX = 20;
-          const legendItemWidth = 40; // Reduced from 60 to 40
-          const legendItemHeight = 6; // Reduced from 8 to 6
+          pdf.text('Pax (Available):', legendStartX, legendY);
+          legendY += 5;
+
+          const legendItemWidth = 36;
+          const legendItemHeight = 5;
           let currentX = legendStartX;
-          let currentY = yPos;
+          let currentY = legendY;
           
-          dynamicLegend.forEach((item, index) => {
-            // Check if we need to move to next row
-            if (currentX + legendItemWidth > pageWidth - 20) {
+          pdfLegend.forEach((item) => {
+            if (currentX + legendItemWidth > legendStartX + legendAreaWidth) {
               currentX = legendStartX;
-              currentY += legendItemHeight + 1; // Reduced gap from 2 to 1
+              currentY += legendItemHeight + 1;
             }
-            
-            // Draw color box
-            const colorRgb = this.hexToRgb(item.color);
-            if (colorRgb) {
-              pdf.setFillColor(colorRgb.r, colorRgb.g, colorRgb.b);
-              pdf.rect(currentX, currentY - 2, 4, 4, 'F');
+            const rgb = this.hexToRgb(item.color);
+            if (rgb) {
+              pdf.setFillColor(rgb.r, rgb.g, rgb.b);
+              pdf.rect(currentX, currentY - 2, 3, 3, 'F');
             }
-            
-            // Draw label
-            pdf.setFillColor(0, 0, 0);
-            pdf.text(item.label, currentX + 5, currentY); // Reduced gap from 6 to 5
-            
+            pdf.setTextColor(0,0,0);
+            pdf.text(item.label, currentX + 5, currentY);
             currentX += legendItemWidth;
           });
-          
-          yPos = currentY + 8;
+          // keep yPos unchanged to avoid pushing down the image; legend lives on the right
         }
 
         // Clone and reset viewBox to original
@@ -1232,6 +1576,9 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         if (originalViewBox) {
           svgClone.setAttribute('viewBox', originalViewBox);
         }
+
+        // Add YouTube links to rooms that have videos
+        this.addYouTubeLinksToSvg(svgClone);
 
         try {
           let canvas = await this.svgToCanvas(svgClone);
@@ -1253,6 +1600,12 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
           // Use PNG for crisp vectors; jsPDF will compress
           const imgData = canvas.toDataURL('image/png');
           pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'MEDIUM');
+
+          // Add clickable YouTube links for rooms with videos
+          this.addYouTubeLinksToPdf(pdf, imgX, imgY, imgWidth, imgHeight, svgClone);
+
+          // Add YouTube links summary at the bottom of the page
+          this.addYouTubeLinksSummary(pdf, pageWidth, pageHeight);
         } catch (canvasError) {
           console.warn(
             'Failed to convert SVG to canvas on page',
@@ -1266,9 +1619,11 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       }
 
       // Save PDF with compression
-      const fileName = `floorplan-${
+      let fileName = `floorplan-${
         this.filters.outlet !== 'Select Outlet' ? this.filters.outlet : 'all'
-      }-${new Date().toISOString().split('T')[0]}.pdf`;
+      }`;
+    
+      fileName += '.pdf';
       this.savePdfSmart(pdf, fileName);
 
       // Show success message with file size info
@@ -1285,6 +1640,156 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       this.isExportingFloorplan = false;
     }
   }
+  // Add YouTube links to SVG for PDF export (visual elements)
+  private addYouTubeLinksToSvg(svgElement: SVGSVGElement): void {
+    // Find rooms with YouTube videos
+    const roomsWithVideos = this.filteredRooms.filter(room => room.video && room.video.trim() !== '');
+    
+    if (roomsWithVideos.length === 0) return;
+
+    roomsWithVideos.forEach(room => {
+      const roomElement = svgElement.getElementById(room.id) as SVGGraphicsElement;
+      if (!roomElement) return;
+
+      // Get room's bounding box
+      const bbox = roomElement.getBBox();
+      if (!bbox) return;
+
+      // Create "Watch Tour" text overlay (compact for smaller rooms)
+      const roomSize = Math.min(bbox.width, bbox.height);
+      const fontSize = Math.max(8, roomSize * 0.1); // Minimum 8px font size
+      const textContent = roomSize < 50 ? '▶' : roomSize < 80 ? 'Tour' : 'Watch Tour';
+      
+      const textElement = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      textElement.setAttribute('x', (bbox.x + bbox.width / 2).toString());
+      textElement.setAttribute('y', (bbox.y + bbox.height / 2).toString());
+      textElement.setAttribute('text-anchor', 'middle');
+      textElement.setAttribute('dominant-baseline', 'middle');
+      textElement.setAttribute('font-family', 'Arial, sans-serif');
+      textElement.setAttribute('font-size', fontSize.toString());
+      textElement.setAttribute('font-weight', 'bold');
+      textElement.setAttribute('fill', '#ff0000'); // Red color for YouTube
+      textElement.setAttribute('stroke', '#ffffff'); // White stroke for visibility
+      textElement.setAttribute('stroke-width', '0.8');
+      textElement.setAttribute('paint-order', 'stroke fill');
+      textElement.textContent = textContent;
+      
+      // Add text to SVG
+      svgElement.appendChild(textElement);
+      
+      // Add play icon only for larger rooms
+      if (roomSize >= 60) {
+        const iconSize = Math.min(bbox.width, bbox.height) * 0.12;
+        const playIcon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        const iconX = bbox.x + bbox.width - iconSize - 2;
+        const iconY = bbox.y + 2;
+        playIcon.setAttribute('points', 
+          `${iconX},${iconY} ${iconX + iconSize},${iconY + iconSize/2} ${iconX},${iconY + iconSize}`
+        );
+        playIcon.setAttribute('fill', '#ff0000');
+        playIcon.setAttribute('stroke', '#ffffff');
+        playIcon.setAttribute('stroke-width', '0.8');
+        svgElement.appendChild(playIcon);
+      }
+    });
+  }
+
+  // Add clickable YouTube links to PDF
+  private addYouTubeLinksToPdf(pdf: any, imgX: number, imgY: number, imgWidth: number, imgHeight: number, svgElement: SVGSVGElement): void {
+    // Find rooms with YouTube videos
+    const roomsWithVideos = this.filteredRooms.filter(room => room.video && room.video.trim() !== '');
+    
+    if (roomsWithVideos.length === 0) return;
+
+    // Get SVG viewBox for coordinate mapping
+    const viewBox = svgElement.getAttribute('viewBox');
+    if (!viewBox) return;
+    
+    const [svgX, svgY, svgWidth, svgHeight] = viewBox.split(' ').map(Number);
+    
+    roomsWithVideos.forEach(room => {
+      const roomElement = svgElement.getElementById(room.id) as SVGGraphicsElement;
+      if (!roomElement) return;
+
+      // Get room's bounding box in SVG coordinates
+      const bbox = roomElement.getBBox();
+      if (!bbox) return;
+
+      // Convert SVG coordinates to PDF coordinates
+      const pdfX = imgX + (bbox.x - svgX) * (imgWidth / svgWidth);
+      const pdfY = imgY + (bbox.y - svgY) * (imgHeight / svgHeight);
+      const pdfWidth = bbox.width * (imgWidth / svgWidth);
+      const pdfHeight = bbox.height * (imgHeight / svgHeight);
+
+      // Ensure coordinates are within the image bounds
+      if (pdfX >= imgX && pdfY >= imgY && 
+          pdfX + pdfWidth <= imgX + imgWidth && 
+          pdfY + pdfHeight <= imgY + imgHeight) {
+        
+        // Add clickable link to PDF
+        pdf.link(pdfX, pdfY, pdfWidth, pdfHeight, {
+          url: room.video,
+          target: '_blank'
+        });
+      }
+    });
+  }
+
+  // Add YouTube links summary to PDF
+  private addYouTubeLinksSummary(pdf: any, pageWidth: number, pageHeight: number): void {
+    // Find rooms with YouTube videos
+    const roomsWithVideos = this.filteredRooms.filter(room => room.video && room.video.trim() !== '');
+    
+    if (roomsWithVideos.length === 0) return;
+
+    // Position summary at the bottom of the page
+    let yPos = pageHeight - 20;
+    
+    // Add separator line
+    pdf.setDrawColor(200, 200, 200);
+    pdf.line(20, yPos - 5, pageWidth - 20, yPos - 5);
+    yPos -= 10;
+
+    // Add title
+    pdf.setFontSize(10);
+    pdf.setTextColor(255, 102, 0); // Orange color
+    pdf.text('Virtual Tour Links:', 20, yPos);
+    yPos += 6;
+
+    // Add room links
+    pdf.setFontSize(8);
+    pdf.setTextColor(0, 0, 0);
+    
+    roomsWithVideos.forEach((room, index) => {
+      // Check if we need a new page
+      if (yPos > pageHeight - 15) {
+        pdf.addPage('landscape');
+        yPos = 20;
+      }
+
+      // Room name
+      const roomName = room.name.length > 30 ? room.name.substring(0, 30) + '...' : room.name;
+      pdf.text(`${roomName}:`, 20, yPos);
+      
+      // YouTube link (clickable)
+      const linkText = 'Watch Tour';
+      const linkWidth = pdf.getTextWidth(linkText);
+      const linkX = 20 + pdf.getTextWidth(roomName + ': ') + 2;
+      
+      // Add clickable link
+      pdf.setTextColor(0, 0, 255); // Blue color for links
+      pdf.textWithLink(linkText, linkX, yPos, {
+        url: room.video,
+        target: '_blank'
+      });
+      
+      yPos += 4;
+    });
+
+    // Reset text color
+    pdf.setTextColor(0, 0, 0);
+  }
+
   // Helper method to convert SVG to canvas more reliably
   private async svgToCanvas(
     svgElement: SVGSVGElement
@@ -1354,16 +1859,26 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   private getDynamicPaxLegend(): Array<{label: string, color: string}> {
     const legend: Array<{label: string, color: string}> = [];
     
-    // Only show legend if user has selected "Available" status
-    if (this.filters.status !== 'Available') {
+    // Only show legend if user has selected "Available" status AND no date filter is applied
+    // When a date is selected we color by availability (green/red), not pax palette
+    if (this.filters.status !== 'Available' || this.selectedStartDate) {
       return legend;
     }
 
     const usedPaxSizes = new Set<number>();
 
     // Collect all Pax sizes from filtered rooms
+    // Use effective status for accuracy
+    const getEffectiveStatus = (room: Room): 'Available' | 'Occupied' => {
+      if (this.selectedStartDate) {
+        const avail = this.availabilityByRoomId.get(room.id);
+        if (avail) return avail === 'free' ? 'Available' : 'Occupied';
+      }
+      return this.toStatusUnion(room.status);
+    };
+
     this.filteredRooms.forEach(room => {
-      if (room.status === 'Available') {
+      if (getEffectiveStatus(room) === 'Available') {
         usedPaxSizes.add(room.capacity);
       }
     });
@@ -1423,6 +1938,26 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
 
   getFloorLabel(path: string): string {
     if (!path) return '';
+    
+    // Check if path is in the new format (floorLabel|floorId)
+    if (path.includes('|')) {
+      const floorId = path.split('|')[1];
+      const floorLabel = path.split('|')[0];
+      
+      // Special case for Sibelco Office
+      if (floorId === '6348ba804d92f2ab589dc7e3' || floorLabel === 'Sibelco Office') {
+        return 'Sibelco Office';
+      }
+      
+      // For other floors, add "Level" prefix if it's numeric
+      if (/^\d+[A-Za-z]?$/.test(floorLabel)) {
+        return `Level ${floorLabel}`;
+      }
+      
+      return floorLabel;
+    }
+    
+    // Fallback to old logic for SVG paths
     const outlet = this.filters.outlet;
     const baseWithExt = this.basename(path);
     const base = baseWithExt.replace(/\.(svg)$/i, '');
@@ -1473,5 +2008,53 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(src, 0, 0, dst.width, dst.height);
     return dst;
+  }
+
+  // Returns a normal YouTube "watch" URL for the given room (if present)
+  getYouTubeWatchUrlFor(room: Room | null | undefined): string | null {
+    if (!room?.video) return null;
+    return this.toYouTubeWatch(room.video.trim());
+  }
+
+  // Get all rooms that have YouTube links
+  getRoomsWithYouTubeLinks(): Room[] {
+    return this.rooms.filter(room => room.video && room.video.trim() !== '');
+  }
+
+  // Get count of rooms with YouTube links
+  getYouTubeLinkCount(): number {
+    return this.getRoomsWithYouTubeLinks().length;
+  }
+
+  // Normalize YouTube URLs to https://www.youtube.com/watch?v=VIDEO_ID
+  private toYouTubeWatch(raw: string): string | null {
+    if (!raw) return null;
+    try {
+      const u = new URL(raw);
+
+      // youtu.be/<id>
+      if (u.hostname.includes('youtu.be')) {
+        const id = u.pathname.replace('/', '');
+        return id ? `https://www.youtube.com/watch?v=${id}` : null;
+      }
+
+      // youtube.com/embed/<id>
+      if (u.hostname.includes('youtube.com')) {
+        if (u.pathname.startsWith('/embed/')) {
+          const id = u.pathname.split('/')[2];
+          return id ? `https://www.youtube.com/watch?v=${id}` : null;
+        }
+        // youtube.com/watch?v=<id>
+        if (u.pathname === '/watch') {
+          const id = u.searchParams.get('v');
+          return id ? `https://www.youtube.com/watch?v=${id}` : null;
+        }
+      }
+
+      // If it's already a usable link, return as-is
+      return raw;
+    } catch {
+      return raw;
+    }
   }
 }

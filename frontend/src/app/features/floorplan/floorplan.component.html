@@ -2,7 +2,18 @@
 <!-- Toast notifications -->
 <app-toast></app-toast>
 
-<div class="grid grid-cols-1 gap-6 py-6 mx-auto lg:grid-cols-12 max-w-7xl">
+<!-- Full page loading overlay -->
+<div *ngIf="isLoadingOffices || isLoadingResources" class="fixed inset-0 z-50 flex items-center justify-center bg-white bg-opacity-95">
+  <div class="text-center">
+    <div class="animate-spin rounded-full h-16 w-16 border-b-4 border-orange-600 mx-auto mb-4"></div>
+    <p class="text-lg font-medium text-gray-700 mb-2">
+      {{ isLoadingOffices ? 'Loading offices...' : 'Loading resources...' }}
+    </p>
+    <p class="text-sm text-gray-500">Please wait while we fetch the data</p>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 gap-6 py-6 mx-auto lg:grid-cols-12 max-w-7xl" [class.opacity-50]="isLoadingOffices || isLoadingResources">
   <!-- Left Panel -->
   <div class="flex flex-col p-6 transition-all duration-500 bg-white shadow-lg rounded-2xl lg:col-span-4">
     <h1 class="mb-4 text-2xl font-bold text-orange-600">
@@ -12,14 +23,6 @@
 
     <!-- Filters -->
     <div class="space-y-4">
-      <!-- Loading overlay for offices -->
-      <div *ngIf="isLoadingOffices" class="flex items-center justify-center p-4 bg-gray-100 rounded-xl">
-        <div class="flex items-center space-x-2">
-          <div class="w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-          <span class="text-sm text-gray-600">Loading offices...</span>
-        </div>
-      </div>
-
       <ng-container *ngFor="let filter of filtersConfig">
         <label class="block font-semibold text-gray-700">{{
           filter.label
@@ -34,6 +37,19 @@
             {{ opt }}
           </option>
         </select>
+
+        <!-- Date range selector placed directly below Outlet dropdown -->
+        <div *ngIf="filter.key === 'outlet'" class="pt-2">
+          <label class="block font-semibold text-gray-700">Date</label>
+          <div class="grid grid-cols-2 gap-2">
+            <input type="date" class="w-full p-2 border outline-none rounded-xl focus:ring-2 focus:ring-orange-500"
+              [ngModel]="selectedStartDate" (ngModelChange)="onDateChange('start', $event)" />
+            <input type="date" class="w-full p-2 border outline-none rounded-xl focus:ring-2 focus:ring-orange-500"
+              [ngModel]="selectedEndDate" (ngModelChange)="onDateChange('end', $event)" 
+              [min]="selectedStartDate" />
+          </div>
+          <p class="mt-1 text-xs text-gray-500">Pick start or range to show room availability.</p>
+        </div>
       </ng-container>
 
       <!-- Multi-select Suite with checkboxes -->
@@ -87,7 +103,7 @@
 
     <!-- Metrics -->
     <div class="p-4 mt-6 border bg-gray-50 rounded-xl">
-      <h2 class="mb-2 text-lg font-semibold text-gray-700">Availablitity</h2>
+      <h2 class="mb-2 text-lg font-semibold text-gray-700">Availability</h2>
       <div class="flex justify-between text-sm">
         <span>Occupied</span>
         <span class="font-semibold text-red-600">{{ Occupied }}</span>
@@ -98,7 +114,7 @@
       </div>
     </div>
 
-    <!-- Room Table -->
+    <!-- Room Table 
     <div class="p-4 mt-6 border border-gray-200 bg-gray-50 rounded-xl">
       <table class="w-full border">
         <thead class="text-gray-700 bg-gray-100">
@@ -113,13 +129,18 @@
         <table class="w-full">
           <tbody>
             <tr *ngFor="let room of filteredRooms" class="transition border-b hover:bg-orange-50">
-              <!-- Room Name -->
+              <!-- Room Name 
               <td class="p-2 font-semibold">{{ room.name }}</td>
 
-              <!-- Room Details -->
+              <!-- Room Details 
               <td class="p-2 text-sm text-gray-600 min-w-[200px]">
                 <div><strong>Type:</strong> {{ room.type }}</div>
                 <div><strong>Status:</strong> {{ room.status }}</div>
+                <div *ngIf="selectedStartDate"><strong>Availability (Selected):</strong>
+                  <span [class]="(availabilityByRoomId.get(room.id) === 'free') ? 'text-green-600' : 'text-red-600'">
+                    {{ availabilityByRoomId.get(room.id) === 'free' ? 'Available' : 'Occupied' }}
+                  </span> <!--New functions availability by room id
+                </div>
                 <div><strong>Pax:</strong> {{ room.capacity }}</div>
                 <div><strong>Area:</strong> {{ room.area }} sqft</div>
                 <div><strong>Price:</strong> RM {{ room.price }}</div>
@@ -133,7 +154,7 @@
               </td>
             </tr>
 
-            <!-- Show when no rooms match -->
+            <!-- Show when no rooms match 
             <tr *ngIf="filteredRooms.length === 0">
               <td colspan="2" class="p-4 text-center text-gray-500">
                 No rooms found.
@@ -142,7 +163,7 @@
           </tbody>
         </table>
       </div>
-    </div>
+    </div> -->
 
     <!-- PDF Export Section -->
     <div class="p-4 mt-6 border border-orange-200 bg-orange-50 rounded-xl">
@@ -174,7 +195,15 @@
     <div class="flex items-center justify-between mb-4">
       <h2 class="text-xl font-semibold">Floorplan</h2>
       <div class="flex gap-2">
-
+        <!-- Date Range Indicator -->
+        <div *ngIf="selectedStartDate" class="px-3 py-1.5 bg-blue-100 text-blue-800 rounded-lg text-sm">
+          <span *ngIf="selectedEndDate && selectedEndDate !== selectedStartDate">
+            📅 {{ selectedStartDate }} to {{ selectedEndDate }}
+          </span>
+          <span *ngIf="!selectedEndDate || selectedEndDate === selectedStartDate">
+            📅 {{ selectedStartDate }}
+          </span>
+        </div>
         <!-- Refresh Button -->
         <button (click)="refreshFloorplan()" class="bg-gray-100 px-3 py-1.5 rounded-lg hover:bg-gray-200 text-sm">
           Refresh
@@ -182,7 +211,7 @@
       </div>
     </div>
 
-    <!-- Pax Color Legend - Right Panel -->
+    <!-- Pax Color Legend - Right Panel (shown when filtering by Available, regardless of date) -->
     <div *ngIf="filters.outlet !== 'Select Outlet' && filters.status === 'Available' && filteredRooms.length > 0" class="mb-4 p-3 border bg-blue-50 rounded-xl">
       <h3 class="mb-2 text-sm font-semibold text-blue-700">Pax Capacity Colors</h3>
       <div class="grid grid-cols-2 gap-2">
@@ -197,14 +226,6 @@
     <div class="mt-4">
       <div (click)="showDownloadMenu = false"></div>
       
-      <!-- Loading state for resources -->
-      <div *ngIf="isLoadingResources" class="flex items-center justify-center p-8 bg-gray-50 rounded-xl">
-        <div class="flex items-center space-x-2">
-          <div class="w-6 h-6 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-          <span class="text-gray-600">Loading resources...</span>
-        </div>
-      </div>
-
       <ng-container *ngIf="filters.outlet !== 'Select Outlet' && !isLoadingResources; else askToPick">
         <div>
           <div *ngFor="let svg of displayedSvgs; trackBy: trackBySvgUrl" class="mb-4">
@@ -244,11 +265,21 @@
         {{ selectedRoom.name }}
       </h3>
       <div class="space-y-0.5">
-        <p class="text-xs"><strong>Status:</strong> 
+        <p class="text-xs"><strong>Status Today:</strong> <!-- try cari lain -->
           <span [class]="selectedRoom.status === 'Available' ? 'text-green-600' : 'text-red-600'">
             {{ selectedRoom.status }}
           </span>
         </p>
+        <!-- availability check -->
+        <div *ngIf="selectedStartDate" class="text-xs mt-1">
+          <strong>Status on selected {{ selectedEndDate && selectedEndDate !== selectedStartDate ? 'date range' : 'date' }}:</strong>
+          <span [class]="(availabilityByRoomId.get(selectedRoom.id) === 'free') ? 'text-green-600' : 'text-red-600'">
+            {{ availabilityByRoomId.get(selectedRoom.id) === 'free' ? 'Available' : 'Occupied' }}
+          </span>
+          <div *ngIf="selectedEndDate && selectedEndDate !== selectedStartDate" class="text-xs text-gray-500 mt-1">
+            {{ selectedStartDate }} to {{ selectedEndDate }}
+          </div>
+        </div>
         <p class="text-xs"><strong>Capacity:</strong> {{ selectedRoom.capacity }} pax</p>
         <p class="text-xs"><strong>Area:</strong> {{ selectedRoom.area }} sqft</p>
         <!--
@@ -256,17 +287,30 @@
         <p><strong>Price:</strong> RM {{ selectedRoom.price }}</p>
         <p><strong>Deposit:</strong> RM {{ selectedRoom.deposit }}</p>
         -->
-        <!-- below still need to check with how it works with the youtube video -->
-        <div *ngIf="selectedRoom.video" class="mt-1">
-          <a [href]="selectedRoom.video" target="_blank" 
-             class="inline-flex items-center px-2 py-1 text-xs font-medium text-white bg-red-600 rounded hover:bg-red-700 transition-colors">
-            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+        <!-- Watch Video Button -->
+        <ng-container *ngIf="selectedRoom.video">
+          <button
+            (click)="openYoutubeModal(selectedRoom); $event.stopPropagation()"
+            class="mt-2 inline-flex items-center gap-2 rounded-md border border-gray-300 px-2 py-1 text-[13px] text-blue-600 hover:bg-blue-50 hover:border-blue-400 transition-colors"
+            aria-label="Watch virtual tour video"
+            title="Watch virtual tour video"
+          >
+            <!-- play icon -->
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M8 5v14l11-7z"></path>
             </svg>
             Watch Tour
-          </a>
-        </div>
+          </button>
+        </ng-container>
       </div>
     </div>
   </div>
 </div>
+
+<!-- YouTube Video Modal -->
+<app-youtube-modal
+  [isOpen]="showYoutubeModal"
+  [videoUrl]="selectedVideoUrl"
+  [roomName]="selectedRoomName"
+  (close)="closeYoutubeModal()"
+></app-youtube-modal>

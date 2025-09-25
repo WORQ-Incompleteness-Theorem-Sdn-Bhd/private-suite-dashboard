@@ -1,59 +1,59 @@
 // utils/floorplan.utils.ts
 import { Request } from "express";
-import { Storage, Bucket, File, GetFilesOptions } from "@google-cloud/storage";
-import busboy from "busboy";
+import { Storage, Bucket, File, GetFilesOptions } from "@google-cloud/storage"; // Import the Google Cloud Storage module
+import busboy from "busboy"; // Import the busboy module (multipart/form-data parsing)
 
 /** Prefer ADC, fall back to explicit credentials from env */
-export function initializeStorage(): Storage {
+export function initializeStorage(): Storage { // initialize the storage
   try {
     return new Storage();
   } catch {
     console.warn(
       "Failed to use default credentials, trying explicit credentials"
-    );
+    ); // log the error
 
-    const email = process.env.F1REBASE_CLIENT_EMAIL;
-    const key = process.env.F1REBASE_PRIVATE_KEY;
-    const projectId = process.env.F1REBASE_PROJECT_ID;
+    const email = process.env.F1REBASE_CLIENT_EMAIL; // email from environment variables
+    const key = process.env.F1REBASE_PRIVATE_KEY; // key from environment variables
+    const projectId = process.env.F1REBASE_PROJECT_ID; // project id from environment variables
 
-    if (email && key) {
-      return new Storage({
-        projectId,
-        credentials: {
+    if (email && key) { // if the email and key are present
+      return new Storage({ // create a new storage instance
+        projectId, // project id
+        credentials: { // credentials (client email and private key)
           client_email: email,
-          private_key: key.replace(/\\n/g, "\n"),
+          private_key: key.replace(/\\n/g, "\n"), // replace the new line characters with a new line
         },
       });
     }
 
-    throw new Error("No Google Cloud credentials found");
+    throw new Error("No Google Cloud credentials found"); // throw an error if the email and key are not present
   }
 }
 
-export function sanitizeBaseName(s: string) {
+export function sanitizeBaseName(s: string) { // sanitize the base name (replace all non-alphanumeric characters with an underscore)
   return s.replace(/[^a-z0-9-_]/gi, "_");
 }
 
 /** Parse multipart from rawBody (Firebase Functions) */
-export function parseMultipartFromRawBody(
+export function parseMultipartFromRawBody( // parse the multipart from the raw body
   rawBody: Buffer,
-  contentType: string
-): Promise<{
-  fields: Record<string, string>;
-  file: { buffer: Buffer; filename: string; size: number } | null;
+  contentType: string 
+): Promise<{ 
+  fields: Record<string, string>; // fields from the multipart
+  file: { buffer: Buffer; filename: string; size: number } | null; // file from the multipart
 }> {
-  return new Promise((resolve, reject) => {
-    const fields: Record<string, string> = {};
-    let file: { buffer: Buffer; filename: string; size: number } | null = null;
+  return new Promise((resolve, reject) => { 
+    const fields: Record<string, string> = {}; 
+    let file: { buffer: Buffer; filename: string; size: number } | null = null;  
 
-    const bb = busboy({
+    const bb = busboy({  
       headers: { "content-type": contentType },
-      limits: { fileSize: 10 * 1024 * 1024 },
+      limits: { fileSize: 10 * 1024 * 1024 }, //content-type to tell Busboy how to parse the data) and setting limits, such as a maximum file size (10MB)
     });
 
-    bb.on("field", (name, value) => {
+    bb.on("field", (name, value) => { // field event = triggers whenever Busboy sees a text field in the form.
       fields[name] = value;
-      console.log(`🧾 Field: ${name} = ${value}`);
+      console.log(`🧾 Field: ${name} = ${value}`); //It stores the value in a fields object.
     });
 
     bb.on("file", (_name, stream, info) => {
@@ -86,7 +86,7 @@ export function parseMultipartFromRawBody(
 }
 
 /** Parse multipart from a streaming Express request */
-export function parseMultipartFromStream(req: Request): Promise<{
+export function parseMultipartFromStream(req: Request): Promise<{ // parse the multipart from the streaming express request
   fields: Record<string, string>;
   file: { buffer: Buffer; filename: string; size: number } | null;
 }> {

@@ -1469,11 +1469,27 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
           pdf.text(`Pax: ${this.filters.pax}`, 20, yPos);
           yPos += 8;
         }
-        if (this.selectedSuites.length > 0) {
+        // Build suites list from available rooms if none explicitly selected
+        const effectiveStatus = (room: Room): 'Available' | 'Occupied' => {
+          if (this.selectedStartDate) {
+            const avail = this.availabilityByRoomId.get(room.id);
+            if (avail) return avail === 'free' ? 'Available' : 'Occupied';
+          }
+          return this.toStatusUnion(room.status);
+        };
+        const suitesToShow = this.selectedSuites.length > 0
+          ? this.selectedSuites.slice()
+          : Array.from(new Set(
+              this.filteredRooms
+                .filter(r => effectiveStatus(r) === 'Available')
+                .map(r => r.name)
+            )).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+        if (suitesToShow.length > 0) {
           const suitesLabel = 'Suites: ';
-          const suitesText = this.selectedSuites.join(', ');
-          // Use smaller font and wrap when too many suites are selected
-          const manySuites = this.selectedSuites.length > 8;
+          const suitesText = suitesToShow.join(', ');
+          // Use smaller font and wrap when too many suites are listed
+          const manySuites = suitesToShow.length > 8;
           const originalFont = 12;
           const smallFont = 8;
           const fontToUse = manySuites ? smallFont : originalFont;

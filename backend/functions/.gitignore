@@ -16,6 +16,3 @@ firebase-debug.log
 #env file
 .env
 
-#Config files
-CONFIG.md
-README.md

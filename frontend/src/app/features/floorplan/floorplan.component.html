@@ -95,7 +95,7 @@
           [value]="selectedFloorSvg" (change)="onFloorChange($event)">
           <option value="all">All floors</option>
           <option *ngFor="let floor of floorOptions; trackBy: trackBySvgUrl" [value]="floor">
-            {{ getFloorLabel(floor) }}
+            {{ getOfficeIdFromOutletName(filters.outlet) }} | {{ getFloorLabel(floor) }}
           </option>
         </select>
       </div>
@@ -232,7 +232,7 @@
             <!-- Individual Floor Label -->
             <div class="mb-2 p-2 bg-orange-100 border border-orange-300 rounded-lg">
               <span class="text-sm font-semibold text-orange-800">
-               🏢 {{ getFloorLabel(svg) }}
+               🏢 {{ filters.outlet }} | {{ getFloorLabel(svg) }}
               </span>
             </div>
             <!-- SVG Floorplan -->

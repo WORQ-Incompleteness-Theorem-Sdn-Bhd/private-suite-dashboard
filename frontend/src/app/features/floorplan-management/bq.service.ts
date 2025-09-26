@@ -9,6 +9,8 @@ export interface UploadResponse {
   path: string;
   signedUrl?: string;
   signedUrlError?: string;
+  gsUri?: string;
+  signedUrlExpiresInMinutes?: number;
   metadata: {
     originalName: string;
     size: number;

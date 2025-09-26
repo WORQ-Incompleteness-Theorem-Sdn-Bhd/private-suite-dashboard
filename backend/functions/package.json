@@ -6,6 +6,7 @@
     "start": "npm run build && firebase emulators:start --only functions",
     "shell": "npm run build && firebase functions:shell",
     "deploy": "firebase deploy --only functions",
+    "deploy:appFunction": "npm run build && firebase deploy --only functions:appFunction",
     "logs": "firebase functions:log"
   },
   "engines": {

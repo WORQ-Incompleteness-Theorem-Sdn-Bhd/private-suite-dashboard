@@ -1,8 +1,9 @@
 import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, of } from 'rxjs';
 import { tap, map, catchError } from 'rxjs/operators';
 import { Office, OfficeResponse } from '../models/office.model';
-import { FirebaseSvgService } from './firebase-svg.service';
+import { environment } from '../../environments/environment.prod';
 
 @Injectable({ providedIn: 'root' })
 export class OfficeService {
@@ -95,52 +96,65 @@ export class OfficeService {
     },
   ];
 
-  constructor(private firebaseSvgService: FirebaseSvgService) {}
+  constructor(private http: HttpClient) {}
 
   loadOffices(): Observable<OfficeResponse> {
     this.loadingSubject.next(true);
     
-    // First load Firebase Cloud Storage SVG URLs, then merge with static office data
-    return this.firebaseSvgService.buildOfficeFloorMapping().pipe(
-      map(cloudMapping => {
-        // Merge static office data with Firebase Cloud Storage SVG URLs
-        const officesWithFirebaseSvgs = this.staticOffices.map(office => {
-          const cloudSvgs = cloudMapping.get(office.id);
-          if (cloudSvgs) {
-            // Get all SVG URLs for this office
+    // Call backend API to get offices with SVG URLs
+    return this.http.get<any[]>(`${environment.floorplanUrl}`).pipe(
+      map(backendOffices => {
+        // Merge backend data with static office data
+        const officesWithBackendSvgs = this.staticOffices.map(staticOffice => {
+          const backendOffice = backendOffices.find(bo => bo.officeId === staticOffice.id);
+          
+          if (backendOffice) {
+            // Get all SVG URLs for this office from backend
             const allSvgs: string[] = [];
-            cloudSvgs.forEach(svgUrls => {
-              allSvgs.push(...svgUrls);
-            });
+            
+            // Add office-level SVG if exists
+            if (backendOffice.officeSvg?.signedUrl) {
+              allSvgs.push(backendOffice.officeSvg.signedUrl);
+            }
+            
+            // Add floor-level SVGs
+            if (backendOffice.floors) {
+              backendOffice.floors.forEach((floor: any) => {
+                if (floor.signedUrl) {
+                  allSvgs.push(floor.signedUrl);
+                }
+              });
+            }
             
             return {
-              ...office,
-              svg: allSvgs.length > 0 ? allSvgs : office.svg // Fallback to static if no Firebase SVGs
+              ...staticOffice,
+              svg: allSvgs.length > 0 ? allSvgs : staticOffice.svg
             };
           }
-          return office; // Keep original if no Firebase data
+          
+          return staticOffice; // Keep original if no backend data
         });
 
         return {
-          data: officesWithFirebaseSvgs,
+          data: officesWithBackendSvgs,
           success: true,
-          message: 'Offices loaded successfully with Firebase Cloud Storage SVGs'
+          message: 'Offices loaded successfully from backend'
         };
       }),
       tap((response: OfficeResponse) => {
-        console.log('Loaded offices with Firebase SVGs:', response);
+        console.log('Loaded offices from backend:', response);
         if (response.success && response.data) {
           this.officesSubject.next(response.data);
         }
         this.loadingSubject.next(false);
       }),
       catchError(error => {
-        console.error('Error loading Firebase SVGs, falling back to static:', error);
-        // Fallback to static data if Firebase fails
+        console.error('Error loading offices from backend, falling back to static:', error);
+        // Fallback to static data if backend fails
         const fallbackResponse = {
           data: this.staticOffices,
           success: true,
-          message: 'Offices loaded with static SVGs (Firebase unavailable)'
+          message: 'Offices loaded with static data (Backend unavailable)'
         };
         this.officesSubject.next(fallbackResponse.data);
         this.loadingSubject.next(false);

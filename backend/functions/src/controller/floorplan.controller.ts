@@ -11,12 +11,11 @@ import {
   parseMultipartFromRawBody,
   sanitizeBaseName,
   clampInt,
-  fetchUniqueSvg,
+  // fetchUniqueSvg,
 } from "../utils/floorplan.util";
 
 /** CONFIG */
-const BUCKET = process.env.FLOORPLAN_BUCKET as string;
-if (!BUCKET) throw new Error("Missing env FLOORPLAN_BUCKET");
+const BUCKET = process.env.FLOORPLAN_BUCKET || 'floorplan-dashboard-2a468.appspot.com';
 
 const storage: Storage = initializeStorage();
 const bucket = storage.bucket(BUCKET);
@@ -31,10 +30,10 @@ export async function handleUpload(req: Request, res: Response): Promise<void> {
   const cleanup = async () => {
     try {
       if (tempFilePath) {
-        await fs.unlink(tempFilePath).catch(() => {});
+        await fs.unlink(tempFilePath).catch(() => { });
       }
       if (cloudFile) {
-        await (cloudFile as File).delete().catch(() => {});
+        await (cloudFile as File).delete().catch(() => { });
       }
     } catch (e) {
       console.warn("Cleanup warning:", e);
@@ -111,6 +110,9 @@ async function processUpload(
 
     // 1) If floorId provided, handle existing SVG replacement
     if (floorId) {
+      // Allow floor creation - don't require existing floor folder
+      // The folder will be created automatically when the file is uploaded
+      
       // Check for existing SVGs under this floor
       const [floorListing] = await bucket.getFiles({
         prefix: `${officeId}/${floorId}/`,
@@ -118,12 +120,13 @@ async function processUpload(
         maxResults: 100,
       });
 
+      // Find any existing SVG(s) under this floor
       const existingSvgs = (floorListing || []).filter((f) =>
         f.name.toLowerCase().endsWith(".svg")
       );
 
       if (existingSvgs.length > 0 && !overwrite) {
-        await fs.unlink(tmp).catch(() => {});
+        await fs.unlink(tmp).catch(() => { });
         res.status(409).json({
           error:
             "SVG already exists for this floor. Pass overwrite=true to replace.",
@@ -136,7 +139,7 @@ async function processUpload(
       if (existingSvgs.length > 0 && overwrite) {
         await Promise.all(
           existingSvgs.map((f) =>
-            f.delete({ ignoreNotFound: true }).catch(() => {})
+            f.delete({ ignoreNotFound: true }).catch(() => { })
           )
         );
       }
@@ -145,7 +148,7 @@ async function processUpload(
       const rootFile = bucket.file(finalKey);
       const [exists] = await rootFile.exists();
       if (exists && !overwrite) {
-        await fs.unlink(tmp).catch(() => {});
+        await fs.unlink(tmp).catch(() => { });
         res.status(409).json({
           error: `File '${sanitizedName}' already exists under office '${officeId}'. Pass overwrite=true to replace.`,
           existing: [finalKey],
@@ -153,7 +156,7 @@ async function processUpload(
         return;
       }
       if (exists && overwrite) {
-        await rootFile.delete({ ignoreNotFound: true }).catch(() => {});
+        await rootFile.delete({ ignoreNotFound: true }).catch(() => { });
       }
     }
 
@@ -184,7 +187,7 @@ async function processUpload(
         action: "read",
         expires: Date.now() + minutes * 60 * 1000,
       });
-      await fs.unlink(tmp).catch(() => {});
+      await fs.unlink(tmp).catch(() => { });
       res.status(201).json({
         ok: true,
         bucket: BUCKET,
@@ -202,7 +205,7 @@ async function processUpload(
         "Signed URL generation failed:",
         signError?.message || signError
       );
-      await fs.unlink(tmp).catch(() => {});
+      await fs.unlink(tmp).catch(() => { });
       res.status(201).json({
         ok: true,
         bucket: BUCKET,
@@ -221,7 +224,7 @@ async function processUpload(
     }
   } catch (err: any) {
     console.error("Upload processing error:", err?.message || err);
-    await fs.unlink(tmp).catch(() => {});
+    await fs.unlink(tmp).catch(() => { });
     await cleanup();
     res.status(500).json({
       error: "Upload failed during processing",
@@ -231,60 +234,143 @@ async function processUpload(
 }
 
 /** GET /api/floorplans/:officeId[/:floorId] */
+async function fetchAllSvgs(bucket: Bucket, prefix: string): Promise<File[]> {
+  const opts: GetFilesOptions = {
+    prefix,            // recursive search (no delimiter)
+    autoPaginate: true
+  };
+  const [files] = await bucket.getFiles(opts);
+  return files.filter((f) => f.name.toLowerCase().endsWith(".svg"));
+}
+
+async function fetchUniqueSvg(bucket: Bucket, prefix: string): Promise<File> {
+  const svgs = await fetchAllSvgs(bucket, prefix);
+  if (svgs.length === 0) {
+    const err: any = new Error(`No SVG found at ${prefix}`);
+    err.code = "ENOENT";
+    throw err;
+  }
+  if (svgs.length > 1) {
+    const err: any = new Error(
+      `Expected 1 SVG at ${prefix} but found ${svgs.length} (${svgs.map(f => f.name).join(", ")})`
+    );
+    err.code = "EEXIST";
+    throw err;
+  }
+  return svgs[0];
+}
+
+// --- single controller for both cases ---
 export async function getFloorplan(req: Request, res: Response): Promise<void> {
-  try {
+  try { 
     const officeId = (req.params.officeId || "").trim();
     const floorId = (req.params.floorId || "").trim();
+    console.log("route : /api/floorplans officeId",officeId)
+    console.log("route : /api/floorplans floorId",floorId )
+
+    console.log()
+
     if (!officeId) {
       res.status(400).json({ error: "officeId is required" });
       return;
     }
 
-    const wantRaw = String(req.query.raw || "") === "1";
+    const wantRaw = String(req.query.raw || "") === "1";              // only valid for single
     const wantSigned = String(req.query.signed ?? "true") !== "false";
     const expiresMin = clampInt(Number(req.query.expires || 60), 1, 4320);
 
-    const prefix = floorId ? `${officeId}/${floorId}/` : `${officeId}/`;
-    const file = await fetchUniqueSvg(bucket, prefix);
+    // ---- Case A: specific floor (unique SVG expected) ----
+    if (floorId) {
+      const prefix = `${officeId}/${floorId}/`;
+      const file = await fetchUniqueSvg(bucket, prefix);
+      console.log("getFloorplan : file", file)
 
-    if (wantRaw) {
-      res.setHeader("Content-Type", "image/svg+xml");
-      res.setHeader("Cache-Control", "public, max-age=60");
-      file
-        .createReadStream()
-        .on("error", (err) => {
-          console.error("Stream error:", err);
-          if (!res.headersSent) res.status(500).end("Failed to read SVG");
-        })
-        .pipe(res);
+      if (wantRaw) {
+        res.setHeader("Content-Type", "image/svg+xml");
+        res.setHeader("Cache-Control", "public, max-age=60");
+        file.createReadStream()
+          .on("error", (err) => {
+            console.error("Stream error:", err);
+            if (!res.headersSent) res.status(500).end("Failed to read SVG");
+          })
+          .pipe(res);
+        return;
+      }
+
+      let signedUrl: string | null = null;
+      if (wantSigned) {
+        try {
+          const [url] = await file.getSignedUrl({
+            version: "v4",
+            action: "read",
+            expires: Date.now() + expiresMin * 60 * 1000,
+          });
+          signedUrl = url;
+        } catch (e: any) {
+          console.warn("Signed URL generation failed:", e?.message || e);
+        }
+      }
+
+      const [meta] = await file.getMetadata();
+      res.json({
+        ok: true,
+        scope: "single",
+        bucket: BUCKET,
+        path: file.name,
+        signedUrl,
+        contentType: meta.contentType || "image/svg+xml",
+        size: Number(meta.size || 0),
+        updated: meta.updated,
+        metadata: meta.metadata || {},
+      });
       return;
     }
 
-    let signedUrl: string | null = null;
-    if (wantSigned) {
-      try {
-        const [url] = await file.getSignedUrl({
-          version: "v4",
-          action: "read",
-          expires: Date.now() + expiresMin * 60 * 1000,
-        });
-        signedUrl = url;
-      } catch (e: any) {
-        console.warn("Signed URL generation failed:", e?.message || e);
+    // ---- Case B: list all floors under an office ----
+    {
+      const prefix = `${officeId}/`;
+      const files = await fetchAllSvgs(bucket, prefix);
+      if (!files.length) {
+        res.status(404).json({ error: `No SVG found at ${prefix}` });
+        return;
       }
-    }
 
-    const [meta] = await file.getMetadata();
-    res.json({
-      ok: true,
-      bucket: BUCKET,
-      path: file.name,
-      signedUrl,
-      contentType: meta.contentType || "image/svg+xml",
-      size: Number(meta.size || 0),
-      updated: meta.updated,
-      metadata: meta.metadata || {},
-    });
+      // Optionally sign each (can be heavy for many; keep or toggle with ?signed=false)
+      const items = await Promise.all(
+        files.map(async (file) => {
+          let signedUrl: string | null = null;
+          if (wantSigned) {
+            try {
+              const [url] = await file.getSignedUrl({
+                version: "v4",
+                action: "read",
+                expires: Date.now() + expiresMin * 60 * 1000,
+              });
+              signedUrl = url;
+            } catch (e: any) {
+              console.warn(`Signed URL failed for ${file.name}:`, e?.message || e);
+            }
+          }
+          const [meta] = await file.getMetadata();
+          return {
+            path: file.name,
+            signedUrl,
+            contentType: meta.contentType || "image/svg+xml",
+            size: Number(meta.size || 0),
+            updated: meta.updated,
+            metadata: meta.metadata || {},
+          };
+        })
+      );
+
+      res.json({
+        ok: true,
+        scope: "list",
+        bucket: BUCKET,
+        count: items.length,
+        items,
+      });
+    }
   } catch (err: any) {
     if (err?.code === "ENOENT") {
       res.status(404).json({ error: err.message || "Not found" });
@@ -301,11 +387,16 @@ export async function getFloorplan(req: Request, res: Response): Promise<void> {
 
 export async function getAllFloorplans(req: Request, res: Response) {
   try {
+    console.log("getAllFloorplans: Starting to fetch floorplans from bucket:", BUCKET);
+
     const officePrefixes = await listPrefixes(bucket, "");
+    console.log("getAllFloorplans: Found office prefixes:", officePrefixes);
+
     const offices: any[] = [];
 
     for (const op of officePrefixes) {
       const officeId = op.replace(/\/$/, "");
+      console.log("getAllFloorplans: Processing office:", officeId);
 
       // office-level file (direct under office/)
       const officeSvg = await tryBuildEntry(
@@ -327,19 +418,33 @@ export async function getAllFloorplans(req: Request, res: Response) {
       offices.push({ officeId, ...(officeSvg ? { officeSvg } : {}), floors });
     }
 
+    console.log("getAllFloorplans: Returning offices:", offices);
     res.json(offices);
   } catch (err: any) {
     console.error("getAllFloorplans error:", err?.message || err);
-    res.status(500).json({ error: "Internal error" });
+    console.error("getAllFloorplans stack:", err?.stack);
+    res.status(500).json({
+      error: "Internal error",
+      message: err?.message || "Unknown error",
+      bucket: BUCKET
+    });
   }
 }
 //helper
 async function listPrefixes(bucket: Bucket, prefix: string): Promise<string[]> {
-  const opts: GetFilesOptions = { prefix, delimiter: "/", autoPaginate: true };
-  const [_files, _next, apiResponse] = (await (bucket as any).getFiles(
-    opts
-  )) as [File[], any, { prefixes?: string[] }];
-  return (apiResponse?.prefixes || []).filter(Boolean);
+  try {
+    console.log("listPrefixes: Listing prefixes for bucket:", bucket.name, "prefix:", prefix);
+    const opts: GetFilesOptions = { prefix, delimiter: "/", autoPaginate: true };
+    const [_files, _next, apiResponse] = (await (bucket as any).getFiles(
+      opts
+    )) as [File[], any, { prefixes?: string[] }];
+    const prefixes = (apiResponse?.prefixes || []).filter(Boolean);
+    console.log("listPrefixes: Found prefixes:", prefixes);
+    return prefixes;
+  } catch (error) {
+    console.error("listPrefixes error:", error);
+    return [];
+  }
 }
 
 async function tryBuildEntry(

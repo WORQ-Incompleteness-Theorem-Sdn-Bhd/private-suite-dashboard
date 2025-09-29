@@ -79,14 +79,27 @@
           </small>
         </div>
 
-        <!-- Floor dropdown -->
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Floor (Optional)</label>
-          <select formControlName="floorId" class="w-full p-2 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500">
-            <option value="" disabled selected>Select Floor</option>
-            <option *ngFor="let fl of floors" [value]="fl.value">{{ fl.label }}</option>
-          </select>
-        </div>
+          <!-- Floor Selection -->
+          <div class="space-y-2">
+            <div class="flex items-center gap-2">
+              <label class="block text-sm font-semibold text-gray-700">Floor</label>
+              <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                Optional
+              </span>
+            </div>
+            <select formControlName="floorId" 
+                    class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-colors">
+              <option value="" disabled selected>
+                {{ floors.length === 0 ? 'Loading floors...' : 'Select Floor (if multiple floors)' }}
+              </option>
+              <option *ngFor="let fl of floors" [value]="fl.value">
+                {{ fl.label }}
+              </option>
+            </select>
+            <p class="text-xs text-gray-600">
+              *Please only select floor if there are multiple floors for that location
+            </p>
+          </div>
 
         <!-- Custom file name -->
         <div>

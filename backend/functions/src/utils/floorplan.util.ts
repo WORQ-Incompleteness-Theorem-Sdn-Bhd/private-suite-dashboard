@@ -12,7 +12,7 @@ export function initializeStorage(): Storage { // initialize the storage
       "Failed to use default credentials, trying explicit credentials"
     ); // log the error
 
-    const email = process.env.F1REBASE_CLIENT_EMAIL; // email from environment variables
+    const email = process.env.F1REBASE_CLIENT_EMAIL ?? 'firebase-adminsdk-fbsvc@floorplan-dashboard-2a468.iam.gserviceaccount.com'; // email from environment variables
     const key = process.env.F1REBASE_PRIVATE_KEY; // key from environment variables
     const projectId = process.env.F1REBASE_PROJECT_ID; // project id from environment variables
 
@@ -146,6 +146,7 @@ export async function fetchUniqueSvg(
 
   const [files] = await bucket.getFiles(opts);
   const svgs = files.filter((f) => f.name.toLowerCase().endsWith(".svg"));
+  console.log("fetchUniqueSvg : svgs",svgs)
 
   if (svgs.length === 0) {
     const err: any = new Error(`No SVG found at ${prefix}`);

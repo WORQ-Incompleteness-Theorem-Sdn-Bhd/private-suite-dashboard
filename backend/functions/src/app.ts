@@ -7,11 +7,16 @@ import { requireAuth } from "./middleware/auth"; // Import the requireAuth middl
 
 const app = express(); // Create the express app 
 
-app.use(cors({ origin: true })); // Use the cors middleware to allow requests from all origins
+app.use(cors({ 
+ // origin: ['http://localhost:4200', 'http://127.0.0.1:4200'],
+  credentials: true
+}));
+app.get("/api", (_req, res) => {
+  res.json({ ok: true, message: "API root is alive 🚀" });
+});
 
-app.use("/api/floorplans", requireAuth, floorplanRoutes); // Use the requireAuth middleware to authenticate requests to the floorplan routes
-
-app.use("/api/token", express.json({ limit: "10mb" }), authRoutes); // Use the express.json middleware to parse the request body
-app.use("/api/bigquery", express.json({ limit: "10mb" }), requireAuth, bqRoutes); // Use the requireAuth middleware to authenticate requests to the bigquery routes
+app.use("/api/floorplans", requireAuth, floorplanRoutes); 
+app.use("/api/token", express.json({ limit: "10mb" }), authRoutes);
+app.use("/api/bigquery", express.json({ limit: "10mb" }), requireAuth, bqRoutes);
 
 export default app; // Export the express app

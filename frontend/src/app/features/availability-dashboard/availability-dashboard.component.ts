@@ -246,7 +246,7 @@ export class AvailabilityDashboardComponent implements OnInit {
   ) {
     // Set default date range (next 7 days)
     const today = new Date();
-    const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000); //
     
     this.startDate = today.toISOString().split('T')[0];
     this.endDate = nextWeek.toISOString().split('T')[0];

@@ -41,9 +41,12 @@ export class FirebaseSvgService {
 
   // Get all floorplans for all offices
   getAllFloorplans(): Observable<OfficeFloorplans[]> {
-    return this.http.get<OfficeFloorplans[]>(`${this.baseUrl}/floorplans`).pipe(
+    console.log('🌐 Firebase Service - Fetching all floorplans from cloud API:', `${this.baseUrl}/floorplans`);
+    // 🖼️ SVG CLOUD RETRIEVAL: Get all floorplans from Firebase Cloud Storage
+    return this.http.get<OfficeFloorplans[]>(`${this.baseUrl}/floorplans`).pipe( // 🔍 LINE 45: SVG CLOUD - Firebase Cloud Storage
+      tap(response => console.log('✅ Cloud floorplans response:', response)),
       catchError(error => {
-        console.error('Error fetching floorplans:', error);
+        console.error('❌ Error fetching floorplans from cloud:', error);
         return of([]);
       })
     );
@@ -55,12 +58,36 @@ export class FirebaseSvgService {
       ? `${this.baseUrl}/floorplans/${officeId}/${floorId}`
       : `${this.baseUrl}/floorplans/${officeId}`;
     
-    console.log('🔥 Firebase SVG Service - Fetching floorplan:', { officeId, floorId, url });
+    console.log('🔥 Firebase SVG Service - Fetching floorplan from cloud:', { officeId, floorId, url });
+    console.log('🌐 Full API URL:', url);
     
-    return this.http.get<FirebaseSvgResponse>(url).pipe(
-      tap(response => console.log('✅ Firebase SVG Response:', response)),
+    // Debug: Check if this is MUB or ITG
+    if (officeId.includes('mub') || officeId.toLowerCase().includes('mub')) {
+      console.log('🏢 [FIREBASE DEBUG] Loading floorplan for MUB:', { officeId, floorId, url });
+    }
+    if (officeId.includes('itg') || officeId.toLowerCase().includes('itg')) {
+      console.log('🏢 [FIREBASE DEBUG] Loading floorplan for ITG:', { officeId, floorId, url });
+    }
+    
+    // 🖼️ SVG CLOUD RETRIEVAL: Get specific floorplan from Firebase Cloud Storage
+    return this.http.get<FirebaseSvgResponse>(url).pipe( // 🔍 LINE 64: SVG CLOUD - Firebase Cloud Storage
+      tap(response => {
+        console.log('✅ Firebase Cloud Response:', response);
+        if (response.signedUrl) {
+          console.log('🔥 Signed URL source:', response.signedUrl.includes('firebasestorage.googleapis.com') ? 'Firebase Cloud Storage' : 'Other');
+        } else {
+          console.log('⚠️ [FIREBASE DEBUG] No signedUrl in response for officeId:', officeId);
+        }
+      }),
       catchError(error => {
-        console.error('❌ Firebase SVG Error:', error);
+        console.error('❌ Firebase Cloud Error for officeId:', officeId, error);
+        // Debug: Check if this is MUB or ITG that failed
+        if (officeId.includes('mub') || officeId.toLowerCase().includes('mub')) {
+          console.log('❌ [FIREBASE DEBUG] MUB SVG loading failed:', { officeId, error: error.message });
+        }
+        if (officeId.includes('itg') || officeId.toLowerCase().includes('itg')) {
+          console.log('❌ [FIREBASE DEBUG] ITG SVG loading failed:', { officeId, error: error.message });
+        }
         throw error;
       })
     );

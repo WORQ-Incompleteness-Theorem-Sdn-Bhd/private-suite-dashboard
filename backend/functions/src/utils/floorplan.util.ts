@@ -12,9 +12,9 @@ export function initializeStorage(): Storage { // initialize the storage
       "Failed to use default credentials, trying explicit credentials"
     ); // log the error
 
-    const email = process.env.F1REBASE_CLIENT_EMAIL; // email from environment variables
-    const key = process.env.F1REBASE_PRIVATE_KEY; // key from environment variables
-    const projectId = process.env.F1REBASE_PROJECT_ID; // project id from environment variables
+    const email = process.env.FIREBASE_CLIENT_EMAIL; // email from environment variables
+    const key = process.env.FIREBASE_PRIVATE_KEY; // key from environment variables
+    const projectId = process.env.FIREBASE_PROJECT_ID; // project id from environment variables
 
     if (email && key) { // if the email and key are present
       return new Storage({ // create a new storage instance

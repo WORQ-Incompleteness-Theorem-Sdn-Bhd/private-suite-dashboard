@@ -108,7 +108,7 @@ export class AuthService {
 
       // sessionStorage.setItem('user', JSON.stringify(userDetail));
 
-      this.toastService.success('Welcome to WORQ Floorplan Dashboard!');
+      this.toastService.success('Welcome to WORQ Floorplan Dashboard!'); //betul this position
       await this.router.navigate(['/floorplan']);
     } catch (error: any) {
       console.error('Error in handleInternalUser:', error);

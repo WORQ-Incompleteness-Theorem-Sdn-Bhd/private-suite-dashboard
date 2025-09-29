@@ -204,8 +204,8 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
 
   ngOnInit() {
     // 1) Load outlets and floors first
-    this.loadOffices();
-    this.loadFloors();
+    this.loadOffices(); // 📊 SQL: Loads outlets from BigQuery locations
+    this.loadFloors(); // 📊 SQL: Loads floors from BigQuery floors
 
     // 2) Subscribe to rooms changes
     this.roomService.rooms$.subscribe((rooms) => {
@@ -219,6 +219,9 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         this.safeSvgUrl =
           this.sanitizer.bypassSecurityTrustResourceUrl(svgPath);
       }
+      
+      // Refresh floor options when rooms are loaded
+      this.refreshFloorOptions();
       this.updateSelectedOutletSvgs();
       this.buildOptions();
       this.applyFilters();
@@ -228,7 +231,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   // Load offices on app start
   loadOffices() {
     this.isLoadingOffices = true;
-    this.officeService.loadOffices().pipe(
+    this.officeService.loadOffices().pipe( // 📊 SQL: Calls BigQuery locations API
       catchError((error) => {
         console.error('Error loading outlet:', error);
         this.toastService.error('Failed to load outlet. Please try again.');
@@ -247,7 +250,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
 
   // Load floors from backend
   loadFloors() {
-    this.floorService.getFloors().pipe(
+    this.floorService.getFloors().pipe( // 📊 SQL: Calls BigQuery floors API
       catchError((error) => {
         console.error('Error loading floors:', error);
         this.toastService.error('Failed to load floors. Please try again.');
@@ -266,7 +269,10 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
 
   // When user selects an outlet
   onOutletChange(outletDisplayName: string) {
+    console.log('🏢 [OUTLET SELECTION] User selected outlet:', outletDisplayName);
+    
     if (!outletDisplayName || outletDisplayName === 'Select Outlet') {
+      console.log('❌ [OUTLET SELECTION] No outlet selected, clearing data');
       this.rooms = [];
       this.filteredRooms = [];
       this.selectedOutletSvgs = [];
@@ -276,15 +282,17 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       return;
     }
 
-    // Get the office ID from the display name
+    // STEP 1: Get office.id from outlet display name (SQL → UI mapping)
     const officeId = this.getOfficeIdFromOutletName(outletDisplayName);
+    console.log('🏢 [OUTLET SELECTION] Mapped outlet to office ID:', { outlet: outletDisplayName, officeId });
+    
     if (!officeId) {
-      console.error('Office ID not found for outlet:', outletDisplayName);
+      console.error('❌ [OUTLET SELECTION] Office ID not found for outlet:', outletDisplayName);
       this.toastService.error('Invalid outlet selected');
       return;
     }
 
-    // 3) Fetch resources for this outlet using office.id
+    // STEP 2: Fetch resources (rooms/floors) from SQL using office.id
     this.loadResources({ officeId });
 
     // If date already chosen, refresh availability for the outlet
@@ -296,7 +304,8 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   // Fetch resources for selected outlet
   loadResources(params: ResourceParams) {
     this.isLoadingResources = true;
-    this.roomService.getResources(params).pipe(
+    // STEP 2: Get rooms/floors data from SQL using office.id
+    this.roomService.getResources(params).pipe( // 📊 SQL: Calls BigQuery resources API
       catchError((error) => {
         console.error('Error loading resources:', error);
         this.toastService.error('Failed to load resources. Please try again.');
@@ -308,7 +317,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     ).subscribe((response) => {
       if (response) {
         this.toastService.success('Resources loaded successfully');
-        // Update selected outlet SVGs and build filters from backend data
+        // STEP 3: Load SVGs from Firebase using office.id + floor.id
         this.updateSelectedOutletSvgs();
         this.buildFiltersFromBackend();
         // Force SVG color updates after data is loaded
@@ -359,25 +368,18 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     this.svgObjects.changes.subscribe(() => setTimeout(attach));
   }
   //#region function to get svg
-  private updateSelectedOutletSvgs() {
+  
+  // Refresh floor options based on current outlet and rooms data
+  private refreshFloorOptions() {
     const outlet = this.filters.outlet;
     if (!outlet || outlet === 'Select Outlet') {
-      this.selectedOutletSvgs = [];
-      this.displayedSvgs = [];
-      this.selectedFloorSvg = 'all';
       this.floorOptions = [];
-      return;
-    }
-    
-    // Get the office ID for the selected outlet
-    const officeId = this.getOfficeIdFromOutletName(outlet);
-    if (!officeId) {
-      console.error('Office ID not found for outlet:', outlet);
       return;
     }
     
     // Get rooms for the selected outlet
     const outletRooms = this.rooms.filter((r) => r.outlet === outlet);
+    console.log('🔄 [FLOOR REFRESH] Refreshing floor options for outlet:', { outlet, roomCount: outletRooms.length });
     
     // Extract unique floor IDs from rooms
     const floorIds = new Set<string>();
@@ -387,36 +389,149 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       }
     });
     
-    // Build floor options from backend floor data
-    this.floorOptions = Array.from(floorIds)
-      .map(floorId => {
-        const floor = this.floorIdToFloorMap.get(floorId);
-        if (floor) {
-          const floorLabel = this.floorService.getFloorDisplayLabel(floorId, this.floors);
-          return `${floorLabel}|${floorId}`; // Format: "Sibelco Office|floor_id" for display and ID
-        }
-        return null;
-      })
-      .filter(Boolean)
-      .sort((a, b) => {
-        // Sort by floor label (Sibelco Office will come first alphabetically)
-        const aLabel = a!.split('|')[0];
-        const bLabel = b!.split('|')[0];
-        
-        // Special sorting: Sibelco Office first, then numeric floors
-        if (aLabel === 'Sibelco Office') return -1;
-        if (bLabel === 'Sibelco Office') return 1;
-        
-        // For numeric floors, sort by number
-        const aNum = parseInt(aLabel) || 999;
-        const bNum = parseInt(bLabel) || 999;
-        return aNum - bNum;
-      }) as string[];
+    if (floorIds.size > 0) {
+      // Use floor IDs from rooms
+      this.floorOptions = Array.from(floorIds)
+        .map(floorId => {
+          const floor = this.floorIdToFloorMap.get(floorId);
+          if (floor) {
+            const floorLabel = this.floorService.getFloorDisplayLabel(floorId, this.floors);
+            return `${floorLabel}|${floorId}`;
+          }
+          return null;
+        })
+        .filter(Boolean)
+        .sort((a, b) => {
+          const aLabel = a!.split('|')[0];
+          const bLabel = b!.split('|')[0];
+          
+          if (aLabel === 'Sibelco Office') return -1;
+          if (bLabel === 'Sibelco Office') return 1;
+          
+          const aNum = parseInt(aLabel) || 999;
+          const bNum = parseInt(bLabel) || 999;
+          return aNum - bNum;
+        }) as string[];
+    } else {
+      // Fallback: Use all available floors
+      this.floorOptions = this.floors
+        .map(floor => {
+          const floorLabel = this.floorService.getFloorDisplayLabel(floor.floor_id, this.floors);
+          return `${floorLabel}|${floor.floor_id}`;
+        })
+        .sort((a, b) => {
+          const aLabel = a.split('|')[0];
+          const bLabel = b.split('|')[0];
+          
+          if (aLabel === 'Sibelco Office') return -1;
+          if (bLabel === 'Sibelco Office') return 1;
+          
+          const aNum = parseInt(aLabel) || 999;
+          const bNum = parseInt(bLabel) || 999;
+          return aNum - bNum;
+        });
+    }
     
-    // Get all SVG files for this outlet from floor service
-    this.floorService.getAllSvgFilesForOutlet(officeId).subscribe(svgs => {
-      this.selectedOutletSvgs = svgs;
-      this.updateDisplayedSvgs();
+    console.log('🔄 [FLOOR REFRESH] Updated floor options:', this.floorOptions);
+  }
+  
+  private updateSelectedOutletSvgs() {
+    const outlet = this.filters.outlet;
+    console.log('🔄 [SVG LOADING] Starting SVG loading process for outlet:', outlet);
+    
+    if (!outlet || outlet === 'Select Outlet') {
+      console.log('❌ [SVG LOADING] No outlet selected, clearing SVGs');
+      this.selectedOutletSvgs = [];
+      this.displayedSvgs = [];
+      this.selectedFloorSvg = 'all';
+      this.floorOptions = [];
+      return;
+    }
+    
+    // Get the office ID for the selected outlet
+    const officeId = this.getOfficeIdFromOutletName(outlet);
+    console.log('🏢 [SVG LOADING] Mapped outlet to office ID:', { outlet, officeId });
+    
+    if (!officeId) {
+      console.error('❌ [SVG LOADING] Office ID not found for outlet:', outlet);
+      return;
+    }
+    
+    // Get rooms for the selected outlet
+    const outletRooms = this.rooms.filter((r) => r.outlet === outlet);
+    console.log('🏢 [SVG LOADING] Found rooms for outlet:', { outlet, roomCount: outletRooms.length, totalRooms: this.rooms.length, rooms: outletRooms.map(r => ({ id: r.id, name: r.name, floor_id: r.floor_id })) });
+    
+    // Extract unique floor IDs from rooms
+    const floorIds = new Set<string>();
+    outletRooms.forEach(room => {
+      if (room.floor_id) {
+        floorIds.add(room.floor_id);
+      }
+    });
+    console.log('🏢 [SVG LOADING] Extracted floor IDs from rooms:', Array.from(floorIds));
+    console.log('🏢 [SVG LOADING] Available floors data:', { floorsCount: this.floors.length, floorIdToFloorMapSize: this.floorIdToFloorMap.size });
+    
+    // Build floor options from backend floor data
+    if (floorIds.size > 0) {
+      // Use floor IDs from rooms if available
+      this.floorOptions = Array.from(floorIds)
+        .map(floorId => {
+          const floor = this.floorIdToFloorMap.get(floorId);
+          if (floor) {
+            const floorLabel = this.floorService.getFloorDisplayLabel(floorId, this.floors);
+            return `${floorLabel}|${floorId}`; // Format: "Sibelco Office|floor_id" for display and ID
+          }
+          return null;
+        })
+        .filter(Boolean)
+        .sort((a, b) => {
+          // Sort by floor label (Sibelco Office will come first alphabetically)
+          const aLabel = a!.split('|')[0];
+          const bLabel = b!.split('|')[0];
+          
+          // Special sorting: Sibelco Office first, then numeric floors
+          if (aLabel === 'Sibelco Office') return -1;
+          if (bLabel === 'Sibelco Office') return 1;
+          
+          // For numeric floors, sort by number
+          const aNum = parseInt(aLabel) || 999;
+          const bNum = parseInt(bLabel) || 999;
+          return aNum - bNum;
+        }) as string[];
+    } else {
+      // Fallback: Use all available floors from BigQuery if no rooms loaded yet
+      console.log('🏢 [SVG LOADING] No rooms loaded yet, using all available floors as fallback');
+      this.floorOptions = this.floors
+        .map(floor => {
+          const floorLabel = this.floorService.getFloorDisplayLabel(floor.floor_id, this.floors);
+          return `${floorLabel}|${floor.floor_id}`;
+        })
+        .sort((a, b) => {
+          const aLabel = a.split('|')[0];
+          const bLabel = b.split('|')[0];
+          
+          if (aLabel === 'Sibelco Office') return -1;
+          if (bLabel === 'Sibelco Office') return 1;
+          
+          const aNum = parseInt(aLabel) || 999;
+          const bNum = parseInt(bLabel) || 999;
+          return aNum - bNum;
+        });
+    }
+    
+    console.log('🏢 [SVG LOADING] Final floor options:', this.floorOptions);
+    
+    // STEP 3: Get all SVG files for this outlet from Firebase Cloud Storage
+    console.log('☁️ [SVG LOADING] Calling floorService.getAllSvgFilesForOutlet with officeId:', officeId);
+    this.floorService.getAllSvgFilesForOutlet(officeId).subscribe({ // 🖼️ SVG CLOUD: Calls Firebase Cloud Storage
+      next: (svgs) => {
+        console.log('✅ [SVG LOADING] Received SVGs from cloud:', { officeId, svgCount: svgs.length, svgs });
+        this.selectedOutletSvgs = svgs;
+        this.updateDisplayedSvgs();
+      },
+      error: (error) => {
+        console.error('❌ [SVG LOADING] Error loading SVGs from cloud:', { officeId, error });
+      }
     });
     
     // If no floor options from backend, fall back to SVG-based approach
@@ -782,6 +897,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   onFloorChange(event: Event) {
     const select = event.target as HTMLSelectElement | null;
     if (select) {
+      console.log('🏢 [FLOOR SELECTION] User selected floor:', select.value);
       this.selectedFloorSvg = select.value;
       this.updateDisplayedSvgs();
       // colors/handlers will reattach on next load event automatically
@@ -789,11 +905,16 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   }
 
   private updateDisplayedSvgs() {
+    console.log('🔄 [SVG DISPLAY] Updating displayed SVGs:', { selectedFloorSvg: this.selectedFloorSvg, selectedOutletSvgsCount: this.selectedOutletSvgs?.length || 0 });
+    
     if (!this.selectedOutletSvgs || this.selectedOutletSvgs.length === 0) {
+      console.log('❌ [SVG DISPLAY] No outlet SVGs available, clearing display');
       this.displayedSvgs = [];
       return;
     }
+    
     if (this.selectedFloorSvg === 'all') {
+      console.log('🏢 [SVG DISPLAY] Showing all floors - displaying all outlet SVGs:', this.selectedOutletSvgs);
       this.displayedSvgs = this.selectedOutletSvgs.slice();
     } else {
       // Check if selectedFloorSvg is in the new format (floorNumber|floorId)
@@ -802,21 +923,36 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         const outlet = this.filters.outlet;
         const officeId = this.getOfficeIdFromOutletName(outlet);
         
+        console.log('🏢 [SVG DISPLAY] Loading specific floor SVGs:', { selectedFloorSvg: this.selectedFloorSvg, floorId, outlet, officeId });
+        
         if (officeId) {
-          // Get SVG files for the specific floor
-          this.floorService.getSvgFilesForFloor(officeId, floorId, this.floors).subscribe(floorSvgs => {
-            this.displayedSvgs = floorSvgs.length > 0 ? floorSvgs : this.selectedOutletSvgs.slice();
+          // STEP 4: Get SVG files for specific floor from Firebase Cloud Storage
+          console.log('☁️ [SVG DISPLAY] Calling floorService.getSvgFilesForFloor with:', { officeId, floorId });
+          this.floorService.getSvgFilesForFloor(officeId, floorId, this.floors).subscribe({ // 🖼️ SVG CLOUD: Calls Firebase Cloud Storage
+            next: (floorSvgs) => {
+              console.log('✅ [SVG DISPLAY] Received floor-specific SVGs:', { floorId, svgCount: floorSvgs.length, floorSvgs });
+              this.displayedSvgs = floorSvgs.length > 0 ? floorSvgs : this.selectedOutletSvgs.slice();
+              console.log('🏢 [SVG DISPLAY] Final displayed SVGs:', this.displayedSvgs);
+            },
+            error: (error) => {
+              console.error('❌ [SVG DISPLAY] Error loading floor-specific SVGs:', { floorId, error });
+              this.displayedSvgs = this.selectedOutletSvgs.slice();
+            }
           });
         } else {
+          console.log('❌ [SVG DISPLAY] No office ID found, falling back to all outlet SVGs');
           this.displayedSvgs = this.selectedOutletSvgs.slice();
         }
       } else {
         // Fallback to old SVG-based filtering
+        console.log('🔄 [SVG DISPLAY] Using fallback SVG filtering for:', this.selectedFloorSvg);
         this.displayedSvgs = this.selectedOutletSvgs.filter(
           (p) => p === this.selectedFloorSvg
         );
       }
     }
+    
+    console.log('✅ [SVG DISPLAY] Final result - Displayed SVGs:', { count: this.displayedSvgs.length, svgs: this.displayedSvgs });
   }
 
   applyFilters() {

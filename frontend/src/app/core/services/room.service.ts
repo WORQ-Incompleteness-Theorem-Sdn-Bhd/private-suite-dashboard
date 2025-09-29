@@ -74,7 +74,8 @@ export class RoomService {
       httpParams = httpParams.set('floor_id', params.floor);
     }
     
-    return this.http.get<any>(`${this.url}/resources` , { 
+    // 📊 SQL DATA RETRIEVAL: Get rooms/resources from BigQuery
+    return this.http.get<any>(`${this.url}/resources` , { // 🔍 LINE 77: SQL QUERY - GET /api/bigquery/resources
       params: httpParams
     }).pipe(
       tap((response) => {
@@ -129,6 +130,7 @@ export class RoomService {
     if (params.officeId) {
       httpParams = httpParams.set('office_id', params.officeId);
     }
-    return this.http.get<any>(`${this.url}/availability`, { params: httpParams });
+    // 📊 SQL DATA RETRIEVAL: Get availability data from BigQuery
+    return this.http.get<any>(`${this.url}/availability`, { params: httpParams }); // 🔍 LINE 132: SQL QUERY - GET /api/bigquery/availability
   }
 }

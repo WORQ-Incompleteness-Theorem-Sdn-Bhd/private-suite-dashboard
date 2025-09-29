@@ -8,9 +8,9 @@ import { onRequest } from "firebase-functions/https"; // Import the Firebase Fun
 if (!admin.apps.length) { // Initialize Firebase Admin SDK if not already initialized
   admin.initializeApp({
     credential: admin.credential.cert({
-      projectId: process.env.F1REBASE_PROJECT_ID, // Project ID from environment variables
-      clientEmail: process.env.F1REBASE_CLIENT_EMAIL, // Client email from environment variables
-      privateKey: process.env.F1REBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"), // Private key from environment variables
+      projectId: process.env.FIREBASE_PROJECT_ID, // Project ID from environment variables
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL, // Client email from environment variables
+      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"), // Private key from environment variables
     }),
   });
 }

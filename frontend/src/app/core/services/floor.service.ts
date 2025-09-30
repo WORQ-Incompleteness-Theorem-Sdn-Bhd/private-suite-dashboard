@@ -74,30 +74,32 @@ export class FloorService {
         const outletFloors = this.fallbackSvgMap[officeId];
         if (!outletFloors) return [];
 
-    // Try to find matching floor mapping
-    for (const [floorKey, svgFiles] of Object.entries(outletFloors)) {
-      if (floorKey === floorId || floorKey.includes(floorId)) {
-        console.log('📁 Using local SVGs:', svgFiles);
-        return of(svgFiles);
-      }
-    }
-
-    // If no direct match, try to match by floor number
-    if (floors) {
-      const floor = floors.find(f => f.floor_id === floorId);
-      if (floor) {
-        const floorNumber = this.extractFloorNumber(floor.floor_name);
+        // Try to find matching floor mapping
         for (const [floorKey, svgFiles] of Object.entries(outletFloors)) {
-          if (floorKey.includes(floorNumber.toLowerCase())) {
-            console.log('📁 Using local SVGs by floor number:', svgFiles);
+          if (floorKey === floorId || floorKey.includes(floorId)) {
+            console.log('📁 Using local SVGs:', svgFiles);
             return of(svgFiles);
           }
         }
-      }
-    }
 
-    console.log('❌ No local SVGs found for floor');
-    return of([]);
+        // If no direct match, try to match by floor number
+        if (floors) {
+          const floor = floors.find(f => f.floor_id === floorId);
+          if (floor) {
+            const floorNumber = this.extractFloorNumber(floor.floor_name);
+            for (const [floorKey, svgFiles] of Object.entries(outletFloors)) {
+              if (floorKey.includes(floorNumber.toLowerCase())) {
+                console.log('📁 Using local SVGs by floor number:', svgFiles);
+                return of(svgFiles);
+              }
+            }
+          }
+        }
+
+        console.log('❌ No local SVGs found for floor');
+        return of([]);
+      })
+    );
   }
 
   // Get all SVG files for an outlet
@@ -113,13 +115,15 @@ export class FloorService {
         const outletFloors = this.fallbackSvgMap[officeId];
         if (!outletFloors) return [];
 
-    const allSvgs: string[] = [];
-    Object.values(outletFloors).forEach(svgFiles => {
-      allSvgs.push(...svgFiles);
-    });
-    
-    console.log('📁 Using local SVGs for outlet:', allSvgs);
-    return of(allSvgs);
+        const allSvgs: string[] = [];
+        Object.values(outletFloors).forEach(svgFiles => {
+          allSvgs.push(...svgFiles);
+        });
+        
+        console.log('📁 Using local SVGs for outlet:', allSvgs);
+        return allSvgs;
+      })
+    );
   }
 
   // Helper method to get floor by ID (you'll need to implement this based on your data structure)

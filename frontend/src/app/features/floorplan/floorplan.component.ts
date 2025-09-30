@@ -2247,16 +2247,17 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     toFetch.forEach(url => {
       this.http.get(url, { responseType: 'text' }).subscribe({
         next: (svgText) => {
-          // Trusting here to keep consistent with your existing sanitizer usage.
-          const safe = this.sanitizer.bypassSecurityTrustHtml(svgText);
+          // Process SVG for compact display
+          const processedSvgText = this.processSvgForCompactDisplay(svgText);
+          const safe = this.sanitizer.bypassSecurityTrustHtml(processedSvgText);
           this.svgHtmlMap.set(url, safe);
 
           // Wait for Angular to render, then attach listeners & color
           setTimeout(() => this.attachAndColorAllInline(), 0);
         },
         error: (err) => {
-          console.error('Failed to fetch SVG cccccccccccccc', url, err);
-          this.toastService.error('Failed to load floorplan SVG cccccccccccccc');
+          console.error('Failed to fetch SVG', url, err);
+          this.toastService.error('Failed to load floorplan SVG');
         }
       });
     });
@@ -2265,6 +2266,34 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     if (toFetch.length === 0) {
       setTimeout(() => this.attachAndColorAllInline(), 0);
     }
+  }
+
+  //SVG Size Compact Display
+  /**
+   * Process SVG content to make it more compact and responsive
+   */
+  private processSvgForCompactDisplay(svgText: string): string {
+    // Create a temporary DOM element to parse the SVG
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = svgText;
+    const svgElement = tempDiv.querySelector('svg');
+    
+    if (!svgElement) return svgText;
+
+    // Set responsive attributes for compact display
+    svgElement.setAttribute('width', '100%');
+    svgElement.setAttribute('height', 'auto');
+    svgElement.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    svgElement.setAttribute('style', 'max-width: 100%; height: auto; display: block;');
+    
+    // Ensure viewBox is set for proper scaling
+    if (!svgElement.getAttribute('viewBox')) {
+      const width = svgElement.getAttribute('width') || '1000';
+      const height = svgElement.getAttribute('height') || '1000';
+      svgElement.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    }
+
+    return tempDiv.innerHTML;
   }
 
   private attachAndColorAllInline() {

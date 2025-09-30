@@ -1,3 +1,69 @@
 :host {
   display: block;
 }
+
+// SVG Container Styling for Compact Display
+.svg-host {
+  width: 100%;
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+  
+  // Make SVG responsive and compact
+  svg {
+    width: 100% !important;
+    height: auto !important;
+    max-height: 500px; // Limit maximum height for compactness
+    display: block;
+    
+    // Ensure SVG scales properly
+    object-fit: contain;
+    object-position: center;
+  }
+  
+  // Responsive breakpoints for different screen sizes
+  @media (max-width: 768px) {
+    svg {
+      max-height: 300px;
+    }
+  }
+  
+  @media (min-width: 1200px) {
+    svg {
+      max-height: 600px;
+    }
+  }
+}
+
+// Compact floorplan container
+.floorplan-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  
+  .floorplan-item {
+    position: relative;
+    
+    // Optional: Add a subtle shadow for depth
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+}
+
+// Responsive grid for multiple floorplans
+.floorplan-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  
+  @media (min-width: 768px) {
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  }
+  
+  @media (min-width: 1200px) {
+    grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+  }
+}

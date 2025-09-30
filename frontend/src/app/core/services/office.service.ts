@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, of } from 'rxjs';
-import { tap, map, catchError } from 'rxjs/operators';
+import { tap, map, catchError, switchMap } from 'rxjs/operators';
 import { Office, OfficeResponse } from '../models/office.model';
 import { environment } from '../../environments/environment.prod';
 
@@ -101,60 +101,69 @@ export class OfficeService {
   loadOffices(): Observable<OfficeResponse> {
     this.loadingSubject.next(true);
     
-    // Call backend API to get offices with SVG URLs
-    return this.http.get<any[]>(`${environment.floorplanUrl}`).pipe(
-      map(backendOffices => {
-        // Merge backend data with static office data
-        const officesWithBackendSvgs = this.staticOffices.map(staticOffice => {
-          const backendOffice = backendOffices.find(bo => bo.officeId === staticOffice.id);
-          
-          if (backendOffice) {
-            // Get all SVG URLs for this office from backend
-            const allSvgs: string[] = [];
+    // First get offices from BigQuery
+    return this.http.get<any>(`${environment.bqUrl}/offices`).pipe(
+      switchMap(bqResponse => {
+        // Then get floorplan data for SVG URLs
+        return this.http.get<any[]>(`${environment.floorplanUrl}`).pipe(
+          map(floorplanData => {
+            const bqOffices = bqResponse.data || [];
             
-            // Add office-level SVG if exists
-            if (backendOffice.officeSvg?.signedUrl) {
-              allSvgs.push(backendOffice.officeSvg.signedUrl);
-            }
-            
-            // Add floor-level SVGs
-            if (backendOffice.floors) {
-              backendOffice.floors.forEach((floor: any) => {
-                if (floor.signedUrl) {
-                  allSvgs.push(floor.signedUrl);
+            // Map BigQuery office data to Office interface
+            const officesFromBq = bqOffices.map((office: any) => {
+              const floorplanOffice = floorplanData.find(fo => fo.officeId === office.office_id);
+              
+              // Get SVG URLs from floorplan data
+              const allSvgs: string[] = [];
+              if (floorplanOffice) {
+                // Add office-level SVG if exists
+                if (floorplanOffice.officeSvg?.signedUrl) {
+                  allSvgs.push(floorplanOffice.officeSvg.signedUrl);
                 }
-              });
-            }
-            
-            return {
-              ...staticOffice,
-              svg: allSvgs.length > 0 ? allSvgs : staticOffice.svg
-            };
-          }
-          
-          return staticOffice; // Keep original if no backend data
-        });
+                
+                // Add floor-level SVGs
+                if (floorplanOffice.floors) {
+                  floorplanOffice.floors.forEach((floor: any) => {
+                    if (floor.signedUrl) {
+                      allSvgs.push(floor.signedUrl);
+                    }
+                  });
+                }
+              }
+              // when dynamic data doesn't have SVG URLs
+              // Find matching static office for fallback SVG
+              const staticOffice = this.staticOffices.find(so => so.id === office.office_id);
+              
+              return {
+                id: office.office_id,
+                name: office.office_name,
+                displayName: office.office_name,
+                svg: allSvgs.length > 0 ? allSvgs : (staticOffice?.svg || [])
+              } as Office;
+            });
 
-        return {
-          data: officesWithBackendSvgs,
-          success: true,
-          message: 'Offices loaded successfully from backend'
-        };
+            return {
+              data: officesFromBq,
+              success: true,
+              message: 'Offices loaded successfully from BigQuery'
+            };
+          })
+        );
       }),
       tap((response: OfficeResponse) => {
-        console.log('Loaded offices from backend:', response);
+        console.log('Loaded offices from BigQuery:', response);
         if (response.success && response.data) {
           this.officesSubject.next(response.data);
         }
         this.loadingSubject.next(false);
       }),
       catchError(error => {
-        console.error('Error loading offices from backend, falling back to static:', error);
-        // Fallback to static data if backend fails
+        console.error('Error loading offices from BigQuery, falling back to static:', error);
+        // Fallback to static data if BigQuery fails
         const fallbackResponse = {
           data: this.staticOffices,
           success: true,
-          message: 'Offices loaded with static data (Backend unavailable)'
+          message: 'Offices loaded with static data (BigQuery unavailable)'
         };
         this.officesSubject.next(fallbackResponse.data);
         this.loadingSubject.next(false);

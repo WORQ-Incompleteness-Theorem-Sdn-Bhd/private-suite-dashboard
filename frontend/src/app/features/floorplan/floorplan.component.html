@@ -76,18 +76,16 @@
         </div>
       </div>
 
-      <!-- Floor selector: visible only when the outlet has more than 1 floor SVG -->
-      <div *ngIf="floors.length > 1" class="pt-2 border-t">
-        <!-- why this check svg instead of floor?????????????????? -->
-        <label class="block font-semibold text-gray-700">Floor</label>
+      <!-- Floor selector: optional filter to view specific floor -->
+      <div *ngIf="filters.outlet !== 'Select Outlet' && floorOptions.length > 0" class="pt-2 border-t">
+        <label class="block font-semibold text-gray-700">Floor (Optional)</label>
         <select class="w-full p-2 border outline-none rounded-xl focus:ring-2 focus:ring-orange-500"
           [value]="selectedFloorSvg" (change)="onFloorChange($event)">
           <option value="all">All floors</option>
           <option *ngFor="let floor of floorOptions; trackBy: trackBySvgUrl" [value]="floor">
-            {{ getOfficeIdFromOutletName(filters.outlet) }} | {{ getFloorLabel(floor) }}
+          {{ getFloorLabel(floor) }}
           </option>
         </select>
-      </div>
     </div>
 
     <!-- Metrics -->
@@ -164,6 +162,14 @@
 
       <h2 class="mb-3 text-lg font-semibold text-orange-700">Export Reports</h2>
 
+      <!-- Debug Information -->
+      <div class="mb-3 p-2 bg-gray-100 rounded text-xs text-gray-600">
+        <div><strong>Debug Info:</strong></div>
+        <div>Selected Outlet: {{ filters.outlet }}</div>
+        <div>SVG Count: {{ selectedOutletSvgs.length || 0 }}</div>
+        <div>Is Exporting: {{ isExportingFloorplan }}</div>
+        <div>Button Disabled: {{ !selectedOutletSvgs || selectedOutletSvgs.length === 0 || isExportingFloorplan }}</div>
+      </div>
 
       <div class="space-y-2">
         <button (click)="exportFloorplanAsPdf()"
@@ -199,6 +205,12 @@
         </button>
       </div>
     </div>
+    <!-- Office and Floor Label -->
+    <div *ngIf="filters.outlet !== 'Select Outlet'" class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+      <div class="flex items-center space-x-2 text-sm">
+        <span class="font-medium text-blue-700">🏢 {{ getFloorLabel(selectedFloorSvg) }}</span>
+      </div>
+    </div>
 
     <!-- Pax Color Legend - Right Panel (shown when filtering by Available, regardless of date) -->
     <div *ngIf="filters.outlet !== 'Select Outlet' && filters.status === 'Available' && filteredRooms.length > 0" class="mb-4 p-3 border bg-blue-50 rounded-xl">
@@ -216,11 +228,8 @@
       <div (click)="showDownloadMenu = false"></div>
       
       <ng-container *ngIf="filters.outlet !== 'Select Outlet' && !isLoadingResources; else askToPick">
-        <div>
-          <div *ngFor="let svgUrl of displayedSvgs; trackBy: trackBySvgUrl" class="mb-4">
-            <div class="mb-2 p-2 bg-orange-100 border border-orange-300 rounded-lg">
-              <span class="text-sm font-semibold text-orange-800">🏢 {{ getFloorLabel(svgUrl) }}</span>
-            </div>
+        <div class="floorplan-container">
+          <div *ngFor="let svgUrl of displayedSvgs; trackBy: trackBySvgUrl" class="floorplan-item">
 
             <!-- Inline the SVG text -->
             <div class="svg-host" #svgHost [innerHTML]="svgHtmlMap.get(svgUrl)"></div>

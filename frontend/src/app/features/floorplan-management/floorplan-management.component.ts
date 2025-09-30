@@ -13,7 +13,6 @@ import {
 } from '@angular/forms';
 import { HttpClientModule } from '@angular/common/http'; 
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
-import { forkJoin } from 'rxjs';
 import { OfficeService } from '../../core/services/office.service';
 import { FloorService } from '../../core/services/floor.service';
 import { ToastComponent } from '../../shared/components/toast.component';

@@ -437,14 +437,43 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         return of([]);
       })
     ).subscribe(svgs => {
-      this.selectedOutletSvgs = svgs;
-
-      console.log("svgs", svgs)
-
-      // If no floor options from backend, fall back to SVG-based approach
-      if (this.floorOptions.length === 0) {
-        this.floorOptions = this.selectedOutletSvgs.slice();
+      // Case 1: Got outlet-level SVGs → show all by default
+      if (svgs && svgs.length > 0) {
+        this.selectedOutletSvgs = svgs;
+        console.log("svgs", this.selectedOutletSvgs)
+        if (this.floorOptions.length === 0) {
+          this.floorOptions = this.selectedOutletSvgs.slice();
+        }
+        this.updateDisplayedSvgs();
+        return;
       }
+
+      // Case 2: No outlet-level SVGs → aggregate all floor SVGs from cloud for this outlet
+      const floorIds = (this.floorOptions || [])
+        .map(opt => (opt && opt.includes('|')) ? opt.split('|')[1] : '')
+        .filter(id => !!id);
+
+      if (floorIds.length > 0) {
+        const calls = floorIds.map(fid => this.floorService.getFloorplanUrls(outletId, fid).pipe(catchError(() => of<string[]>([]))));
+        forkJoin(calls).subscribe((lists) => {
+          const merged = Array.from(new Set((lists || []).flat()));
+          this.selectedOutletSvgs = merged;
+          console.log('aggregated floor svgs', merged);
+          this.updateDisplayedSvgs();
+        });
+        return;
+      }
+
+      // Case 3: As a last resort, use only cloud-office SVGs (ignore assets)
+      const selectedOffice = this.officeService.getOffices().find(office => office.id === outletId);
+      const officeSvgs = selectedOffice?.svg;
+      const normalizeArray = (value: string | string[] | undefined): string[] => Array.isArray(value) ? value : (value ? [value] : []);
+      const isCloudUrl = (u: string) => typeof u === 'string' && !u.startsWith('assets/') && (u.startsWith('https://') || u.startsWith('http://'));
+      this.selectedOutletSvgs = normalizeArray(officeSvgs).filter(isCloudUrl);
+      console.log("svgs (office cloud)", this.selectedOutletSvgs)
+
+      // Use SVG-based selection list
+      this.floorOptions = this.selectedOutletSvgs.slice();
 
       this.updateDisplayedSvgs();
     });
@@ -627,38 +656,35 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     this.filtersConfig.find((f) => f.key === 'pax')!.options = this.paxOptions;
   }
 
-  updateFilter(type: string, event: Event) {
+  updateFilter(type: string, value: string) {
     const key = type as keyof typeof this.filters;
-    const select = event.target as HTMLSelectElement | null;
-    if (select) {
-      this.filters[key] = select.value;
-      if (key === 'outlet') {
-        // When outlet changes, load resources for that outlet
-        this.onOutletChange(select.value);
-        this.updateSelectedOutletSvgs();
-        this.updateDisplayedSvgs();
-      } else {
-        // For other filters, apply client-side filtering
-        this.buildOptions();
-        this.applyFilters();
-        // Update SVG colors after filter changes
-        setTimeout(() => this.updateSvgColors(), 50);
-      }
+    this.filters[key] = value;
+    if (key === 'outlet') {
+      // When outlet changes, load resources for that outlet
+      this.onOutletChange(value);
+      this.updateSelectedOutletSvgs();
+      this.updateDisplayedSvgs();
+    } else {
+      // For other filters, apply client-side filtering
+      this.buildOptions();
+      this.applyFilters();
+      // Update SVG colors after filter changes
+      setTimeout(() => this.updateSvgColors(), 50);
+    }
 
-      if (key === 'status' || key === 'pax' || key === 'outlet') {
-        // Only auto-zoom if filtering yields exactly one room
-        if (this.filteredRooms.length === 1) {
-          const onlyRoom = this.filteredRooms[0];
-          console.log('[Floorplan] zoom due to filters yielding one room', {
-            id: onlyRoom.id,
-            name: onlyRoom.name,
-            key,
-            value: this.filters[key],
-          });
-          setTimeout(() => this.openPopupFromRoom(onlyRoom), 60);
-        } else {
-          this.closePopup();
-        }
+    if (key === 'status' || key === 'pax' || key === 'outlet') {
+      // Only auto-zoom if filtering yields exactly one room
+      if (this.filteredRooms.length === 1) {
+        const onlyRoom = this.filteredRooms[0];
+        console.log('[Floorplan] zoom due to filters yielding one room', {
+          id: onlyRoom.id,
+          name: onlyRoom.name,
+          key,
+          value: this.filters[key],
+        });
+        setTimeout(() => this.openPopupFromRoom(onlyRoom), 60);
+      } else {
+        this.closePopup();
       }
     }
   }
@@ -1189,6 +1215,63 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
 
   private openPopupFromRoom(room: Room, clickEvent?: MouseEvent) {
     let positioned = false;
+    // Try inline SVG hosts first
+    if (this.svgHosts && this.svgHosts.length > 0) {
+      this.svgHosts.forEach(hostRef => {
+        if (positioned) return;
+        const hostEl = hostRef.nativeElement as HTMLDivElement;
+        const rootSvg = hostEl.querySelector('svg') as SVGSVGElement | null;
+        if (!rootSvg) return;
+
+        const viewBoxAttr = rootSvg.getAttribute('viewBox');
+        if (!viewBoxAttr) return;
+        const [vbX, vbY, vbW, vbH] = viewBoxAttr.split(/\s+/).map(Number);
+        if ([vbX, vbY, vbW, vbH].some(n => Number.isNaN(n))) return;
+
+        const el = this.findRoomElementInline(rootSvg, room) as any;
+        if (!el || !el.getBBox) return;
+
+        const bbox = el.getBBox();
+        const hostRect = hostEl.getBoundingClientRect();
+        const scaleX = hostRect.width / vbW;
+        const scaleY = hostRect.height / vbH;
+
+        const roomRightX = bbox.x + bbox.width;
+        const roomCenterY = bbox.y + bbox.height / 2;
+        let screenX = hostRect.left + (roomRightX - vbX) * scaleX + 10;
+        let screenY = hostRect.top + (roomCenterY - vbY) * scaleY;
+
+        const containerEl = this.panelContainer?.nativeElement;
+        const containerRect = containerEl?.getBoundingClientRect();
+        let popupXInline = screenX;
+        let popupYInline = screenY - 10;
+        if (containerRect && containerEl) {
+          popupXInline = screenX - containerRect.left + (containerEl.scrollLeft || 0);
+          popupYInline = screenY - containerRect.top + (containerEl.scrollTop || 0) - 10;
+        }
+
+        // Clamp
+        const popupWidthInline = 192;
+        const popupHeightInline = 120;
+        if (containerRect) {
+          const containerWidth = containerRect.width;
+          const containerHeight = containerRect.height;
+          if (popupXInline + popupWidthInline > containerWidth) popupXInline = containerWidth - popupWidthInline - 10;
+          if (popupXInline < 0) popupXInline = 10;
+          if (popupYInline < 0) popupYInline = 10;
+          if (popupYInline + popupHeightInline > containerHeight) popupYInline = containerHeight - popupHeightInline - 10;
+        }
+
+        this.selectedRoom = room;
+        this.showPopup = true;
+        this.popupX = Math.max(0, popupXInline);
+        this.popupY = Math.max(0, popupYInline);
+        positioned = true;
+      });
+    }
+
+    if (positioned) return;
+
     if (this.svgObjects) {
       this.svgObjects.forEach((ref) => {
         if (positioned) return;
@@ -1284,6 +1367,61 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         this.popupX = Math.max(0, popupX);
         this.popupY = Math.max(0, popupY);
 
+        positioned = true;
+      });
+    }
+    // Inline <svg> positioning (when SVGs are inlined into the DOM)
+    if (!positioned && this.svgHosts) {
+      this.svgHosts.forEach((hostRef) => {
+        if (positioned) return;
+        const host = hostRef.nativeElement as HTMLDivElement;
+        const rootSvg = host.querySelector('svg') as SVGSVGElement | null;
+        if (!rootSvg) return;
+
+        const vbAttr = rootSvg.getAttribute('viewBox');
+        if (!vbAttr) return; // require viewBox for proper mapping
+        const [vbX, vbY, vbW, vbH] = vbAttr.split(/\s+/).map(Number);
+        if ([vbX, vbY, vbW, vbH].some((n) => Number.isNaN(n))) return;
+
+        const el = this.findRoomElementInline(rootSvg, room) as any;
+        if (!el || !el.getBBox) return;
+
+        const bbox = el.getBBox();
+        const svgRect = rootSvg.getBoundingClientRect();
+
+        const scaleX = svgRect.width / vbW;
+        const scaleY = svgRect.height / vbH;
+
+        // Compute screen coordinates from SVG bbox center
+        const roomCenterX = bbox.x + bbox.width / 2;
+        const roomCenterY = bbox.y + bbox.height / 2;
+
+        let popupX = svgRect.left + (roomCenterX - vbX) * scaleX + (bbox.width * scaleX) / 2 + 10;
+        let popupY = svgRect.top + (roomCenterY - vbY) * scaleY - 10;
+
+        // Convert to container-relative coordinates
+        const containerRect = this.panelContainer?.nativeElement?.getBoundingClientRect();
+        if (containerRect) {
+          popupX -= containerRect.left;
+          popupY -= containerRect.top;
+        }
+
+        // Clamp within container bounds
+        const popupWidth = 192; // w-48
+        const popupHeight = 120; // approx
+        if (containerRect) {
+          const containerWidth = containerRect.width;
+          const containerHeight = containerRect.height;
+          if (popupX + popupWidth > containerWidth) popupX = containerWidth - popupWidth - 10;
+          if (popupX < 0) popupX = 10;
+          if (popupY < 0) popupY = 10;
+          if (popupY + popupHeight > containerHeight) popupY = containerHeight - popupHeight - 10;
+        }
+
+        this.selectedRoom = room;
+        this.showPopup = true;
+        this.popupX = Math.max(0, popupX);
+        this.popupY = Math.max(0, popupY);
         positioned = true;
       });
     }
@@ -2389,7 +2527,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       const el = this.findRoomElementInline(rootSvg, room);
       if (!el) return;
 
-      // Skip elements inside <defs>/<clipPath>/<mask> (they won’t render directly)
+      // Skip elements inside <defs>/<clipPath>/<mask> (they won't render directly)
       const containerTag = (el.closest('defs,clipPath,mask') as Element | null)?.tagName?.toLowerCase();
       if (containerTag) return;
 

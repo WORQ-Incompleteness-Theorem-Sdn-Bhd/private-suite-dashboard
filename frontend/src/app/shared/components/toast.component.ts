@@ -12,11 +12,12 @@ import { Observable, Subscription } from 'rxjs';
       <div
         *ngFor="let toast of toasts$ | async"
         class="flex items-center p-4 rounded-lg shadow-lg max-w-sm transition-all duration-300 ease-in-out"
-        [class]="getToastClasses(toast.type)"
+        [class]="getToastClasses(toast.type, toast.message)"
+        [class.toast-centered]="isWelcomeMessage(toast.message)"
         (click)="removeToast(toast.id)"
       >
         <div class="flex items-center">
-          <span class="mr-2 text-lg">{{ getToastIcon(toast.type) }}</span>
+          <span class="mr-2 text-lg">{{ getToastIcon(toast.type, toast.message) }}</span>
           <span class="text-sm font-medium">{{ toast.message }}</span>
         </div>
         <button
@@ -37,6 +38,23 @@ import { Observable, Subscription } from 'rxjs';
       transform: translateX(0);
       opacity: 1;
     }
+    .toast-centered {
+      position: fixed !important;
+      top: 10% !important;
+      left: 50% !important;
+      transform: translate(-50%, -50%) !important;
+      right: auto !important;
+      animation: welcomePulse 2s ease-in-out infinite;
+    }
+    
+    @keyframes welcomePulse {
+      0%, 100% {
+        transform: translate(-50%, -50%) scale(1);
+      }
+      50% {
+        transform: translate(-50%, -50%) scale(1.05);
+      }
+    }
   `]
 })
 export class ToastComponent implements OnInit, OnDestroy {
@@ -53,8 +71,15 @@ export class ToastComponent implements OnInit, OnDestroy {
     this.subscription.unsubscribe();
   }
 
-  getToastClasses(type: ToastMessage['type']): string {
+  getToastClasses(type: ToastMessage['type'], message: string): string {
     const baseClasses = 'cursor-pointer';
+    
+    // Special styling for welcome messages
+    if (this.isWelcomeMessage(message)) {
+      return `${baseClasses} bg-white text-black border-2 border-orange-500 shadow-2xl text-center font-bold text-lg px-8 py-6 rounded-xl`;
+
+    }
+    
     switch (type) {
       case 'success':
         return `${baseClasses} bg-green-100 text-green-800 border border-green-200`;
@@ -68,7 +93,12 @@ export class ToastComponent implements OnInit, OnDestroy {
     }
   }
 
-  getToastIcon(type: ToastMessage['type']): string {
+  getToastIcon(type: ToastMessage['type'], message: string): string {
+    // Special icon for welcome messages
+    if (this.isWelcomeMessage(message)) {
+      return '😎';
+    }
+    
     switch (type) {
       case 'success':
         return '✅';
@@ -84,5 +114,9 @@ export class ToastComponent implements OnInit, OnDestroy {
 
   removeToast(id: string): void {
     this.toastService.remove(id);
+  }
+
+  isWelcomeMessage(message: string): boolean {
+    return message.toLowerCase().includes('welcome') && message.toLowerCase().includes('worq floorplan dashboard');
   }
 }

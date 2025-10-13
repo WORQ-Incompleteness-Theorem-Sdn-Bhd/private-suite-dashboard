@@ -9,15 +9,22 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
   const userAccessToken = sessionStorage.getItem('userAccessToken');
 
+  console.log('🔐 Auth Interceptor - URL:', req.url);
+  console.log('🔐 Auth Interceptor - Token exists:', !!userAccessToken);
+  console.log('🔐 Auth Interceptor - Token preview:', userAccessToken ? `${userAccessToken.substring(0, 20)}...` : 'No token');
+
   if (
     allowedDomains.some((domain) => req.url.startsWith(domain)) &&
     userAccessToken
   ) {
+    console.log('🔐 Auth Interceptor - Adding Authorization header');
     req = req.clone({
       setHeaders: {
         Authorization: `Bearer ${userAccessToken}`,
       },
     });
+  } else {
+    console.log('🔐 Auth Interceptor - No token or URL not in allowed domains');
   }
 
   return next(req).pipe(

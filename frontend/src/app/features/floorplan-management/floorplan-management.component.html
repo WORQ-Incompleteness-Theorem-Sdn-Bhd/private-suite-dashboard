@@ -34,14 +34,26 @@
       <!-- Overview -->
       <div class="p-4 bg-gradient-to-r from-orange-50 to-orange-100 rounded-xl border border-orange-200">
         <h3 class="mb-3 text-lg font-semibold text-orange-800">Overview</h3>
-        <div class="space-y-2">
+        
+        <!-- Loading State -->
+        <div *ngIf="overviewStats.loading" class="flex items-center justify-center py-4">
+          <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-600"></div>
+          <span class="ml-2 text-sm text-gray-600">Loading statistics...</span>
+        </div>
+        
+        <!-- Statistics -->
+        <div *ngIf="!overviewStats.loading" class="space-y-3">
           <div class="flex items-center justify-between">
             <span class="text-sm text-gray-600">Total Outlets</span>
-            <span class="text-lg font-bold text-orange-600">{{ locations.length }}</span>
+            <span class="text-lg font-bold text-gray-800">{{ overviewStats.totalOutlets }}</span>
           </div>
           <div class="flex items-center justify-between">
-            <span class="text-sm text-gray-600">Total Floors</span>
-            <span class="text-lg font-bold text-blue-600">{{ floors.length }}</span>
+            <span class="text-sm text-gray-600">Total Outlets Uploaded</span>
+            <span class="text-lg font-bold text-orange-600">{{ overviewStats.outletsWithFloorplans }}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-sm text-gray-600">Total Floorplans Uploaded</span>
+            <span class="text-lg font-bold text-blue-600">{{ overviewStats.totalFloorplans }}</span>
           </div>
         </div>
       </div>
@@ -72,7 +84,7 @@
           <label class="block text-sm font-medium text-gray-700 mb-1">Outlet</label>
           <select formControlName="officeId" class="w-full p-2 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500">
             <option value="" disabled selected>Select Outlet</option>
-            <option *ngFor="let loc of locations" [value]="loc.value">{{ loc.label }}</option>
+            <option *ngFor="let outlet of locations" [value]="outlet.value">{{ outlet.label }}</option>
           </select>
           <small *ngIf="form.controls['officeId'].touched && form.controls['officeId'].invalid" class="text-red-600 text-xs">
             Outlet is required
@@ -90,9 +102,9 @@
             <select formControlName="floorId" 
                     class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-colors">
               <option value="" disabled selected>
-                {{ floors.length === 0 ? 'Loading floors...' : 'Select Floor (if multiple floors)' }}
+                {{ filteredFloors.length === 0 ? 'Select outlet first to see floors' : 'Select Floor (if multiple floors)' }}
               </option>
-              <option *ngFor="let fl of floors" [value]="fl.value">
+              <option *ngFor="let fl of filteredFloors" [value]="fl.value">
                 {{ fl.label }}
               </option>
             </select>
@@ -194,10 +206,10 @@
         <select 
           class="p-2 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500" 
           [(ngModel)]="selectedOffice" 
-          (ngModelChange)="onSelected()">
+          (ngModelChange)="onOutletSelected()">
           <option value="">-- Select Outlet --</option>
-          <option *ngFor="let loc of locations" [value]="loc.value">
-            {{ loc.label }}
+          <option *ngFor="let outlet of locations" [value]="outlet.value">
+            {{ outlet.label }}
           </option>
         </select>
       </div>
@@ -207,9 +219,10 @@
         <select 
           class="p-2 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500" 
           [(ngModel)]="selectedFloor" 
-          (ngModelChange)="onSelected()">
+          (ngModelChange)="onSelected()"
+          [disabled]="!selectedOffice">
           <option value="">-- Select Floor --</option>
-          <option *ngFor="let fl of floors" [value]="fl.value">
+          <option *ngFor="let fl of filteredFloors" [value]="fl.value">
             {{ fl.label }}
           </option>
         </select>

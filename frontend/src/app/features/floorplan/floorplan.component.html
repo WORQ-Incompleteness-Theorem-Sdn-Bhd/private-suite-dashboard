@@ -153,14 +153,14 @@
 
       <h2 class="mb-3 text-lg font-semibold text-orange-700">Export Reports</h2>
 
-      <!-- Debug Information -->
+      <!-- Debug Information 
       <div class="mb-3 p-2 bg-gray-100 rounded text-xs text-gray-600">
         <div><strong>Debug Info:</strong></div>
         <div>Selected Outlet: {{ filters.outlet }}</div>
         <div>SVG Count: {{ selectedOutletSvgs.length || 0 }}</div>
         <div>Is Exporting: {{ isExportingFloorplan }}</div>
         <div>Button Disabled: {{ !selectedOutletSvgs || selectedOutletSvgs.length === 0 || isExportingFloorplan }}</div>
-      </div>
+      </div> -->
 
       <div class="space-y-2">
         <button (click)="exportFloorplanAsPdf()"
@@ -214,40 +214,97 @@
       </div>
     </div>
 
-    <!-- Scoped loader over panel content -->
-    <div *ngIf="isLoadingResources" class="absolute inset-0 z-20 flex items-center justify-center bg-white bg-opacity-80 rounded-2xl">
-      <div class="text-center">
-        <div class="animate-spin rounded-full h-12 w-12 border-b-4 border-orange-600 mx-auto mb-3"></div>
-        <p class="text-sm font-medium text-gray-700">Loading floorplan...</p>
-      </div>
-    </div>
-
     <div class="mt-4">
       <div (click)="showDownloadMenu = false"></div>
       
       <ng-container *ngIf="filters.outlet !== 'Select Outlet'; else askToPick">
-        <div class="floorplan-container">
-          <div *ngFor="let svgUrl of displayedSvgs; trackBy: trackBySvgUrl" class="floorplan-item">
+        <!-- Fixed height container for floorplan -->
+        <div class="floorplan-container relative h-[600px] bg-gray-50 rounded-xl overflow-hidden" (click)="onFloorplanContainerClick($event)">
+          <!-- Loading overlay -->
+          <div *ngIf="isLoading" class="absolute inset-0 z-30 grid place-items-center bg-white/90 backdrop-blur-sm">
+            <div class="text-center">
+              <div class="animate-spin rounded-full h-16 w-16 border-b-4 border-orange-600 mx-auto mb-4"></div>
+              <p class="text-lg font-semibold text-gray-800 mb-2">Loading Floorplan</p>
+              <p class="text-sm text-gray-600">Please wait while we prepare your floorplan...</p>
+              <div class="mt-4 text-xs text-gray-500">
+                <div *ngIf="dataLoading">📊 Loading data...</div>
+                <div *ngIf="svgLoading">🎨 Loading floorplan...</div>
+              </div>
+            </div>
+          </div>
+          <!-- Not Functioning 
+          <!-- Floorplan content with loading state styling 
+          <div class="h-full flex items-center justify-center" 
+               [class.pointer-events-none]="isLoading"
+               [class.opacity-50]="isLoading"> -->
+               
+               <!-- No floorplan message - General case 
+               <div *ngIf="shouldShowNoFloorplanMessage" class="text-center text-gray-500">
+                 <p class="text-lg">No floorplan available</p>
+                 <p class="text-sm">Please select a different floor or outlet</p>
+                </div>
+              </div>
+            -->
+            <!-- Single floorplan display -->
+            <div *ngIf="currentFloorplan" class="w-full h-full flex items-center justify-center transition-opacity duration-300">
+              <div class="svg-host max-w-full max-h-full" #svgHost [innerHTML]="svgHtmlMap.get(currentFloorplan)" (click)="onSvgHostClick($event)"></div>
+            </div>
+            
+          <!-- Previous arrow -->
+          <button 
+            *ngIf="totalFloorplans > 1"
+            (click)="previousFloorplan()" 
+            [disabled]="!hasPreviousFloorplan"
+            class="nav-arrow absolute left-2 top-1/2 -translate-y-1/2 z-30 p-3 bg-white/95 hover:bg-white border border-gray-200 rounded-full shadow-xl group">
+            <svg class="w-5 h-5 text-gray-600 group-hover:text-orange-600 transition-colors duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"></path>
+            </svg>
+          </button>
 
-            <!-- Inline the SVG text -->
-            <div class="svg-host" #svgHost [innerHTML]="svgHtmlMap.get(svgUrl)"></div>
+          <!-- Next arrow -->
+          <button 
+            *ngIf="totalFloorplans > 1"
+            (click)="nextFloorplan()" 
+            [disabled]="!hasNextFloorplan"
+            class="nav-arrow absolute right-2 top-1/2 -translate-y-1/2 z-30 p-3 bg-white/95 hover:bg-white border border-gray-200 rounded-full shadow-xl group">
+            <svg class="w-5 h-5 text-gray-600 group-hover:text-orange-600 transition-colors duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"></path>
+            </svg>
+          </button>
+
+          <!-- Floorplan pagination indicator -->
+          <div *ngIf="totalFloorplans > 1" class="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-20">
+            <div class="pagination-indicator flex items-center space-x-3 bg-white/95 px-5 py-3 rounded-full shadow-xl border border-gray-200">
+              <span class="text-sm font-medium text-gray-700">
+                {{ currentFloorplanIndex + 1 }} of {{ totalFloorplans }}
+              </span>
+              <!-- Dots indicator -->
+              <div class="flex space-x-2">
+                <button 
+                  *ngFor="let floorplan of displayedSvgs; let i = index"
+                  (click)="goToFloorplan(i)"
+                  [class]="'pagination-dot w-3 h-3 rounded-full ' + (i === currentFloorplanIndex ? 'active bg-orange-600 shadow-sm' : 'bg-gray-300 hover:bg-gray-400')"
+                  class="transition-all duration-200 transform">
+                </button>
+              </div>
+            </div>
           </div>
 
-          <!-- <div *ngFor="let svg of displayedSvgs; trackBy: trackBySvgUrl" class="mb-4"> 
-            <div class="mb-2 p-2 bg-orange-100 border border-orange-300 rounded-lg">
-              <span class="text-sm font-semibold text-orange-800">
-               🏢 {{ filters.outlet }} | {{ getFloorLabel(svg) }}
-              </span>
-            </div> 
-            <div #svgContainer class="inline-svg-wrapper" [innerHTML]="inlineSafeSvgs[i]"
-              style="max-width:100%; overflow:auto"></div>
-          </div> -->
+          <!-- Error banner -->
+          <div *ngIf="svgFailed && !isLoading" class="absolute bottom-0 left-0 right-0 bg-red-100 border-t border-red-200 p-2">
+            <div class="flex items-center justify-center text-sm text-red-700">
+              <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+              </svg>
+              Failed to load floorplan. Please try again.
+            </div>
+          </div>
         </div>
       </ng-container>
 
       <ng-template #askToPick>
         <div class="p-4 text-sm text-gray-600 bg-gray-50 rounded-xl">
-          <div *ngIf="!isLoadingOffices && !isLoadingResources">
+          <div *ngIf="!isLoadingOffices">
             Select an outlet to view its floorplan.
           </div>
         </div>
@@ -266,16 +323,18 @@
         {{ selectedRoom.name }}
       </h3>
       <div class="space-y-0.5">
-        <p class="text-xs"><strong>Status Today:</strong> <!-- try cari lain -->
-          <span [class]="selectedRoom.status === 'Available' ? 'text-green-600' : 'text-red-600'">
-            {{ selectedRoom.status }}
+        <!-- Show Status Today only when no date is selected -->
+        <p *ngIf="!selectedStartDate" class="text-xs"><strong>Status Today:</strong>
+          <span [class]="getStatusDisplayText(selectedRoom, false) === 'Available' ? 'text-green-600' : 'text-red-600'">
+            {{ getStatusDisplayText(selectedRoom, false) }}
           </span>
         </p>
-        <!-- availability check -->
-        <div *ngIf="selectedStartDate" class="text-xs mt-1">
+        
+        <!-- Show Status on Selected Date only when a date is selected -->
+        <div *ngIf="selectedStartDate" class="text-xs">
           <strong>Status on selected {{ selectedEndDate && selectedEndDate !== selectedStartDate ? 'date range' : 'date' }}:</strong>
-          <span [class]="(availabilityByRoomId.get(selectedRoom.id) === 'free') ? 'text-green-600' : 'text-red-600'">
-            {{ availabilityByRoomId.get(selectedRoom.id) === 'free' ? 'Available' : 'Occupied' }}
+          <span [class]="getStatusDisplayText(selectedRoom, true) === 'Available' ? 'text-green-600' : 'text-red-600'">
+            {{ getStatusDisplayText(selectedRoom, true) }}
           </span>
           <div *ngIf="selectedEndDate && selectedEndDate !== selectedStartDate" class="text-xs text-gray-500 mt-1">
             {{ selectedStartDate }} to {{ selectedEndDate }}

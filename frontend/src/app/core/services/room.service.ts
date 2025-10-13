@@ -110,7 +110,8 @@ export class RoomService {
             deposit: item.deposit,
             video: item.youtube_link || undefined,
             videoEmbed: this.toYoutubeEmbed(item.youtube_link) || undefined,
-            floor_id: item.floor_id
+            floor_id: item.floor_id,
+            originalStatus: item.status // Store original status for date features
           } as Room;
         });
         

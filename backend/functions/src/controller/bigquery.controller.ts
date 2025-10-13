@@ -171,7 +171,7 @@ export async function getFloors(req: Request, res: Response): Promise<void> {
     const rows = await fetchFromTable({
       limit,
       offset,
-      allowedSelect: ["extraction_date", "floor_id", "floor_no", "floor_name"],
+      allowedSelect: ["extraction_date", "floor_id", "floor_no", "floor_name", "location_id"],
       allowedFilter: ["extraction_date"],
       filters: {
         extraction_date: today,

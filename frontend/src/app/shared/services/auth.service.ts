@@ -86,7 +86,7 @@ export class AuthService {
     }
   }
 
-  private async handleInternalUser(user: object, uid: string) {
+  private async handleInternalUser(user: any, uid: string) {
     try {
       const tokenResponse = await firstValueFrom(this.getUserToken(uid));
 
@@ -108,7 +108,8 @@ export class AuthService {
 
       // sessionStorage.setItem('user', JSON.stringify(userDetail));
 
-      this.toastService.success('Welcome to WORQ Floorplan Dashboard!');
+      const userName = user.displayName || user.email?.split('@')[0] || 'User';
+      this.toastService.success(`Welcome ${userName} to WORQ Floorplan Dashboard!`, 1000);
       await this.router.navigate(['/floorplan']);
     } catch (error: any) {
       console.error('Error in handleInternalUser:', error);

@@ -18,7 +18,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { Observable, of, forkJoin } from 'rxjs';
-import { catchError, finalize } from 'rxjs/operators';
+import { catchError, finalize, map } from 'rxjs/operators';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { ToastComponent } from '../../shared/components/toast.component';
@@ -52,11 +52,59 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   floorOptions: string[] = [];
   floors: Floor[] = [];
   floorIdToFloorMap: Map<string, Floor> = new Map();
+  
+  // Pagination for floorplans
+  currentFloorplanIndex = 0;
+  get totalFloorplans(): number {
+    return this.displayedSvgs.length;
+  }
+  get hasNextFloorplan(): boolean {
+    const result = this.currentFloorplanIndex < this.totalFloorplans - 1;
+    return result;
+  }
+  get hasPreviousFloorplan(): boolean {
+    const result = this.currentFloorplanIndex > 0;
+    return result;
+  }
+  get currentFloorplan(): string | null {
+    if (!this.displayedSvgs || this.displayedSvgs.length === 0) {
+      console.log('currentFloorplan: No displayedSvgs available', { displayedSvgs: this.displayedSvgs });
+      return null;
+    }
+    const current = this.displayedSvgs[this.currentFloorplanIndex] || null;
+    console.log('currentFloorplan:', { 
+      displayedSvgs: this.displayedSvgs, 
+      currentFloorplanIndex: this.currentFloorplanIndex, 
+      current 
+    });
+    return current;
+  }
 
   // Loading states
   isLoadingOffices = false;
-  isLoadingResources = false;
-  isLoading = false;
+  isLoadingSvgs = false;
+  
+  // Independent loading flags
+  dataLoading = false;
+  svgLoading = false;
+  svgFailed = false;
+  noSvgsFromFirebase = false;
+  floorplansLoaded = false;
+  
+  // Computed loading state
+  get isLoading(): boolean {
+    return this.dataLoading || this.svgLoading;
+  }
+
+  // Computed property to determine when to show no floorplan message
+  get shouldShowNoFloorplanMessage(): boolean {
+    return !this.isLoading && this.floorplansLoaded && this.totalFloorplans === 0 && !this.noSvgsFromFirebase;
+  }
+
+  // Computed property to determine when to show Firebase no SVG message
+  get shouldShowFirebaseNoSvgMessage(): boolean {
+    return !this.isLoading && this.floorplansLoaded && this.noSvgsFromFirebase;
+  }
 
   // Pax-based color palette //legend
   paxPalette = ['rgb(61, 168, 218)', 'rgb(20, 50, 218)', 'rgb(215, 66, 218)', 'rgb(173, 4, 63)', 'rgb(240, 70, 40)', 'rgb(255, 166, 0)'] as const;
@@ -125,12 +173,15 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   pdfExportMessage = '';
   showPdfMessage = false;
 
-  // PDF quality settings - using medium quality only
+  // PDF quality settings - compact size for better fit
   private readonly pdfQuality = {
-    scale: 2,
-    quality: 0.92,
-    dimensions: { width: 2300, height: 1600 }
+    scale: 1.5, // Reduced from 2 for more compact size
+    quality: 0.85, // Slightly lower quality for smaller file size
+    dimensions: { width: 1800, height: 1200 } // Smaller dimensions for compact layout
   };
+
+  // Compact mode for PDF export
+  private compactMode = true;
 
   Occupied = 0;
   Available = 0;
@@ -148,47 +199,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   private safeUrlCache = new Map<string, SafeResourceUrl>();
   private roomIdIndex: Map<string, Room> = new Map();
   private objectToOriginalViewBox = new WeakMap<HTMLObjectElement, string>();
-  // Friendly labels for specific outlets/files
-  private floorLabelOverrides: Record<string, Record<string, string>> = {
-    TTDI: {
-      'TTDI-Level1.svg': 'Floor 1',
-      'TTDI-Level3A.svg': 'Floor 3A',
-      'Sibelco Office - L1.svg': 'Sibelco Office',
-    },
-    KLS: {
-      'KLS- L20.svg': 'Floor 20',
-      'KLS-ByteDance.svg': 'Floor 21 ByteDance',
-      'KLS-L21.svg': 'Floor 21',
-      'KLS-L28.svg': 'Floor 28',
-    },
-    MUB: {
-      'MUB-level9.svg': 'Floor  9',
-      'MUB-level12.svg': 'Floor 12',
-      'MUB-level17.svg': 'Floor 17',
-    },
-    UBP3A: {
-      'UBP-L13A.svg': 'Floor 13A',
-      'UBP-L13AAIRIT.svg': 'Floor 13A AIRIT',
-    },
-    '8FA': {
-      '8FA.svg': 'Floor 15',
-    },
-    ITG: {
-      'ITG.svg': 'Floor 9',
-    },
-    UBP: {
-      'UBP.svg': 'Floor 2',
-    },
-    KLG: {
-      'KLG.svg': 'Floor 3',
-    },
-    SV2: {
-      'SV2.svg': 'Floor 12',
-    },
-    SPM: {
-      'SPM.svg': 'Floor 4',
-    },
-  };
+ 
   svgHtmlMap = new Map<string, SafeResourceUrl>(); // or SafeHtml
   @ViewChildren('svgHost') svgHosts!: QueryList<ElementRef<HTMLDivElement>>;
 
@@ -221,7 +232,10 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     this.loadOffices();
     this.loadFloors();
 
-    // 2) Subscribe to rooms changes
+    // 2) Setup keyboard navigation
+    this.setupKeyboardNavigation();
+
+    // 4) Subscribe to rooms changes
     this.roomService.rooms$.subscribe((rooms) => {
       this.rooms = rooms;
       this.roomIdIndex = this.buildRoomIdIndex();
@@ -236,6 +250,36 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       this.updateSelectedOutletSvgs();
       this.buildOptions();
       this.applyFilters();
+    });
+  }
+
+
+  // Setup keyboard navigation for floorplan pagination <--- check this later
+  private setupKeyboardNavigation() {
+    document.addEventListener('keydown', (event) => {
+      // Only handle navigation if floorplan is focused and not in input fields
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) {
+        return;
+      }
+
+      switch (event.key) {
+        case 'ArrowLeft':
+          event.preventDefault();
+          this.previousFloorplan();
+          break;
+        case 'ArrowRight':
+          event.preventDefault();
+          this.nextFloorplan();
+          break;
+        case 'Home':
+          event.preventDefault();
+          this.goToFloorplan(0);
+          break;
+        case 'End':
+          event.preventDefault();
+          this.goToFloorplan(this.totalFloorplans - 1);
+          break;
+      }
     });
   }
 
@@ -281,11 +325,18 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
 
   // When user selects an outlet
   onOutletChange(outletDisplayName: string) {
+    // Close any open popup when switching outlets
+    this.closePopup();
     if (!outletDisplayName || outletDisplayName === 'Select Outlet') {
       this.rooms = [];
       this.filteredRooms = [];
       this.selectedOutletSvgs = [];
       this.displayedSvgs = [];
+      this.svgHtmlMap.clear(); // Clear existing SVGs
+      this.dataLoading = false;
+      this.svgLoading = false;
+      this.svgFailed = false;
+      this.floorplansLoaded = true; // Mark as loaded even when no outlet selected
       this.buildOptions();
       this.applyFilters();
       return;
@@ -300,6 +351,13 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       return;
     }
 
+    // Reset loading states
+    this.dataLoading = true;
+    this.svgLoading = true;
+    this.svgFailed = false;
+    this.noSvgsFromFirebase = false;
+    this.floorplansLoaded = false;
+
     // 3) Fetch resources for this outlet using office.id
     this.loadResources({ officeId });
 
@@ -309,28 +367,26 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     }
   }
 
-  // Fetch resources for selected outlet
+  // Fetch resources for selected outlet with 15s timeout
   loadResources(params: ResourceParams) {
-    this.isLoadingResources = true;
     this.roomService.getResources(params).pipe(
       catchError((error) => {
         console.error('Error loading resources:', error);
         this.toastService.error('Failed to load resources. Please try again.');
+        this.dataLoading = false;
         return of(null);
-      }),
-      finalize(() => {
-        this.isLoadingResources = false;
       })
     ).subscribe((response) => {
+      this.dataLoading = false; // Data loading complete
       if (response) {
         this.toastService.success('Resources loaded successfully');
-        // Update selected outlet SVGs and build filters from backend data
+        // Update selected outlet SVGs first, then build filters
         this.updateSelectedOutletSvgs();
         this.buildFiltersFromBackend();
-        // Force SVG color updates after data is loaded
-        setTimeout(() => this.updateSvgColors(), 100);
+        // SVG color updates will be handled by updateSelectedOutletSvgs -> updateDisplayedSvgs
       }
     });
+
   }
 
   // Build filters from backend data
@@ -361,9 +417,18 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
           }
           this.attachRoomListeners(svgDoc);
           this.updateSvgColors(svgDoc);
+          this.svgLoading = false; // SVG loaded successfully
+          this.applyFloorplanState();
+        };
+        const onError = () => {
+          console.error('SVG object failed to load');
+          this.svgFailed = true;
+          this.svgLoading = false;
+          this.applyFloorplanState();
         };
         if (!this.processedSvgObjects.has(objectEl)) {
           objectEl.addEventListener('load', onLoad);
+          objectEl.addEventListener('error', onError);
           this.processedSvgObjects.add(objectEl);
         }
         if (objectEl.contentDocument) {
@@ -374,7 +439,72 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     attach();
     this.svgObjects.changes.subscribe(() => setTimeout(attach));
   }
-  //#region function to get svg
+
+  // Apply floorplan state after loading is complete
+  private applyFloorplanState() {
+    if (!this.isLoading) {
+      // Apply colors to SVG paths
+      this.updateSvgColors();
+      // Re-attach click listeners for popup functionality
+      this.attachAndColorAllInline();
+    }
+  }
+
+  // Floorplan navigation methods
+  nextFloorplan() {
+    if (this.hasNextFloorplan) {
+      console.log('➡️ NEXT FLOORPLAN: Moving from', this.currentFloorplanIndex, 'to', this.currentFloorplanIndex + 1);
+      this.currentFloorplanIndex++;
+      console.log('➡️ New floorplan URL:', this.currentFloorplan);
+      // Close any open popup when changing floorplans
+      this.closePopup();
+      // Apply filters to ensure resources data is maintained
+      this.applyFilters();
+      // Apply floorplan state for SVG updates
+      this.applyFloorplanState();
+      
+      // Force reattachment of event listeners after a short delay
+      setTimeout(() => {
+        this.attachAndColorAllInline();
+      }, 100);
+    }
+  }
+
+  previousFloorplan() {
+    if (this.hasPreviousFloorplan) {
+      this.currentFloorplanIndex--;
+      // Close any open popup when changing floorplans
+      this.closePopup();
+      // Apply filters to ensure resources data is maintained
+      this.applyFilters();
+      // Apply floorplan state for SVG updates
+      this.applyFloorplanState();
+      
+      // Force reattachment of event listeners after a short delay
+      setTimeout(() => {
+        this.attachAndColorAllInline();
+      }, 100);
+    }
+  }
+
+  goToFloorplan(index: number) {
+    if (index >= 0 && index < this.totalFloorplans) {
+      this.currentFloorplanIndex = index;
+      // Close any open popup when changing floorplans
+      this.closePopup();
+      // Apply filters to ensure resources data is maintained
+      this.applyFilters();
+      // Apply floorplan state for SVG updates
+      this.applyFloorplanState();
+      
+      // Force reattachment of event listeners after a short delay
+      setTimeout(() => {
+        console.log('🔄 Force reattaching event listeners after navigation');
+        this.attachAndColorAllInline();
+      }, 100);
+    }
+  }
+  //key connector between your resources data and the SVG floorplans.
   private updateSelectedOutletSvgs() {
     const outletId = this.filters.outlet;
     if (!outletId || outletId === 'Select Outlet') {
@@ -440,6 +570,8 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       // Case 1: Got outlet-level SVGs → show all by default
       if (svgs && svgs.length > 0) {
         this.selectedOutletSvgs = svgs;
+        this.noSvgsFromFirebase = false;
+        this.floorplansLoaded = true;
         console.log("svgs", this.selectedOutletSvgs)
         if (this.floorOptions.length === 0) {
           this.floorOptions = this.selectedOutletSvgs.slice();
@@ -458,6 +590,8 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         forkJoin(calls).subscribe((lists) => {
           const merged = Array.from(new Set((lists || []).flat()));
           this.selectedOutletSvgs = merged;
+          this.noSvgsFromFirebase = merged.length === 0;
+          this.floorplansLoaded = true;
           console.log('aggregated floor svgs', merged);
           this.updateDisplayedSvgs();
         });
@@ -470,6 +604,8 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       const normalizeArray = (value: string | string[] | undefined): string[] => Array.isArray(value) ? value : (value ? [value] : []);
       const isCloudUrl = (u: string) => typeof u === 'string' && !u.startsWith('assets/') && (u.startsWith('https://') || u.startsWith('http://'));
       this.selectedOutletSvgs = normalizeArray(officeSvgs).filter(isCloudUrl);
+      this.noSvgsFromFirebase = this.selectedOutletSvgs.length === 0;
+      this.floorplansLoaded = true;
       console.log("svgs (office cloud)", this.selectedOutletSvgs)
 
       // Use SVG-based selection list
@@ -574,6 +710,26 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     console.log('=== Building Options ===');
     console.log('Current filters:', this.filters);
 
+    // Helper to compute effective status based on selected date range
+    const getEffectiveStatus = (room: Room): 'Available' | 'Occupied' => {
+      if (this.selectedStartDate) {
+        const avail = this.availabilityByRoomId.get(room.id);
+        if (avail) {
+          // When date is selected, check both availability AND original room status
+          // If room status is reserved/unavailable/available_soon/occupied, keep it red
+          const originalStatus = this.toStatusUnion(room.status);
+          if (originalStatus === 'Occupied') {
+            // Room is reserved/unavailable/available_soon/occupied - keep red regardless of availability
+            return 'Occupied';
+          } else {
+            // Room is available - use date-based availability
+            return avail === 'free' ? 'Available' : 'Occupied';
+          }
+        }
+      }
+      return this.toStatusUnion(room.status);
+    };
+
     let filteredForOutlet = this.rooms;
     let filteredForStatus = filteredForOutlet.filter(
       (r) => {
@@ -586,9 +742,10 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     console.log('After outlet filter:', filteredForStatus);
 
     let filteredForPax = filteredForStatus.filter(
-      (r) =>
-        this.filters.status === 'Select Status' ||
-        r.status === this.filters.status
+      (r) => {
+        const effectiveStatus = getEffectiveStatus(r);
+        return this.filters.status === 'Select Status' || effectiveStatus === this.filters.status;
+      }
     );
     console.log('After status filter:', filteredForPax);
 
@@ -622,9 +779,10 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
               const selectedOffice = this.officeService.getOffices().find(office => office.id === this.filters.outlet);
               return selectedOffice && r.outlet === selectedOffice.displayName;
             })();
+            const effectiveStatus = getEffectiveStatus(r);
             const statusMatch =
               this.filters.status === 'Select Status' ||
-              r.status === this.filters.status;
+              effectiveStatus === this.filters.status;
             return outletMatch && statusMatch;
           })
           .map((r) => r.capacity?.toString().trim())
@@ -665,32 +823,26 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       this.updateSelectedOutletSvgs();
       this.updateDisplayedSvgs();
     } else {
-      // For other filters, apply client-side filtering
+      // Close any open popup when changing other filters
+      this.closePopup();
+      // For other filters, show loading briefly and apply client-side filtering
+      this.svgLoading = true;
       this.buildOptions();
       this.applyFilters();
       // Update SVG colors after filter changes
-      setTimeout(() => this.updateSvgColors(), 50);
-    }
-
-    if (key === 'status' || key === 'pax' || key === 'outlet') {
-      // Only auto-zoom if filtering yields exactly one room
-      if (this.filteredRooms.length === 1) {
-        const onlyRoom = this.filteredRooms[0];
-        console.log('[Floorplan] zoom due to filters yielding one room', {
-          id: onlyRoom.id,
-          name: onlyRoom.name,
-          key,
-          value: this.filters[key],
-        });
-        setTimeout(() => this.openPopupFromRoom(onlyRoom), 60);
-      } else {
-        this.closePopup();
-      }
+      setTimeout(() => {
+        this.updateSvgColors();
+        this.svgLoading = false; // Hide loading when filtering is complete
+        this.applyFloorplanState();
+      }, 500);
     }
   }
 
   // Date change handlers
   onDateChange(which: 'start' | 'end', value: string) {
+    // Close any open popup when changing dates
+    this.closePopup();
+    
     if (which === 'start') {
       // If user clears the start date, reset both dates and availability
       if (!value) {
@@ -747,7 +899,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     const outlet = this.filters.outlet;
     const officeId = this.getOfficeIdFromOutletName(outlet);
     if (!officeId || !this.selectedStartDate) return;
-    
+        
     const start = this.selectedStartDate;
     const end = this.selectedEndDate || this.selectedStartDate; // Use start date as end if no end date selected
     
@@ -782,8 +934,17 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
             const rows = resp?.resources || resp?.rows || resp?.data || [];
             rows.forEach((r: any) => {
               const days = r.days || [];
-              const allFree = days.length > 0 && days.every((d: any) => (d.status || '').toLowerCase() === 'free');
-              if (allFree) combined.set(r.resource_id, 'free');
+              const allFree = days.length > 0 && days.every((d: any) => {
+                const status = (d.status || '').toLowerCase();
+                return status === 'free';
+              });
+              // Also check if the room itself is unavailable - if so, treat as occupied
+              const room = this.rooms.find(room => room.id === r.resource_id);
+              if (room && this.isRoomUnavailable(room)) {
+                // Room is unavailable, keep as occupied (don't set to free)
+              } else if (allFree) {
+                combined.set(r.resource_id, 'free');
+              }
             });
           });
           this.availabilityByRoomId = combined;
@@ -813,11 +974,19 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
           const days = r.days || [];
           // For date range: room is available if ALL days in the range are free
           // For single date: room is available if that specific date is free
-          const isAvailable = days.length > 0 && days.every((d: any) => (d.status || '').toLowerCase() === 'free');
-          if (isAvailable) map.set(r.resource_id, 'free');
+          const isAvailable = days.length > 0 && days.every((d: any) => {
+            const status = (d.status || '').toLowerCase();
+            return status === 'free';
+          });
+          // Also check if the room itself is unavailable - if so, treat as occupied
+          const room = this.rooms.find(room => room.id === r.resource_id);
+          if (room && this.isRoomUnavailable(room)) {
+            // Room is unavailable, keep as occupied (don't set to free)
+          } else if (isAvailable) {
+            map.set(r.resource_id, 'free');
+          }
         });
         this.availabilityByRoomId = map;
-        // Do not mutate base status; just refresh colors/metrics if needed
         this.applyFilters();
         setTimeout(() => this.updateSvgColors(), 50);
       },
@@ -843,6 +1012,13 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     const raw = select.value; // e.g. "9|63f5decf5de9f10007e115a6" or "all"
     // store as-is; we'll parse inside updateDisplayedSvgs()
     this.selectedFloorSvg = raw;
+    
+    // Close any open popup when changing floors
+    this.closePopup();
+    
+    // Show loading when changing floors
+    this.svgLoading = true;
+    this.svgFailed = false;
     this.updateDisplayedSvgs();
   }
 
@@ -850,11 +1026,21 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     const outletId = this.filters.outlet;
     if (!outletId || outletId === 'Select Outlet') {
       this.displayedSvgs = [];
+      this.currentFloorplanIndex = 0; // Reset pagination
+      console.log('No outlet selected, clearing displayedSvgs');
       return;
     }
 
     if (this.selectedFloorSvg === 'all') {
       this.displayedSvgs = this.selectedOutletSvgs?.slice?.() ?? [];
+      this.currentFloorplanIndex = 0; // Reset pagination
+    
+      
+      // Check if no SVGs were found from Firebase
+      if (this.displayedSvgs.length === 0) {
+        this.noSvgsFromFirebase = true;
+      }
+      
       this.loadInlineSvgs(this.displayedSvgs);   // ✅ call here
       return;
     }
@@ -864,6 +1050,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
 
     if (!floorId) {
       this.displayedSvgs = (this.selectedOutletSvgs || []).filter(p => p === this.selectedFloorSvg);
+      this.currentFloorplanIndex = 0; // Reset pagination
       this.loadInlineSvgs(this.displayedSvgs);   // ✅ and here
       return;
     }
@@ -872,10 +1059,14 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       catchError(err => {
         console.error('Error loading floor SVG aaaaaaaaaaaa:', err);
         this.toastService.error('Failed to load floor SVG aaaaaaaaaaaaaaa');
+        this.svgLoading = false; // Hide loading on error
+        this.svgFailed = true;
+        this.applyFloorplanState();
         return of<string[]>([]);
       })
     ).subscribe(urls => {
       this.displayedSvgs = urls;
+      this.currentFloorplanIndex = 0; // Reset pagination
       this.loadInlineSvgs(this.displayedSvgs);   // ✅ MUST be inside subscribe
     });
   }
@@ -997,23 +1188,22 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     const getEffectiveStatus = (room: Room): 'Available' | 'Occupied' => {
       if (this.selectedStartDate) {
         const avail = this.availabilityByRoomId.get(room.id);
-        if (avail) return avail === 'free' ? 'Available' : 'Occupied';
+        if (avail) {
+          // When date is selected, check both availability AND original room status
+          // If room status is reserved/unavailable/available_soon/occupied, keep it red
+          const originalStatus = this.toStatusUnion(room.status);
+          if (originalStatus === 'Occupied') {
+            // Room is reserved/unavailable/available_soon/occupied - keep red regardless of availability
+            return 'Occupied';
+          } else {
+            // Room is available - use date-based availability
+            return avail === 'free' ? 'Available' : 'Occupied';
+          }
+        }
       }
       return this.toStatusUnion(room.status);
     };
 
-    this.filteredRooms = this.rooms
-      .filter((r) => {
-        const outletOk =
-          this.filters.outlet === 'Select Outlet' || r.outlet === this.filters.outlet;
-        const effectiveStatus = getEffectiveStatus(r);
-        const statusOk =
-          this.filters.status === 'Select Status' || effectiveStatus === this.filters.status;
-        const paxOk =
-          this.filters.pax === 'Select Pax' || r.capacity.toString() === this.filters.pax;
-        const suiteOk = this.selectedSuites.length === 0 || this.selectedSuites.includes(r.name);
-        return outletOk && statusOk && paxOk && suiteOk;
-      })
     this.filteredRooms = this.rooms
       .filter((r) => {
         const outletMatch = (() => {
@@ -1021,10 +1211,17 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
           const selectedOffice = this.officeService.getOffices().find(o => o.id === this.filters.outlet);
           return selectedOffice && r.outlet === selectedOffice.displayName;
         })();
-        return outletMatch &&
-          (this.filters.status === 'Select Status' || r.status === this.filters.status) &&
-          (this.filters.pax === 'Select Pax' || String(r.capacity) === this.filters.pax) &&
-          (this.selectedSuites.length === 0 || this.selectedSuites.includes(r.name));
+        
+        const effectiveStatus = getEffectiveStatus(r);
+        const statusOk =
+          this.filters.status === 'Select Status' || effectiveStatus === this.filters.status;
+        
+        const paxOk =
+          this.filters.pax === 'Select Pax' || String(r.capacity) === this.filters.pax;
+        
+        const suiteOk = this.selectedSuites.length === 0 || this.selectedSuites.includes(r.name);
+        
+        return outletMatch && statusOk && paxOk && suiteOk;
       })
       .sort((a, b) => {
         if (this.filters.pax !== 'Select Pax') return a.capacity - b.capacity;
@@ -1067,7 +1264,16 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
             const avail = this.selectedStartDate ? this.availabilityByRoomId.get(room.id) : undefined;
             let effectiveStatus: 'Occupied' | 'Available';
             if (avail) {
-              effectiveStatus = (avail === 'free') ? 'Available' : 'Occupied'; //find what this function does
+              // When date is selected, check both availability AND original room status
+              // If room status is reserved/unavailable/available_soon/occupied, keep it red
+              const originalStatus = this.toStatusUnion(room.status);
+              if (originalStatus === 'Occupied') {
+                // Room is reserved/unavailable/available_soon/occupied - keep red regardless of availability
+                effectiveStatus = 'Occupied';
+              } else {
+                // Room is available - use date-based availability
+                effectiveStatus = (avail === 'free') ? 'Available' : 'Occupied';
+              }
             } else {
               effectiveStatus = this.toStatusUnion(room.status);
             }
@@ -1108,8 +1314,88 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     }
   }
 
-  private toStatusUnion(status: string): 'Available' | 'Occupied' { //find what this function does
-    return status === 'Available' ? 'Available' : 'Occupied';
+  private toStatusUnion(status: string): 'Available' | 'Occupied' {
+    // Group statuses: available vs occupied/reserved/available_soon/unavailable
+    const availableStatuses = ['available'];
+    const occupiedStatuses = ['occupied', 'reserved', 'available_soon', 'unavailable'];
+    
+    const normalizedStatus = status.toLowerCase();
+    
+    if (availableStatuses.includes(normalizedStatus)) {
+      return 'Available';
+    } else if (occupiedStatuses.includes(normalizedStatus)) {
+      return 'Occupied';
+    } else {
+      // Default to occupied for any unknown status
+      return 'Occupied';
+    }
+  }
+
+  // Helper function to check if a room is unavailable based on original backend data
+  private isRoomUnavailable(room: Room): boolean {
+    // Check if the original status from backend is 'unavailable'
+    return room.originalStatus?.toLowerCase() === 'unavailable';
+  }
+
+  // Helper function to format status display for popup
+  getStatusDisplayText(room: Room, isDateSelected: boolean): string {
+    const status = room.status.toLowerCase();
+    
+    if (isDateSelected) {
+      // When date is selected, show status based on room's original status
+      switch (status) {
+        case 'reserved':
+          return 'Reserved';
+        case 'occupied':
+          return 'Occupied';
+        case 'unavailable':
+          return 'Unavailable';
+        case 'available_soon':
+          // For available_soon, show the actual available date
+          if (room.availableFrom) {
+            const availableDate = new Date(room.availableFrom);
+            const formattedDate = availableDate.toLocaleDateString('en-GB', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric'
+            });
+            return `Available on ${formattedDate}`;
+          }
+          return 'Available Soon';
+        case 'available':
+          // For available rooms, check date-based availability
+          const avail = this.availabilityByRoomId.get(room.id);
+          return avail === 'free' ? 'Available' : 'Occupied';
+        default:
+          return 'Occupied';
+      }
+    } else {
+      // When no date is selected, show original status
+      switch (status) {
+        case 'reserved':
+          return 'Reserved';
+        case 'occupied':
+          return 'Occupied';
+        case 'unavailable':
+          return 'Unavailable';
+        case 'available_soon':
+          // For available_soon, show the actual available date
+          if (room.availableFrom) {
+            const availableDate = new Date(room.availableFrom);
+            const formattedDate = availableDate.toLocaleDateString('en-GB', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric'
+            });
+            return `Available on ${formattedDate}`;
+          }
+          return 'Available Soon';
+        case 'available':
+          return 'Available';
+        default:
+          return 'Occupied';
+      }
+    }
   }
 
 
@@ -1169,8 +1455,9 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   }
 
   private buildRoomIdIndex(): Map<string, Room> {
+    console.log('🏗️ Building room ID index for', this.rooms.length, 'rooms');
     const index = new Map<string, Room>();
-    this.rooms.forEach((room) => {
+    this.rooms.forEach((room, roomIndex) => {
       const candidates = [
         room.id,
         room.name,
@@ -1178,11 +1465,21 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         room.name?.replace(/\s+/g, '-'),
         room.name?.replace(/\s+/g, '_'),
       ];
+      console.log(`Room ${roomIndex}:`, {
+        id: room.id,
+        name: room.name,
+        candidates: candidates
+      });
       candidates.forEach((c) => {
         const key = this.normalizeId(c);
-        if (key) index.set(key, room);
+        if (key) {
+          index.set(key, room);
+          console.log(`  Added to index: "${key}" -> ${room.name}`);
+        }
       });
     });
+    console.log('🏗️ Room ID index built with', index.size, 'entries');
+    console.log('🏗️ Index keys:', Array.from(index.keys()).slice(0, 10)); // Show first 10 keys
     return index;
   }
 
@@ -1214,6 +1511,16 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   }
 
   private openPopupFromRoom(room: Room, clickEvent?: MouseEvent) {
+    console.log('🚀 openPopupFromRoom called with room:', {
+      id: room.id,
+      name: room.name,
+      status: room.status,
+      capacity: room.capacity,
+      clickEvent: clickEvent ? 'present' : 'missing',
+      currentShowPopup: this.showPopup,
+      currentSelectedRoom: this.selectedRoom?.name
+    });
+    
     let positioned = false;
     // Try inline SVG hosts first
     if (this.svgHosts && this.svgHosts.length > 0) {
@@ -1436,6 +1743,14 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         y: this.popupY,
       });
     }
+    
+    console.log('🎯 Final popup state:', {
+      showPopup: this.showPopup,
+      selectedRoom: this.selectedRoom?.name,
+      popupX: this.popupX,
+      popupY: this.popupY,
+      positioned: positioned
+    });
   }
 
   private downloadBlob(fileName: string, blob: Blob) {
@@ -1631,6 +1946,32 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     });
   }
 
+  // Handle floorplan container clicks
+  onFloorplanContainerClick(event: MouseEvent) {
+    // Close popup when clicking on container background
+    this.closePopup();
+  }
+//Delete this later
+  onSvgHostClick(event: MouseEvent) {
+    console.log('🎨 SVG HOST CLICK:', {
+      target: event.target,
+      targetTag: (event.target as Element)?.tagName,
+      targetId: (event.target as Element)?.id,
+      targetClass: (event.target as Element)?.className,
+      coordinates: {
+        clientX: event.clientX,
+        clientY: event.clientY,
+        pageX: event.pageX,
+        pageY: event.pageY,
+        offsetX: event.offsetX,
+        offsetY: event.offsetY
+      },
+      isSVG: (event.target as Element)?.tagName === 'svg',
+      isSVGChild: (event.target as Element)?.closest('svg') !== null,
+      svgContent: (event.target as Element)?.innerHTML?.substring(0, 100) + '...'
+    });
+  }
+
   // YouTube Modal Methods
   openYoutubeModal(room: Room) {
     if (room.video) {
@@ -1736,67 +2077,127 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
 
-      // We will iterate through rendered SVG objects (single floor or all floors)
-      const objects = this.svgObjects?.toArray?.() ?? [];
-      for (let idx = 0; idx < objects.length; idx++) {
-        const objectRef = objects[idx];
-        const objectEl = objectRef.nativeElement as HTMLObjectElement;
-        const doc = objectEl.contentDocument as Document | null;
-        const rootSvg = doc?.querySelector('svg') as SVGSVGElement | null;
+      // Process inline SVGs (your actual SVG display method)
+      const svgHosts = this.svgHosts?.toArray?.() ?? [];
+      console.log('🔍 PDF Export: Found', svgHosts.length, 'inline SVG hosts');
+      
+      if (svgHosts.length === 0) {
+        console.warn('❌ No SVG hosts found for PDF export');
+        this.showMessage('No floorplan data available for export', true);
+        return;
+      }
 
-        if (!rootSvg) continue;
+      // Only render pages that match selected suites (when any are selected)
+      let firstPageRendered = false;
+      for (let idx = 0; idx < svgHosts.length; idx++) {
+        const hostRef = svgHosts[idx];
+        const hostEl = hostRef.nativeElement as HTMLDivElement;
+        const rootSvg = hostEl.querySelector('svg') as SVGSVGElement | null;
 
-        if (idx > 0) {
-          pdf.addPage('landscape');
+        console.log(`🔍 Processing SVG ${idx + 1}:`, {
+          hasHostEl: !!hostEl,
+          hasRootSvg: !!rootSvg,
+          svgWidth: rootSvg?.getAttribute('width'),
+          svgHeight: rootSvg?.getAttribute('height'),
+          viewBox: rootSvg?.getAttribute('viewBox')
+        });
+
+        if (!rootSvg) {
+          console.warn(`❌ No SVG found in host ${idx + 1}`);
+          continue;
         }
 
-        // Page title and filters
-        pdf.setFontSize(20);
+        // Page inclusion logic: if user selected suites, only include pages
+        // that actually contain at least one of those suites
+        const shouldIncludeThisPage = (() => {
+          if (!rootSvg) return false;
+          if ((this.selectedSuites?.length ?? 0) === 0) return true;
+          return this.selectedSuites.some((suiteName) => {
+            const room = this.rooms.find(r => r.name === suiteName);
+            if (!room) return false;
+            const el = this.findRoomElementInline(rootSvg, room);
+            return !!el;
+          });
+        })();
+
+        if (!shouldIncludeThisPage) {
+          // Skip this floorplan page entirely if none of the selected suites are present
+          continue;
+        }
+
+        if (firstPageRendered) {
+          pdf.addPage('landscape');
+        } else {
+          firstPageRendered = true;
+        }
+
+        // Compact page title and filters
+        pdf.setFontSize(16); // Reduced from 20
         pdf.setTextColor(255, 102, 0);
-        pdf.text('Private Suite Dashboard - Floorplan', 20, 20);
-        pdf.setFontSize(12);
+        pdf.text('Private Suite Dashboard - Floorplan', 20, 15); // Moved up from 20
+        pdf.setFontSize(10); // Reduced from 12
         pdf.setTextColor(0, 0, 0);
-        let yPos = 35;
+        let yPos = 25; // Reduced from 35
         if (this.filters.outlet !== 'Select Outlet') {
-          pdf.text(`Outlet: ${this.filters.outlet}`, 20, yPos);
-          yPos += 8;
+          const selectedOffice = this.officeService.getOffices().find(office => office.id === this.filters.outlet);
+          const outletDisplayName = selectedOffice ? selectedOffice.displayName : this.filters.outlet;
+          pdf.text(`Outlet: ${outletDisplayName}`, 20, yPos);  
+          yPos += 6; // Reduced from 8
         }
         const floorLabel = this.getFloorLabel(this.displayedSvgs[idx] || '');
         if (floorLabel) {
           pdf.text(`Floor: ${floorLabel}`, 20, yPos);
-          yPos += 8;
-        }
-        if (this.filters.status !== 'Select Status') {
-          pdf.text(`Status: ${this.filters.status}`, 20, yPos);
-          yPos += 8;
+          yPos += 6; // Reduced from 8
         }
         if (this.filters.pax !== 'Select Pax') {
           pdf.text(`Pax: ${this.filters.pax}`, 20, yPos);
-          yPos += 8;
+          yPos += 6; // Reduced from 8
         }
         // Build suites list from available rooms if none explicitly selected
         const effectiveStatus = (room: Room): 'Available' | 'Occupied' => {
           if (this.selectedStartDate) {
             const avail = this.availabilityByRoomId.get(room.id);
-            if (avail) return avail === 'free' ? 'Available' : 'Occupied';
+            if (avail) {
+          // When date is selected, check both availability AND original room status
+          // If room status is reserved/unavailable/available_soon/occupied, keep it red
+          const originalStatus = this.toStatusUnion(room.status);
+          if (originalStatus === 'Occupied') {
+            // Room is reserved/unavailable/available_soon/occupied - keep red regardless of availability
+            return 'Occupied';
+          } else {
+            // Room is available - use date-based availability
+            return avail === 'free' ? 'Available' : 'Occupied';
+          }
+        }
           }
           return this.toStatusUnion(room.status);
         };
-        const suitesToShow = this.selectedSuites.length > 0
-          ? this.selectedSuites.slice()
-          : Array.from(new Set(
-              this.filteredRooms
-                .filter(r => effectiveStatus(r) === 'Available')
-                .map(r => r.name)
-            )).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+        // Suites list for header: if user selected suites, show only those
+        // that exist on this page; otherwise show available suites on this page
+        const suitesToShow = (() => {
+          const pageRoomHasName = (name: string) => {
+            const room = this.rooms.find(r => r.name === name);
+            return room ? !!this.findRoomElementInline(rootSvg!, room) : false;
+          };
+
+          if (this.selectedSuites.length > 0) {
+            return this.selectedSuites.filter(pageRoomHasName);
+          }
+
+          const availableOnThisPage = this.filteredRooms
+            .filter(r => effectiveStatus(r) === 'Available' && pageRoomHasName(r.name))
+            .map(r => r.name);
+          return Array.from(new Set(availableOnThisPage))
+            .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+        })();
 
         if (suitesToShow.length > 0) {
           const suitesLabel = 'Suites: ';
           const suitesText = suitesToShow.join(', ');
           // Use smaller font and wrap when too many suites are listed
-          const manySuites = suitesToShow.length > 8;
-          const originalFont = 12;
-          const smallFont = 8;
+          const manySuites = suitesToShow.length > 6; // Reduced threshold for compact layout
+          const originalFont = 10; // Reduced from 12
+          const smallFont = 7; // Reduced from 8
           const fontToUse = manySuites ? smallFont : originalFont;
 
           pdf.setFontSize(fontToUse);
@@ -1807,10 +2208,10 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
             pdf.text(`${suitesLabel}${wrapped[0]}`, 20, yPos);
             let yy = yPos;
             for (let i = 1; i < wrapped.length; i++) {
-              yy += manySuites ? 5 : 6; // tighter line height for small font
+              yy += manySuites ? 4 : 5; // Even tighter line height for compact layout
               pdf.text(`        ${wrapped[i]}`, 20, yy);
             }
-            yPos = yy + (manySuites ? 5 : 6);
+            yPos = yy + (manySuites ? 4 : 5);
           } else {
             pdf.text(`${suitesLabel}`, 20, yPos);
             yPos += manySuites ? 5 : 6;
@@ -1821,12 +2222,14 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         
         // Add date range information
         if (this.selectedStartDate) {
+          // Set font size to match other details (10px)
+          pdf.setFontSize(10);
           if (this.selectedEndDate && this.selectedEndDate !== this.selectedStartDate) {
             pdf.text(`Date Range: ${this.selectedStartDate} to ${this.selectedEndDate}`, 20, yPos);
           } else {
             pdf.text(`Date: ${this.selectedStartDate}`, 20, yPos);
           }
-          yPos += 8;
+          yPos += 6; // Reduced from 8
         }
 
         // Add compact Pax legend (always compact, based on currently available rooms)
@@ -1836,7 +2239,18 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
           const effStatus = (room: Room): 'Available' | 'Occupied' => {
             if (this.selectedStartDate) {
               const avail = this.availabilityByRoomId.get(room.id);
-              if (avail) return avail === 'free' ? 'Available' : 'Occupied';
+              if (avail) {
+          // When date is selected, check both availability AND original room status
+          // If room status is reserved/unavailable/available_soon/occupied, keep it red
+          const originalStatus = this.toStatusUnion(room.status);
+          if (originalStatus === 'Occupied') {
+            // Room is reserved/unavailable/available_soon/occupied - keep red regardless of availability
+            return 'Occupied';
+          } else {
+            // Room is available - use date-based availability
+            return avail === 'free' ? 'Available' : 'Occupied';
+          }
+        }
             }
             return this.toStatusUnion(room.status);
           };
@@ -1860,17 +2274,17 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
         if (pdfLegend.length > 0) {
           // Render legend on the right side beside the header info
           const rightMargin = 15;
-          const legendAreaWidth = 85; // compact block
+          const legendAreaWidth = 75; // More compact block
           const legendStartX = pageWidth - rightMargin - legendAreaWidth;
-          let legendY = 35; // align with header top
+          let legendY = 25; // Align with compact header
 
           pdf.setFontSize(9);
           pdf.setTextColor(0, 0, 0);
           pdf.text('Pax (Available):', legendStartX, legendY);
           legendY += 5;
 
-          const legendItemWidth = 36;
-          const legendItemHeight = 5;
+          const legendItemWidth = 32; // Reduced for more compact layout
+          const legendItemHeight = 4; // Reduced height
           let currentX = legendStartX;
           let currentY = legendY;
           
@@ -1893,42 +2307,65 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
           yPos = currentY + 8;
         }
 
-        // Clone and reset viewBox to original
+        // Clone the SVG for processing
         const svgClone = rootSvg.cloneNode(true) as SVGSVGElement;
-        const originalViewBox = this.objectToOriginalViewBox.get(objectEl);
-        if (originalViewBox) {
-          svgClone.setAttribute('viewBox', originalViewBox);
+        
+        // Ensure proper viewBox
+        if (!svgClone.getAttribute('viewBox')) {
+          const width = svgClone.getAttribute('width') || '1920';
+          const height = svgClone.getAttribute('height') || '1018';
+          svgClone.setAttribute('viewBox', `0 0 ${width} ${height}`);
         }
 
         // Add YouTube links to rooms that have videos
         this.addYouTubeLinksToSvg(svgClone);
 
         try {
+          console.log(`🎨 Converting SVG ${idx + 1} to canvas...`);
           let canvas = await this.svgToCanvas(svgClone);
+          console.log(`✅ Canvas created:`, {
+            width: canvas.width,
+            height: canvas.height,
+            hasContent: canvas.width > 0 && canvas.height > 0
+          });
+          
           canvas = this.downscaleCanvasIfNeeded(canvas);
 
-          const margin = 5;
-          const imgY = Math.max(yPos + 4, 24);
+          // Compact layout settings
+          const margin = 12; // slightly larger margin for breathing room
+          const imgY = Math.max(yPos + 12, 36); // push image a bit further down from the header/date
           const maxWidth = pageWidth - margin * 2;
-          const maxHeight = pageHeight - imgY - margin;
+          const maxHeight = pageHeight - imgY - margin - 24; // reserve a little more bottom space
+          
+          // Calculate compact dimensions
           const aspect = canvas.width / canvas.height;
-          let imgWidth = maxWidth;
+          let imgWidth = maxWidth * 0.82; // use ~82% of available width to make the SVG a bit smaller
           let imgHeight = imgWidth / aspect;
+          
+          // If still too tall, scale down further
           if (imgHeight > maxHeight) {
-            imgHeight = maxHeight;
+            imgHeight = maxHeight * 0.85; // shrink a bit more to avoid overlap
             imgWidth = imgHeight * aspect;
           }
+          
+          // Center the image
           const imgX = (pageWidth - imgWidth) / 2;
 
           // Use PNG for crisp vectors; jsPDF will compress
           const imgData = canvas.toDataURL('image/png');
+          console.log(`📐 Image dimensions:`, {
+            imgX, imgY, imgWidth, imgHeight,
+            pageWidth, pageHeight,
+            imgDataLength: imgData.length
+          });
+          
           pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'MEDIUM');
+          console.log(`✅ Image added to PDF page ${idx + 1}`);
 
           // Add clickable YouTube links for rooms with videos
           this.addYouTubeLinksToPdf(pdf, imgX, imgY, imgWidth, imgHeight, svgClone);
 
-          // Add YouTube links summary at the bottom of the page
-          this.addYouTubeLinksSummary(pdf, pageWidth, pageHeight);
+          // (Moved) YouTube links summary will be added once after all pages
         } catch (canvasError) {
           console.warn(
             'Failed to convert SVG to canvas on page',
@@ -1940,6 +2377,11 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
           pdf.text('Floorplan SVG (could not render image)', 20, 20);
         }
       }
+
+      // After all pages are added, render a single Virtual Tour Links section
+      // on the last page, positioned a bit higher from the bottom
+      pdf.setPage(pdf.getNumberOfPages());
+      this.addYouTubeLinksSummary(pdf, pageWidth, pageHeight);
 
       // Save PDF with compression
       let fileName = `floorplan-${this.filters.outlet !== 'Select Outlet' ? this.filters.outlet : 'all'
@@ -1977,42 +2419,22 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       const bbox = roomElement.getBBox();
       if (!bbox) return;
 
-      // Create "Watch Tour" text overlay (compact for smaller rooms)
-      const roomSize = Math.min(bbox.width, bbox.height);
-      const fontSize = Math.max(8, roomSize * 0.1); // Minimum 8px font size
-      const textContent = roomSize < 50 ? '▶' : roomSize < 80 ? 'Tour' : 'Watch Tour';
-      
       const textElement = document.createElementNS('http://www.w3.org/2000/svg', 'text');
       textElement.setAttribute('x', (bbox.x + bbox.width / 2).toString());
       textElement.setAttribute('y', (bbox.y + bbox.height / 2).toString());
       textElement.setAttribute('text-anchor', 'middle');
       textElement.setAttribute('dominant-baseline', 'middle');
       textElement.setAttribute('font-family', 'Arial, sans-serif');
-      textElement.setAttribute('font-size', fontSize.toString());
+      textElement.setAttribute('font-size', '8px');
       textElement.setAttribute('font-weight', 'bold');
       textElement.setAttribute('fill', '#ff0000'); // Red color for YouTube
       textElement.setAttribute('stroke', '#ffffff'); // White stroke for visibility
       textElement.setAttribute('stroke-width', '0.8');
       textElement.setAttribute('paint-order', 'stroke fill');
-      textElement.textContent = textContent;
+      textElement.textContent = 'Tour';
       
       // Add text to SVG
       svgElement.appendChild(textElement);
-      
-      // Add play icon only for larger rooms
-      if (roomSize >= 60) {
-        const iconSize = Math.min(bbox.width, bbox.height) * 0.12;
-        const playIcon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-        const iconX = bbox.x + bbox.width - iconSize - 2;
-        const iconY = bbox.y + 2;
-        playIcon.setAttribute('points', 
-          `${iconX},${iconY} ${iconX + iconSize},${iconY + iconSize/2} ${iconX},${iconY + iconSize}`
-        );
-        playIcon.setAttribute('fill', '#ff0000');
-        playIcon.setAttribute('stroke', '#ffffff');
-        playIcon.setAttribute('stroke-width', '0.8');
-        svgElement.appendChild(playIcon);
-      }
     });
   }
 
@@ -2064,49 +2486,100 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     
     if (roomsWithVideos.length === 0) return;
 
-    // Position summary at the bottom of the page
-    let yPos = pageHeight - 20;
-    
-    // Add separator line
-    pdf.setDrawColor(200, 200, 200);
-    pdf.line(20, yPos - 5, pageWidth - 20, yPos - 5);
-    yPos -= 10;
+    // Layout metrics
+    const titleFontSize = 9;   // title font size used
+    const titleGap = 3;        // extra spacing between title and first item
+    const titleHeight = titleFontSize; // approximate baseline step
+    const lineHeight = 3;      // compact line height
+    const bottomMargin = 20;   // keep space from bottom
 
-    // Add title
-    pdf.setFontSize(10);
-    pdf.setTextColor(255, 102, 0); // Orange color
-    pdf.text('Virtual Tour Links:', 20, yPos);
-    yPos += 6;
+    // Compute total list height with two-column fallback to keep within one page
+    const totalItems = roomsWithVideos.length;
+    const singleColumnHeight = totalItems * lineHeight;
+    const availableHeightForList = (pageHeight - bottomMargin) - titleHeight; // when bottom aligned
+    const useTwoColumns = singleColumnHeight > availableHeightForList;
 
-    // Add room links
-    pdf.setFontSize(8);
+    // Determine list height based on layout
+    const listHeight = useTwoColumns
+      ? Math.ceil(totalItems / 2) * lineHeight
+      : singleColumnHeight;
+
+    // Anchor the block (title + list) above bottom, so title moves up as list grows
+    let blockBottom = pageHeight - bottomMargin;
+    let listBottom = blockBottom;                    // list ends at bottom margin
+    let listTop = listBottom - listHeight;           // start of list
+
+    // Prepare for list rendering
+    pdf.setFontSize(8); // Smaller font for more compact layout
     pdf.setTextColor(0, 0, 0);
+    let yPos = listTop; // current y for list items
     
-    roomsWithVideos.forEach((room, index) => {
-      // Check if we need a new page
-      if (yPos > pageHeight - 15) {
-        pdf.addPage('landscape');
-        yPos = 20;
-      }
-
-      // Room name
-      const roomName = room.name.length > 30 ? room.name.substring(0, 30) + '...' : room.name;
-      pdf.text(`${roomName}:`, 20, yPos);
+    // If too many rooms, use two-column layout
+    if (useTwoColumns) {
+      const midPoint = Math.ceil(roomsWithVideos.length / 2);
+      const leftColumn = roomsWithVideos.slice(0, midPoint);
+      const rightColumn = roomsWithVideos.slice(midPoint);
       
-      // YouTube link (clickable)
-      const linkText = 'Watch Tour';
-      const linkWidth = pdf.getTextWidth(linkText);
-      const linkX = 20 + pdf.getTextWidth(roomName + ': ') + 2;
-      
-      // Add clickable link
-      pdf.setTextColor(0, 0, 255); // Blue color for links
-      pdf.textWithLink(linkText, linkX, yPos, {
-        url: room.video,
-        target: '_blank'
+      // Left column
+      let leftY = yPos;
+      leftColumn.forEach((room, index) => {
+        if (leftY > 20) { // Check if we have space
+          const roomName = room.name.length > 20 ? room.name.substring(0, 20) + '...' : room.name;
+          pdf.text(`${roomName}:`, 20, leftY);
+          
+          const linkText = 'Tour';
+          const linkX = 20 + pdf.getTextWidth(roomName + ': ') + 2;
+          
+          pdf.setTextColor(0, 0, 255);
+          pdf.textWithLink(linkText, linkX, leftY, {
+            url: room.video,
+            target: '_blank'
+          });
+          
+          leftY -= lineHeight;
+        }
       });
       
-      yPos += 4;
-    });
+      // Right column
+      let rightY = yPos;
+      rightColumn.forEach((room, index) => {
+        if (rightY > 20) { // Check if we have space
+          const roomName = room.name.length > 20 ? room.name.substring(0, 20) + '...' : room.name;
+          const rightX = pageWidth / 2 + 10;
+          pdf.text(`${roomName}:`, rightX, rightY);
+          
+          const linkText = 'Tour';
+          const linkX = rightX + pdf.getTextWidth(roomName + ': ') + 2;
+          
+          pdf.setTextColor(0, 0, 255);
+          pdf.textWithLink(linkText, linkX, rightY, {
+            url: room.video,
+            target: '_blank'
+          });
+          
+          rightY -= lineHeight;
+        }
+      });
+    } else {
+      // Single column layout for fewer rooms
+      roomsWithVideos.forEach((room, index) => {
+        if (yPos > 20) { // Check if we have space
+          const roomName = room.name.length > 25 ? room.name.substring(0, 25) + '...' : room.name;
+          pdf.text(`${roomName}:`, 20, yPos);
+          
+          const linkText = 'Watch Tour';
+          const linkX = 20 + pdf.getTextWidth(roomName + ': ') + 2;
+          
+          pdf.setTextColor(0, 0, 255);
+          pdf.textWithLink(linkText, linkX, yPos, {
+            url: room.video,
+            target: '_blank'
+          });
+          
+          yPos -= lineHeight;
+        }
+      });
+    }
 
     // Reset text color
     pdf.setTextColor(0, 0, 0);
@@ -2174,7 +2647,18 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
 
   // Get estimated file size for medium quality (for display in success message)
   getEstimatedFileSize(): string {
-    return '~500 KB - 1 MB';
+    return this.compactMode ? '~300 KB - 600 KB' : '~500 KB - 1 MB';
+  }
+
+  // Toggle compact mode for PDF export
+  toggleCompactMode(): void {
+    this.compactMode = !this.compactMode;
+    console.log('Compact mode:', this.compactMode ? 'ON' : 'OFF');
+  }
+
+  // Get compact mode status
+  isCompactMode(): boolean {
+    return this.compactMode;
   }
 
   // Get dynamic Pax legend based on filtered rooms
@@ -2194,7 +2678,18 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     const getEffectiveStatus = (room: Room): 'Available' | 'Occupied' => {
       if (this.selectedStartDate) {
         const avail = this.availabilityByRoomId.get(room.id);
-        if (avail) return avail === 'free' ? 'Available' : 'Occupied';
+        if (avail) {
+          // When date is selected, check both availability AND original room status
+          // If room status is reserved/unavailable/available_soon/occupied, keep it red
+          const originalStatus = this.toStatusUnion(room.status);
+          if (originalStatus === 'Occupied') {
+            // Room is reserved/unavailable/available_soon/occupied - keep red regardless of availability
+            return 'Occupied';
+          } else {
+            // Room is available - use date-based availability
+            return avail === 'free' ? 'Available' : 'Occupied';
+          }
+        }
       }
       return this.toStatusUnion(room.status);
     };
@@ -2382,28 +2877,70 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
 
   private loadInlineSvgs(urls: string[]) {
     const toFetch = urls.filter(u => !this.svgHtmlMap.has(u));
-    toFetch.forEach(url => {
-      this.http.get(url, { responseType: 'text' }).subscribe({
+    
+    if (toFetch.length === 0) {
+      // If everything already cached, still (re)attach/color
+      setTimeout(() => {
+        this.attachAndColorAllInline();
+        this.svgLoading = false; // Hide loading when no new SVGs needed
+        this.applyFloorplanState();
+      }, 100);
+      return;
+    }
+
+    // Track completed requests
+    let completedRequests = 0;
+    const totalRequests = toFetch.length;
+    let hasError = false;
+
+    toFetch.forEach(async url => {
+      // Normalize Firebase URLs to ensure proper download URLs
+      const normalizedUrl = await this.normalizeToDownloadUrl(url);
+      this.http.get(normalizedUrl, { responseType: 'text' }).subscribe({
         next: (svgText) => {
           // Process SVG for compact display
           const processedSvgText = this.processSvgForCompactDisplay(svgText);
           const safe = this.sanitizer.bypassSecurityTrustHtml(processedSvgText);
           this.svgHtmlMap.set(url, safe);
 
-          // Wait for Angular to render, then attach listeners & color
-          setTimeout(() => this.attachAndColorAllInline(), 0);
+          completedRequests++;
+          
+          // Only hide loading when ALL SVGs are loaded
+          if (completedRequests === totalRequests) {
+            // Wait for Angular to render, then attach listeners & color
+            setTimeout(() => {
+              this.attachAndColorAllInline();
+              this.svgLoading = false; // Hide loading when all SVGs are ready
+              this.applyFloorplanState();
+            }, 200);
+          }
         },
         error: (err) => {
           console.error('Failed to fetch SVG', url, err);
           this.toastService.error('Failed to load floorplan SVG');
+          this.svgFailed = true;
+          hasError = true;
+          completedRequests++;
+          
+          // Hide loading even if some requests fail
+          if (completedRequests === totalRequests) {
+            this.svgLoading = false;
+            this.applyFloorplanState();
+          }
         }
       });
     });
 
-    // If everything already cached, still (re)attach/color
-    if (toFetch.length === 0) {
-      setTimeout(() => this.attachAndColorAllInline(), 0);
-    }
+    // SVG loading timeout (5 seconds)
+    setTimeout(() => {
+      if (this.svgLoading) {
+        console.warn('SVG loading timeout');
+        this.svgLoading = false;
+        this.svgFailed = true;
+        this.toastService.error('SVG loading timed out. Please try again.');
+        this.applyFloorplanState();
+      }
+    }, 5000);
   }
 
   //SVG Size Compact Display
@@ -2435,14 +2972,35 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   }
 
   private attachAndColorAllInline() {
-    if (!this.svgHosts) return;
+    console.log('🔗 attachAndColorAllInline called, svgHosts count:', this.svgHosts?.length || 0);
+    if (!this.svgHosts) {
+      console.log('❌ No svgHosts found');
+      return;
+    }
 
     // For each inlined SVG root, run listeners + color
-    this.svgHosts.forEach(hostRef => {
+    this.svgHosts.forEach((hostRef, index) => {
       const host = hostRef.nativeElement;
+      console.log(`🔗 Processing host ${index}:`, host);
+      console.log(`🔗 Host innerHTML length:`, host.innerHTML?.length || 0);
+      
       const rootSvg = host.querySelector('svg') as SVGSVGElement | null;
-      if (!rootSvg) return;
+      if (!rootSvg) {
+        console.log(`❌ No SVG found in host ${index}`);
+        return;
+      }
 
+      console.log(`✅ Found SVG in host ${index}:`, rootSvg);
+      console.log(`🔗 SVG children count: ${rootSvg.children.length}`);
+      console.log(`🔗 SVG viewBox:`, rootSvg.getAttribute('viewBox'));
+      
+      // Check if SVG has room elements
+      const roomElements = rootSvg.querySelectorAll('[id]');
+      console.log(`🔗 SVG elements with IDs: ${roomElements.length}`);
+      if (roomElements.length > 0) {
+        console.log(`🔗 First few IDs:`, Array.from(roomElements).slice(0, 3).map(el => el.id));
+      }
+      
       // Attach click handlers on this inline SVG
       this.attachRoomListenersInline(rootSvg);
 
@@ -2452,48 +3010,129 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   }
 
   private attachRoomListenersInline(rootSvg: SVGSVGElement) {
+    console.log('attachRoomListenersInline called for SVG:', rootSvg);
     const svgDoc = rootSvg.ownerDocument!;
+    
+    // Remove any existing listeners first to avoid duplicates
+    if ((rootSvg as any).__ps_click_bound__) {
+      console.log('Removing existing click listener');
+      rootSvg.removeEventListener('click', (rootSvg as any).__ps_click_handler);
+    }
+    
     // Use your existing logic, but operate within rootSvg:
     //  - Instead of searching in object.contentDocument,
     //  - search within rootSvg
     const handleClick = (event: MouseEvent) => {
+      console.log('🎯 SVG CLICK DETECTED:', {
+        target: event.target,
+        targetTagName: (event.target as Element)?.tagName,
+        targetId: (event.target as Element)?.id,
+        targetClass: (event.target as Element)?.className,
+        currentTarget: event.currentTarget,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        pageX: event.pageX,
+        pageY: event.pageY,
+        offsetX: event.offsetX,
+        offsetY: event.offsetY,
+        screenX: event.screenX,
+        screenY: event.screenY
+      });
+      
       let target = event.target as Element | null;
       const root = rootSvg as Element;
+      let matched = false;
+      
       while (target && target !== root) {
         const el = target as HTMLElement;
         let candidate = el.id || el.getAttribute?.('data-id') || el.getAttribute?.('data-room') || '';
+        
+        console.log('Checking element:', {
+          tagName: el.tagName,
+          id: el.id,
+          candidate: candidate,
+          classList: el.classList.toString()
+        });
+        
         if (!candidate) {
           const href = el.getAttribute?.('href') || el.getAttribute?.('xlink:href') || '';
           if (href && href.startsWith('#')) candidate = href.slice(1);
         }
+        
         if (candidate) {
           const normalized = this.normalizeId(candidate);
+          console.log('🔍 Found candidate:', { 
+            candidate, 
+            normalized,
+            roomIdIndexSize: this.roomIdIndex.size,
+            roomIdIndexKeys: Array.from(this.roomIdIndex.keys()).slice(0, 5) // Show first 5 keys
+          });
           const room = this.roomIdIndex.get(normalized);
           if (room) {
+            console.log('✅ Matched room:', { id: room.id, name: room.name });
             this.openPopupFromRoom(room, event);
+            matched = true;
             return;
+          } else {
+            console.log('❌ No room found for normalized ID:', normalized);
+            // Try to find room by original candidate
+            const roomByOriginal = this.roomIdIndex.get(candidate);
+            if (roomByOriginal) {
+              console.log('✅ Found room by original candidate:', { id: roomByOriginal.id, name: roomByOriginal.name });
+              this.openPopupFromRoom(roomByOriginal, event);
+              matched = true;
+              return;
+            }
           }
         }
         target = target.parentElement;
       }
-      this.closePopup();
+      
+      if (!matched) {
+        console.log('No room element matched, closing popup');
+        this.closePopup();
+      }
     };
 
-    // Avoid double-binding
-    if (!(rootSvg as any).__ps_click_bound__) {
-      rootSvg.addEventListener('click', (ev) => this.ngZone.run(() => handleClick(ev as MouseEvent)));
-      (rootSvg as any).__ps_click_bound__ = true;
-    }
+    // Store the handler reference for potential removal
+    (rootSvg as any).__ps_click_handler = (ev: Event) => this.ngZone.run(() => handleClick(ev as MouseEvent));
+    
+    // Add the click listener
+    rootSvg.addEventListener('click', (rootSvg as any).__ps_click_handler);
+    (rootSvg as any).__ps_click_bound__ = true;
+    
+    // Also add a simple test listener to verify clicks are being detected
+    rootSvg.addEventListener('click', (ev) => {
+      console.log('🔥 TEST CLICK DETECTED!', {
+        target: ev.target,
+        targetTag: (ev.target as Element)?.tagName,
+        targetId: (ev.target as Element)?.id,
+        coordinates: {
+          clientX: (ev as MouseEvent).clientX,
+          clientY: (ev as MouseEvent).clientY,
+          pageX: (ev as MouseEvent).pageX,
+          pageY: (ev as MouseEvent).pageY
+        }
+      });
+    });
+    
+    console.log('Click listener attached to SVG');
 
     // Strong bindings on specific room elements
-    this.rooms.forEach(room => {
+    console.log('Setting up room-specific click handlers for', this.rooms.length, 'rooms');
+    this.rooms.forEach((room, index) => {
       const el = this.findRoomElementInline(rootSvg, room) as HTMLElement | null;
-      if (!el) return;
+      if (!el) {
+        console.log(`Room ${index} (${room.name}) element not found in SVG`);
+        return;
+      }
+      console.log(`Found room element for ${room.name}:`, el);
       el.style.cursor = 'pointer';
       el.style.pointerEvents = 'auto';
       if (!(el as any).__ps_room_bound__) {
         el.addEventListener('click', (ev: MouseEvent) =>
           this.ngZone.run(() => {
+            console.log('Room-specific click handler triggered for:', room.name);
             ev.preventDefault();
             ev.stopPropagation();
             this.openPopupFromRoom(room, ev);
@@ -2534,9 +3173,32 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
       const isSelected = this.filteredRooms.includes(room);
       let color = 'none';
       if (isSelected) {
-        color = room.status === 'Occupied'
-          ? '#ef4444'
-          : (this.filters.status === 'Available' ? this.getPaxColor(room.capacity) : '#22c55e');
+        // Compute effective status based on selected-date availability if provided
+        const avail = this.selectedStartDate ? this.availabilityByRoomId.get(room.id) : undefined;
+        let effectiveStatus: 'Occupied' | 'Available';
+        if (avail) {
+          // When date is selected, check both availability AND original room status
+          // If room status is reserved/unavailable/available_soon/occupied, keep it red
+          const originalStatus = this.toStatusUnion(room.status);
+          if (originalStatus === 'Occupied') {
+            // Room is reserved/unavailable/available_soon/occupied - keep red regardless of availability
+            effectiveStatus = 'Occupied';
+          } else {
+            // Room is available - use date-based availability
+            effectiveStatus = (avail === 'free') ? 'Available' : 'Occupied';
+          }
+        } else {
+          effectiveStatus = this.toStatusUnion(room.status);
+        }
+
+        if (effectiveStatus === 'Occupied') {
+          color = '#ef4444'; // Red for occupied
+        } else if (this.filters.status === 'Available') {
+          // Use pax-based palette for available rooms when filtering by Available (even with date range)
+          color = this.getPaxColor(room.capacity);
+        } else {
+          color = '#22c55e'; // Green for available (default)
+        }
       }
 
       const tag = el.tagName.toLowerCase();
@@ -2568,7 +3230,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     });
   }
 
-private async normalizeToDownloadUrl(url: string): Promise<string> {
+  private async normalizeToDownloadUrl(url: string): Promise<string> { 
   if (!url) return url;
 
   // Already a Firebase download URL
@@ -2592,9 +3254,7 @@ private async normalizeToDownloadUrl(url: string): Promise<string> {
     return getDownloadURL(ref(storage, objectPath));
   }
 
-  // Anything else: return as-is
-  return url;
-}
-
-
+    // Anything else: return as-is
+    return url;
+  }
 }

@@ -45,16 +45,6 @@ export class FloorService {
     return floorName;
   }
 
-  // Get floors grouped by office (if needed for filtering)
-  getFloorsByOffice(officeId: string): Observable<Floor[]> {
-    return this.getFloors().pipe(
-      map(floors => floors.filter(floor =>
-        // You might need to add office_id filtering here if the backend supports it
-        // For now, return all floors
-        true
-      ))
-    );
-  }
 
   // Get SVG files for a specific floor and outlet
   getSvgFilesForFloor(officeId: string, floorId: string, floors?: Floor[]): Observable<any> {

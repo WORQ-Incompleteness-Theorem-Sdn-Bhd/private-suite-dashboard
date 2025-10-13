@@ -42,6 +42,7 @@
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  min-height: 400px; // Ensure minimum height for loading area
   
   .floorplan-item {
     position: relative;
@@ -65,5 +66,63 @@
   
   @media (min-width: 1200px) {
     grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+  }
+}
+
+// Navigation arrows styling
+.nav-arrow {
+  backdrop-filter: blur(8px);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  
+  &:hover:not(:disabled) {
+    transform: scale(1.05);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  }
+  
+  &:active:not(:disabled) {
+    transform: scale(0.95);
+  }
+  
+  &:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    transform: none;
+  }
+  
+  // Arrow icon animation
+  svg {
+    transition: all 0.2s ease-in-out;
+  }
+  
+  &:hover:not(:disabled) svg {
+    transform: translateX(-2px);
+  }
+  
+  &:hover:not(:disabled) svg:last-child {
+    transform: translateX(2px);
+  }
+}
+
+// Pagination indicator styling
+.pagination-indicator {
+  backdrop-filter: blur(8px);
+  transition: all 0.3s ease-in-out;
+  
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+  }
+  
+  .pagination-dot {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    
+    &:hover:not(.active) {
+      transform: scale(1.2);
+      background-color: #9ca3af;
+    }
+    
+    &.active {
+      box-shadow: 0 2px 8px rgba(249, 115, 22, 0.3);
+    }
   }
 }

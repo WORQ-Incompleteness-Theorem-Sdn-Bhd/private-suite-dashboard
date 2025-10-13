@@ -101,57 +101,52 @@ export class OfficeService {
   loadOffices(): Observable<OfficeResponse> {
     this.loadingSubject.next(true);
     
-    // First get offices from BigQuery
-    return this.http.get<any>(`${environment.bqUrl}/offices`).pipe(
-      switchMap(bqResponse => {
-        // Then get floorplan data for SVG URLs
-        return this.http.get<any[]>(`${environment.floorplanUrl}`).pipe(
-          map(floorplanData => {
-            const bqOffices = bqResponse.data || [];
-            
-            // Map BigQuery office data to Office interface
-            const officesFromBq = bqOffices.map((office: any) => {
-              const floorplanOffice = floorplanData.find(fo => fo.officeId === office.office_id);
-              
-              // Get SVG URLs from floorplan data
-              const allSvgs: string[] = [];
-              if (floorplanOffice) {
-                // Add office-level SVG if exists
-                if (floorplanOffice.officeSvg?.signedUrl) {
-                  allSvgs.push(floorplanOffice.officeSvg.signedUrl);
-                }
-                
-                // Add floor-level SVGs
-                if (floorplanOffice.floors) {
-                  floorplanOffice.floors.forEach((floor: any) => {
-                    if (floor.signedUrl) {
-                      allSvgs.push(floor.signedUrl);
-                    }
-                  });
-                }
-              }
-              // when dynamic data doesn't have SVG URLs
-              // Find matching static office for fallback SVG
-              const staticOffice = this.staticOffices.find(so => so.id === office.office_id);
-              
-              return {
-                id: office.office_id,
-                name: office.office_name,
-                displayName: office.office_name,
-                svg: allSvgs.length > 0 ? allSvgs : (staticOffice?.svg || [])
-              } as Office;
+    console.log('Loading offices from BigQuery...');
+    
+    // Get offices from BigQuery only
+    return this.http.get<any>(`${environment.bqUrl}/locations`).pipe(
+      map(bqResponse => {
+        console.log('BigQuery response:', bqResponse);
+        const bqOffices = bqResponse.data || [];
+        console.log('BigQuery offices:', bqOffices);
+        
+        // Map BigQuery office data to Office interface
+        const officesFromBq = bqOffices
+          .filter((office: any) => {
+            // Only include offices with valid location_id and location_name
+            const hasValidId = office.location_id && office.location_id.trim() !== ''; 
+            const hasValidName = office.location_name && office.location_name.trim() !== '';
+            console.log('BigQuery office validation:', { 
+              office, 
+              hasValidId, 
+              hasValidName 
             });
-
-            return {
-              data: officesFromBq,
-              success: true,
-              message: 'Offices loaded successfully from BigQuery'
-            };
+            return hasValidId && hasValidName;
           })
-        );
+          .map((office: any) => {
+            console.log('Mapping valid BigQuery office:', office);
+            
+            // Find matching static office for SVG fallback
+            const staticOffice = this.staticOffices.find(so => so.id === office.location_id);
+            
+            return {
+              id: office.location_id,
+              name: office.location_name,
+              displayName: office.location_name,
+              svg: staticOffice?.svg || []
+            } as Office;
+          });
+
+        console.log('Mapped offices:', officesFromBq);
+
+        return {
+          data: officesFromBq,
+          success: true,
+          message: 'Offices loaded successfully from BigQuery'
+        };
       }),
       tap((response: OfficeResponse) => {
-        console.log('Loaded offices from BigQuery:', response);
+        console.log('Final office response:', response);
         if (response.success && response.data) {
           this.officesSubject.next(response.data);
         }

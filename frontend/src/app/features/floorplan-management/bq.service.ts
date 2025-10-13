@@ -99,6 +99,10 @@ export class BQService {
       : `${this.floorplanUrl}/${officeId}`;
     return this.http.get<any>(url);
   }
+
+  getAllFloorplans(): Observable<any[]> {
+    return this.http.get<any[]>(this.floorplanUrl);
+  }
 }
 
 //temp by dayang for upload svg testing

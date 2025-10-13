@@ -15,7 +15,7 @@ export class ToastService {
 
   private toastId = 0;
 
-  show(message: string, type: ToastMessage['type'] = 'info', duration: number = 5000): void {
+  show(message: string, type: ToastMessage['type'] = 'info', duration: number = 1000): void {
     const toast: ToastMessage = {
       id: `toast-${++this.toastId}`,
       message,

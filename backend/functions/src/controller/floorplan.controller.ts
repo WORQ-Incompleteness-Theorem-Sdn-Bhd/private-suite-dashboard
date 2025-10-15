@@ -16,6 +16,7 @@ import {
 
 /** CONFIG */
 const BUCKET = process.env.FLOORPLAN_BUCKET || 'floorplan-dashboard-2a468.appspot.com';
+const ROOT_PREFIX = 'floorplans';
 
 const storage: Storage = initializeStorage();
 const bucket = storage.bucket(BUCKET);
@@ -58,7 +59,10 @@ export async function handleUpload(req: Request, res: Response): Promise<void> {
 
     await processUpload(fields, file, res, cleanup);
   } catch (error: any) {
-    console.error("Upload error:", error?.message || error);
+    console.error("❌ Upload error:", error?.message || error);
+    console.error("❌ Upload error stack:", error?.stack);
+    console.error("❌ Upload error code:", error?.code);
+    console.error("❌ Upload error status:", error?.status);
     await cleanup();
     res.status(500).json({
       error: "Upload failed",
@@ -92,7 +96,18 @@ async function processUpload(
   const fileName =
     fields.fileName || fields.filename || file.filename.replace(/\.svg$/i, "");
 
+  // Debug logging
+  console.log("📤 Upload fields received:", {
+    officeId,
+    floorId,
+    overwrite,
+    fileName,
+    fileSize: file.size,
+    fileType: file.filename
+  });
+
   if (!officeId) {
+    console.error("❌ Missing officeId in upload request");
     res.status(400).json({ error: "officeId is required" });
     return;
   }
@@ -103,65 +118,36 @@ async function processUpload(
 
   try {
     // Build final destination key
-    const sanitizedName = sanitizeBaseName(fileName) + ".svg";
+    const sanitizedName = (sanitizeBaseName(fileName) || "floorplan") + ".svg";
     const finalKey = floorId
-      ? `${officeId}/${floorId}/${sanitizedName}`
-      : `${officeId}/${sanitizedName}`;
+      ? `${ROOT_PREFIX}/${officeId}/${floorId}/${sanitizedName}`
+      : `${ROOT_PREFIX}/${officeId}/${sanitizedName}`;
 
-    // 1) If floorId provided, handle existing SVG replacement
-    if (floorId) {
-      // Allow floor creation - don't require existing floor folder
-      // The folder will be created automatically when the file is uploaded
-      
-      // Check for existing SVGs under this floor
-      const [floorListing] = await bucket.getFiles({
-        prefix: `${officeId}/${floorId}/`,
-        autoPaginate: false,
-        maxResults: 100,
+    console.log("🎯 Upload target path:", finalKey);
+    console.log("📁 Office ID:", officeId);
+    console.log("🏢 Floor ID:", floorId || "none (office-level)");
+    console.log("🔄 Overwrite mode:", overwrite);
+
+    // Only check exact target file; folders are virtual and auto-created
+    const targetFile = bucket.file(finalKey);
+    console.log("🔍 Checking if target file exists...");
+    const [exists] = await targetFile.exists();
+    console.log("📄 Target file exists:", exists);
+    if (exists && !overwrite) {
+      await fs.unlink(tmp).catch(() => { });
+      res.status(409).json({
+        error: "SVG already exists for this location. Pass overwrite=true to replace.",
+        existing: [finalKey],
       });
-
-      // Find any existing SVG(s) under this floor
-      const existingSvgs = (floorListing || []).filter((f) =>
-        f.name.toLowerCase().endsWith(".svg")
-      );
-
-      if (existingSvgs.length > 0 && !overwrite) {
-        await fs.unlink(tmp).catch(() => { });
-        res.status(409).json({
-          error:
-            "SVG already exists for this floor. Pass overwrite=true to replace.",
-          existing: existingSvgs.map((f) => f.name),
-        });
-        return;
-      }
-
-      // If overwriting, remove existing SVGs first (safer than write-over during CDN caching)
-      if (existingSvgs.length > 0 && overwrite) {
-        await Promise.all(
-          existingSvgs.map((f) =>
-            f.delete({ ignoreNotFound: true }).catch(() => { })
-          )
-        );
-      }
-    } else {
-      // 2) No floorId (uploading under office root). Block if same-name file exists unless overwrite.
-      const rootFile = bucket.file(finalKey);
-      const [exists] = await rootFile.exists();
-      if (exists && !overwrite) {
-        await fs.unlink(tmp).catch(() => { });
-        res.status(409).json({
-          error: `File '${sanitizedName}' already exists under office '${officeId}'. Pass overwrite=true to replace.`,
-          existing: [finalKey],
-        });
-        return;
-      }
-      if (exists && overwrite) {
-        await rootFile.delete({ ignoreNotFound: true }).catch(() => { });
-      }
+      return;
+    }
+    if (exists && overwrite) {
+      await targetFile.delete({ ignoreNotFound: true }).catch(() => { });
     }
 
     // 3) Upload the new file
     console.log("☁️ Uploading to:", finalKey);
+    console.log("🚀 Starting Firebase Storage upload...");
     await bucket.upload(tmp, {
       destination: finalKey,
       resumable: false,
@@ -175,6 +161,7 @@ async function processUpload(
         cacheControl: "public, max-age=31536000, immutable",
       },
     });
+    console.log("✅ Upload completed successfully!");
 
     // Only now set cloudFile for potential cleanup-on-error
     const cloudFile = bucket.file(finalKey);
@@ -223,7 +210,10 @@ async function processUpload(
       await cleanup();
     }
   } catch (err: any) {
-    console.error("Upload processing error:", err?.message || err);
+    console.error("❌ Upload processing error:", err?.message || err);
+    console.error("❌ Error stack:", err?.stack);
+    console.error("❌ Error code:", err?.code);
+    console.error("❌ Error status:", err?.status);
     await fs.unlink(tmp).catch(() => { });
     await cleanup();
     res.status(500).json({
@@ -235,12 +225,17 @@ async function processUpload(
 
 /** GET /api/floorplans/:officeId[/:floorId] */
 async function fetchAllSvgs(bucket: Bucket, prefix: string): Promise<File[]> {
-  const opts: GetFilesOptions = {
-    prefix,            // recursive search (no delimiter)
-    autoPaginate: true
-  };
-  const [files] = await bucket.getFiles(opts);
-  return files.filter((f) => f.name.toLowerCase().endsWith(".svg"));
+  try {
+    const opts: GetFilesOptions = {
+      prefix,            // recursive search (no delimiter)
+      autoPaginate: true
+    };
+    const [files] = await bucket.getFiles(opts);
+    return files.filter((f) => f.name.toLowerCase().endsWith(".svg"));
+  } catch (error) {
+    console.log("📭 fetchAllSvgs: No files found at prefix:", prefix, "- returning empty array");
+    return [];
+  }
 }
 
 async function fetchUniqueSvg(bucket: Bucket, prefix: string): Promise<File> {
@@ -254,7 +249,7 @@ async function fetchUniqueSvg(bucket: Bucket, prefix: string): Promise<File> {
     const err: any = new Error(
       `Expected 1 SVG at ${prefix} but found ${svgs.length} (${svgs.map(f => f.name).join(", ")})`
     );
-    err.code = "EEXIST";
+    err.code = "EXIST";
     throw err;
   }
   return svgs[0];
@@ -281,7 +276,7 @@ export async function getFloorplan(req: Request, res: Response): Promise<void> {
 
     // ---- Case A: specific floor (unique SVG expected) ----
     if (floorId) {
-      const prefix = `${officeId}/${floorId}/`;
+      const prefix = `${ROOT_PREFIX}/${officeId}/${floorId}/`;
       const file = await fetchUniqueSvg(bucket, prefix);
       console.log("getFloorplan : file", file)
 
@@ -328,10 +323,20 @@ export async function getFloorplan(req: Request, res: Response): Promise<void> {
 
     // ---- Case B: list all floors under an office ----
     {
-      const prefix = `${officeId}/`;
+      const prefix = `${ROOT_PREFIX}/${officeId}/`;
+      console.log("🔍 getFloorplan: Searching for files at prefix:", prefix);
       const files = await fetchAllSvgs(bucket, prefix);
+      console.log("🔍 getFloorplan: Found files:", files.length, "files");
       if (!files.length) {
-        res.status(404).json({ error: `No SVG found at ${prefix}` });
+        // Return empty list for new offices instead of 404
+        console.log("📭 No floorplans found for office:", officeId, "- returning empty list");
+        res.json({
+          ok: true,
+          scope: "list",
+          bucket: BUCKET,
+          count: 0,
+          items: [],
+        });
         return;
       }
 
@@ -376,7 +381,7 @@ export async function getFloorplan(req: Request, res: Response): Promise<void> {
       res.status(404).json({ error: err.message || "Not found" });
       return;
     }
-    if (err?.code === "EEXIST") {
+    if (err?.code === "EXIST") {
       res.status(409).json({ error: err.message || "Multiple files found" });
       return;
     }

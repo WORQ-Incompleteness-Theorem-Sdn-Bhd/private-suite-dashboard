@@ -82,7 +82,9 @@
         <!-- Outlet dropdown -->
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Outlet</label>
-          <select formControlName="officeId" class="w-full p-2 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500">
+          <select formControlName="officeId" 
+                  (ngModelChange)="onUploadOutletSelected()"
+                  class="w-full p-2 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500">
             <option value="" disabled selected>Select Outlet</option>
             <option *ngFor="let outlet of locations" [value]="outlet.value">{{ outlet.label }}</option>
           </select>
@@ -91,8 +93,8 @@
           </small>
         </div>
 
-          <!-- Floor Selection -->
-          <div class="space-y-2">
+          <!-- Floor Selection - Only show after outlet is selected -->
+          <div *ngIf="form.get('officeId')?.value" class="space-y-2">
             <div class="flex items-center gap-2">
               <label class="block text-sm font-semibold text-gray-700">Floor</label>
               <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
@@ -100,9 +102,10 @@
               </span>
             </div>
             <select formControlName="floorId" 
+                    (ngModelChange)="onUploadFloorSelected()"
                     class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-colors">
               <option value="" disabled selected>
-                {{ filteredFloors.length === 0 ? 'Select outlet first to see floors' : 'Select Floor (if multiple floors)' }}
+                {{ filteredFloors.length === 0 ? 'No floors available for this outlet' : 'Select Floor (if multiple floors)' }}
               </option>
               <option *ngFor="let fl of filteredFloors" [value]="fl.value">
                 {{ fl.label }}
@@ -137,6 +140,16 @@
             File is required
           </small>
         </div>
+
+    <!-- !!! REMOVE THIS BEFORE DEPLOYING !!! -->
+    <!-- Overwrite existing toggle
+        <div class="flex items-start gap-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <input type="checkbox" id="overwrite" formControlName="overwrite" class="mt-1 h-4 w-4 text-orange-600 border-gray-300 rounded" />
+          <label for="overwrite" class="text-sm text-gray-700 cursor-pointer">
+            <span class="font-medium">Overwrite existing floorplan</span>
+            <span class="block text-xs text-gray-600">Enable to replace an existing floorplan at this location.</span>
+          </label>
+        </div> -->
 
         <button 
           type="submit"
@@ -214,19 +227,6 @@
         </select>
       </div>
       
-      <div class="flex flex-col space-y-2">
-        <label class="text-sm font-medium text-gray-700">Floor</label>
-        <select 
-          class="p-2 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500" 
-          [(ngModel)]="selectedFloor" 
-          (ngModelChange)="onSelected()"
-          [disabled]="!selectedOffice">
-          <option value="">-- Select Floor --</option>
-          <option *ngFor="let fl of filteredFloors" [value]="fl.value">
-            {{ fl.label }}
-          </option>
-        </select>
-      </div>
     </div>
 
     <!-- Loading state -->
@@ -244,8 +244,34 @@
     </div>
 
   
-    <!-- Floorplan Display -->
-    <div *ngIf="safeSvgUrl && !loading && !error" class="bg-white border rounded-xl overflow-hidden">
+    <!-- Multiple SVG Navigation (if multiple levels) -->
+    <div *ngIf="totalFloorplans > 1 && !loading && !error" class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+      <div class="flex items-center justify-between">
+        <div class="text-sm text-blue-800">
+          <span class="font-semibold">{{ totalFloorplans }} floorplans</span> available
+        </div>
+        <div class="flex space-x-2">
+          <button 
+            (click)="previousFloorplan()" 
+            [disabled]="!hasPreviousFloorplan"
+            class="px-3 py-1 text-xs bg-blue-600 text-white rounded disabled:bg-gray-300 disabled:cursor-not-allowed">
+            ← Previous
+          </button>
+          <span class="px-2 py-1 text-xs bg-white border rounded">
+            {{ currentFloorplanIndex + 1 }} of {{ totalFloorplans }}
+          </span>
+          <button 
+            (click)="nextFloorplan()" 
+            [disabled]="!hasNextFloorplan"
+            class="px-3 py-1 text-xs bg-blue-600 text-white rounded disabled:bg-gray-300 disabled:cursor-not-allowed">
+            Next →
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Floorplan Display - Single SVG (fallback) -->
+    <div *ngIf="safeSvgUrl && !svgHtml && !loading && !error" class="bg-white border rounded-xl overflow-hidden">
       <div class="p-3 bg-orange-100 border-b border-orange-200">
         <span class="text-sm font-semibold text-orange-800">
           🏢 {{ getSelectedOfficeLabel() }}
@@ -255,12 +281,30 @@
         </span>
       </div>
       <div class="p-4">
-        <img [src]="safeSvgUrl" class="w-full h-auto max-h-96 object-contain" alt="Floorplan">
+        <img [src]="safeSvgUrl" class="w-full h-auto object-contain" alt="Floorplan">
+      </div>
+    </div>
+
+    <!-- Floorplan Display - Multiple SVGs (inline) -->
+    <div *ngIf="svgHtml && !loading && !error" class="bg-white border rounded-xl overflow-hidden">
+      <div class="p-3 bg-orange-100 border-b border-orange-200">
+        <span class="text-sm font-semibold text-orange-800">
+          🏢 {{ getSelectedOfficeLabel() }}
+          <span *ngIf="selectedFloor" class="ml-2 text-gray-600">
+            - {{ getSelectedFloorLabel() }}
+          </span>
+          <span *ngIf="totalFloorplans > 1" class="ml-2 text-blue-600">
+            ({{ currentFloorplanIndex + 1 }}/{{ totalFloorplans }})
+          </span>
+        </span>
+      </div>
+      <div class="p-4">
+        <div [innerHTML]="svgHtml" class="w-full h-auto"></div>
       </div>
     </div>
 
     <!-- Empty state -->
-    <div *ngIf="!safeSvgUrl && !loading && !error" class="p-8 text-center text-gray-600 bg-gray-50 rounded-xl">
+    <div *ngIf="!safeSvgUrl && !svgHtml && !loading && !error" class="p-8 text-center text-gray-600 bg-gray-50 rounded-xl">
       <div class="text-4xl mb-4">🏢</div>
       <div>Select an outlet to view its floorplan</div>
     </div>

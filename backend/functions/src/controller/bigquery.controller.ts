@@ -168,6 +168,17 @@ export async function getFloors(req: Request, res: Response): Promise<void> {
     typeof limit === "number" ? Math.max(Number(q.offset ?? 0), 0) : 0;
 
   try {
+    
+    // Debug: show fetchFromTable inputs
+    console.log('[getFloors] fetchFromTable inputs:', {
+      limit,
+      offset,
+      allowedSelect: ["extraction_date", "floor_id", "floor_no", "floor_name", "location_id"],
+      allowedFilter: ["extraction_date"],
+      filters: { extraction_date: today },
+      table: process.env.BQ_FLOOR_TABLE_ID,
+    });
+
     const rows = await fetchFromTable({
       limit,
       offset,
@@ -179,11 +190,12 @@ export async function getFloors(req: Request, res: Response): Promise<void> {
       table: process.env.BQ_FLOOR_TABLE_ID,
     });
 
+    // Return rows to avoid unused variable warning and provide API response
     res.json({
       data: rows,
       limit: limit || undefined,
       offset: limit ? offset : undefined,
-      filtersApplied: undefined,
+      filtersApplied: { extraction_date: today },
     });
   } catch (err: any) {
     const msg = String(err?.message || err);

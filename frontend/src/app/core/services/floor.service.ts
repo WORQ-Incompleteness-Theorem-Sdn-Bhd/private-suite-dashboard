@@ -17,7 +17,21 @@ export class FloorService {
 
   getFloors(): Observable<Floor[]> {
     return this.http.get<FloorResponse>(`${this.bqUrl}/floors`).pipe(
-      map(response => response.data || [])
+      map(response => (response.data || []).map((f: any) => ({
+        ...f,
+        // normalize location id field for downstream consumers
+        location_id: f.location_id ?? f.office_id ?? f.locationId ?? f.outlet_id ?? null,
+      }) as Floor)),
+      tap((floors) => {
+        if (floors.length > 0) {
+          console.log('Floor service normalized sample:', {
+            floor_id: floors[0].floor_id,
+            floor_no: (floors as any)[0].floor_no,
+            floor_name: (floors as any)[0].floor_name,
+            location_id: (floors as any)[0].location_id,
+          });
+        }
+      })
     );
   }
 

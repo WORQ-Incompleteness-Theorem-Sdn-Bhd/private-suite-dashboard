@@ -53,17 +53,31 @@ export class BQService {
 
   uploadFloorplan(opts: {
     officeId: string;
-    floorId: string;
+    floorId?: string; // Made optional
     file: File;
     fileName?: string;
+    overwrite?: boolean;
   }): Observable<{ progress: number; done: boolean; data?: UploadResponse }> {
-    const { officeId, floorId, file, fileName } = opts;
+    const { officeId, floorId, file, fileName, overwrite } = opts;
 
     const form = new FormData();
     form.append('file', file, file.name);
     form.append('officeId', officeId);
-    form.append('floorId', floorId);
+    if (floorId) form.append('floorId', floorId); // Only append if exists
     if (fileName) form.append('fileName', fileName);
+    if (overwrite) form.append('overwrite', 'true');
+
+    console.log('📤 BQService: Upload request details:', {
+      url: `${this.floorplanUrl}`,
+      formData: {
+        officeId,
+        floorId,
+        fileName,
+        overwrite,
+        fileSize: file.size,
+        fileType: file.type
+      }
+    });
 
     return this.http
       .post<UploadResponse>(`${this.floorplanUrl}`, form, {

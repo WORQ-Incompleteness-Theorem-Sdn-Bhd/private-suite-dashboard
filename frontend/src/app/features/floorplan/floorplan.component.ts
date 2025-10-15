@@ -199,6 +199,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   private safeUrlCache = new Map<string, SafeResourceUrl>();
   private roomIdIndex: Map<string, Room> = new Map();
   private objectToOriginalViewBox = new WeakMap<HTMLObjectElement, string>();
+  private floorLabelOverrides: Record<string, Record<string, string>> = {};
  
   svgHtmlMap = new Map<string, SafeResourceUrl>(); // or SafeHtml
   @ViewChildren('svgHost') svgHosts!: QueryList<ElementRef<HTMLDivElement>>;

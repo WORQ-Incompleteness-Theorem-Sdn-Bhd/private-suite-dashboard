@@ -15,7 +15,7 @@ export async function getResources(req: Request, res: Response): Promise<void> {
     return undefined;
   };
 
-  const outlet = pick(["outlet", "office_id"]);
+  const outlet = pick(["outlet", "location_id"]);
   const status = pick(["status"]);
   const pax = pick(["pax", "pax_size"]);
   const suite = pick(["suite", "resource_id"]); 
@@ -29,7 +29,7 @@ export async function getResources(req: Request, res: Response): Promise<void> {
     ...(resourceTypeOverride
       ? { resource_type: String(resourceTypeOverride) }
       : { resource_type: "team_room" }),
-    ...(outlet ? { office_id: String(outlet) } : {}),
+    ...(outlet ? { location_id: String(outlet) } : {}),
     ...(status ? { status: String(status) } : {}),
     ...(pax ? { pax_size: Number(pax) } : {}),
     ...(suite ? { resource_id: String(suite) } : {}),
@@ -55,7 +55,8 @@ export async function getResources(req: Request, res: Response): Promise<void> {
         "pax_size",
         "area_in_sqmm",
         "status",
-        "office_id",
+        // "location_id",
+        'office_id',
         "floor_id",
         "available_from",
         "available_until",
@@ -63,10 +64,11 @@ export async function getResources(req: Request, res: Response): Promise<void> {
       ],
       allowedFilter: [
         "extraction_date",
-        "office_id",
+        "location_id",
         "status",
         "pax_size",
         "resource_id",
+        "office_id",
         "floor_id",
         "resource_type",
       ],
@@ -163,9 +165,8 @@ export async function getLocations(req: Request, res: Response): Promise<void> {
 export async function getFloors(req: Request, res: Response): Promise<void> {
   const q = req.query ?? {};
 
-  // Accept either office_id or outlet from the client
-  const rawOffice = (q as any).location_id ?? (q as any).outlet;
-  const office = rawOffice ? String(rawOffice) : undefined;
+  const rawLocationId = (q as any).location_id ?? (q as any).location_id;
+  const locationId = rawLocationId ? String(rawLocationId) : undefined;
 
   const today = new Date().toISOString().split("T")[0];
   const limit = parseLimit(q.limit, 200);
@@ -181,7 +182,7 @@ export async function getFloors(req: Request, res: Response): Promise<void> {
     // Build filters — map office_id -> location_id for floors table
     const filters: Record<string, any> = {
       extraction_date: today,
-      ...(office ? { location_id: office } : {}),
+      ...(locationId ? { location_id: locationId } : {}),
     };
 
     console.log('[getFloors] fetchFromTable inputs:', {
@@ -258,8 +259,8 @@ export async function getAvailability(req: Request, res: Response) {
     // Inputs
     const startStr = String(req.query.start || "");
     const endStr = String(req.query.end || "");
-    const rawOfficeId = (req.query.location_id ?? req.query.outlet);
-    const officeId = rawOfficeId ? String(rawOfficeId) : null;
+    const rawLocationId = (req.query.location_id ?? req.query.outlet);
+    const location = rawLocationId ? String(rawLocationId) : null;
 
 
     if (!startStr || !endStr) {
@@ -292,8 +293,6 @@ export async function getAvailability(req: Request, res: Response) {
     const sql = `
       DECLARE range_start   DATE   DEFAULT @range_start;
       DECLARE range_end     DATE   DEFAULT @range_end;
-      DECLARE office_id_p   STRING DEFAULT @office_id;  
-
       WITH params AS (
         SELECT range_start, range_end
       ),
@@ -301,21 +300,19 @@ export async function getAvailability(req: Request, res: Response) {
         SELECT d AS day FROM params, UNNEST(GENERATE_DATE_ARRAY(range_start, range_end))
       ),
       resources AS (
-        SELECT DISTINCT resource_id, resource_name AS name, office_id
+        SELECT DISTINCT resource_id, resource_name AS name, location_id
         FROM ${RES_FQN}
         WHERE extraction_date = @today
           AND resource_type = 'team_room'
-          AND (office_id_p IS NULL OR office_id = office_id_p)
+          AND (location_id_p IS NULL OR location_id = @location_id)
+          AND (location_id_p IS NULL OR location_id = @location_id)
+        ),
+      memberships AS (
+        SELECT resource_id, DATE(start_date) AS start_date, COALESCE(DATE(end_date), DATE '9999-12-31') AS end_date  
+        FROM ${MEM_FQN}
+        WHERE extraction_date = @today
+          AND (location_id_p IS NULL OR location_id = @location_id)
       ),
-     memberships AS (
-  SELECT
-    resource_id,
-    DATE(start_date) AS start_date,                          
-    COALESCE(DATE(end_date), DATE '9999-12-31') AS end_date  
-  FROM ${MEM_FQN}
-  WHERE extraction_date = @today
-  
-),
 
       grid AS (
         SELECT r.resource_id, r.name, d.day
@@ -349,7 +346,7 @@ export async function getAvailability(req: Request, res: Response) {
     console.log("[getAvailability] Query params:", {
       range_start: startISO,
       range_end: endISO,
-      office_id: officeId,
+      location_id: location,
       today: todayISO,
     });
 
@@ -359,7 +356,7 @@ export async function getAvailability(req: Request, res: Response) {
       params: {
         range_start: startISO,
         range_end: endISO,
-        office_id: officeId,
+        location_id: location,
         today: todayISO,
       },
       location: "asia-southeast1",
@@ -367,7 +364,7 @@ export async function getAvailability(req: Request, res: Response) {
 
     return res.json({
       range: { start: startISO, end: endISO, tz: TZ },
-      office_id: officeId,
+      location_id: location,
       resource_type: "team_room",
       resources: rows,
     });

@@ -7,7 +7,7 @@ import {
   signInWithPopup,
   GoogleAuthProvider,
 } from '@angular/fire/auth';
-import { environment } from '../../environments/environment.prod';
+import { environment } from '../../environments/environment';
 import { Observable, firstValueFrom } from 'rxjs';
 import { ToastService } from './toast.service';
 
@@ -201,7 +201,7 @@ export class AuthService {
       uid: uid,
     };
 
-    return this.http.post<any>(`${environment.authUrl}`, body, {
+    return this.http.post<any>(`${environment.apiBaseUrl}/api/token`, body, {
       headers,
     });
   }

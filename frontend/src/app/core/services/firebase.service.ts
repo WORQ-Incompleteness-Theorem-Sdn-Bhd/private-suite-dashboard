@@ -2,7 +2,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, map, catchError, of, tap } from 'rxjs';
-import { environment } from '../../environments/environment.prod';
+import { environment } from '../../environments/environment.dev';
 
 // export interface FirebaseSvgResponse {
 //   ok: boolean;
@@ -114,8 +114,8 @@ export interface OfficeFloorplans {
   providedIn: 'root'
 })
 export class FirebaseSvgService {
-  private baseUrl = environment.floorplanUrl; // Floorplan API URL
-  private bqUrl = environment.bqUrl;
+  private baseUrl = `${environment.apiBaseUrl}/api/floorplans`; // Floorplan API URL
+  private bqUrl = `${environment.apiBaseUrl}/api/bigquery`;
 
   constructor(private http: HttpClient) {}
 

@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, BehaviorSubject } from 'rxjs';
-import { environment } from '../../environments/environment.prod';
+import { environment } from '../../environments/environment';
 import { AuthService } from '../../shared/services/auth.service';
 import { OfficeService } from '../../core/services/office.service';
 import { Office } from '../../core/models/office.model';
@@ -302,7 +302,7 @@ export class AvailabilityDashboardComponent implements OnInit {
       params = params.set('office_id', this.selectedOfficeId);
     }
 
-    this.http.get<AvailabilityData>(`${environment.bqUrl}/availability`, { 
+    this.http.get<AvailabilityData>(`${environment.apiBaseUrl}/api/bigquery/availability`, { 
       params
     }).subscribe({
       next: (data) => {

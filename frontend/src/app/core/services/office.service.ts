@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, of } from 'rxjs';
 import { tap, map, catchError, switchMap } from 'rxjs/operators';
 import { Office, OfficeResponse } from '../models/office.model';
-import { environment } from '../../environments/environment.prod';
+import { environment } from '../../environments/environment';
 
 @Injectable({ providedIn: 'root' })
 export class OfficeService {
@@ -99,16 +99,13 @@ export class OfficeService {
   constructor(private http: HttpClient) {}
 
   loadOffices(): Observable<OfficeResponse> {
-    this.loadingSubject.next(true);
-    
-    console.log('Loading offices from BigQuery...');
-    
+    this.loadingSubject.next(true);    
     // Get offices from BigQuery only
-    return this.http.get<any>(`${environment.bqUrl}/locations`).pipe(
+    return this.http.get<any>(`${environment.apiBaseUrl}/api/bigquery/locations`).pipe(
       map(bqResponse => {
-        console.log('BigQuery response:', bqResponse);
+       // console.log('BigQuery response:', bqResponse);
         const bqOffices = bqResponse.data || [];
-        console.log('BigQuery offices:', bqOffices);
+      //  console.log('BigQuery offices:', bqOffices);
         
         // Map BigQuery office data to Office interface
         const officesFromBq = bqOffices
@@ -116,15 +113,15 @@ export class OfficeService {
             // Only include offices with valid location_id and location_name
             const hasValidId = office.location_id && office.location_id.trim() !== ''; 
             const hasValidName = office.location_name && office.location_name.trim() !== '';
-            console.log('BigQuery office validation:', { 
+            /*console.log('BigQuery office validation:', { 
               office, 
               hasValidId, 
               hasValidName 
-            });
+            });*/
             return hasValidId && hasValidName;
           })
           .map((office: any) => {
-            console.log('Mapping valid BigQuery office:', office);
+            //console.log('Mapping valid BigQuery office:', office);
             
             // Find matching static office for SVG fallback
             const staticOffice = this.staticOffices.find(so => so.id === office.location_id);
@@ -137,7 +134,7 @@ export class OfficeService {
             } as Office;
           });
 
-        console.log('Mapped offices:', officesFromBq);
+        //console.log('Mapped offices:', officesFromBq); this to check the outlet's data available in bigquery
 
         return {
           data: officesFromBq,

@@ -1,8 +1,107 @@
 <!-- Toast notifications -->
 <app-toast></app-toast>
+  <div
+    class="h-screen bg-gray-100 overflow-y-auto overflow-x-hidden transition-[padding] duration-300"
+    [ngClass]="{ 'pl-0': sidebarCollapsed, 'pl-64': !sidebarCollapsed }"
+    (click)="onMainContentClick($event)" 
+  >
+<!-- Sidebar -->
+    <aside
+      class="fixed inset-y-0 left-0 z-40 flex flex-col bg-white shadow-lg transition-transform duration-300"
+      [ngClass]="{
+        'w-64 -translate-x-0': !sidebarCollapsed,
+        '-translate-x-full': sidebarCollapsed
+      }"
+      [attr.aria-hidden]="sidebarCollapsed ? 'true' : 'false'"
+      (click)="$event.stopPropagation()"
+    >
+      <!-- Header (logo) -->
+      <div class="flex items-center justify-between px-4 py-4 border-b border-gray-200">
+        <img src="assets/Worq-logo.png" alt="WORQ" class="h-10 w-auto" *ngIf="!sidebarCollapsed" />
+        <img src="assets/Worq-logo.png" alt="WORQ" class="h-7 w-7" *ngIf="sidebarCollapsed" />
+      </div>
 
-<div class="grid grid-cols-1 gap-6 py-6 mx-auto lg:grid-cols-12 max-w-7xl">
+      <!-- Navigation -->
+      <nav class="flex-1 p-3 space-y-1 overflow-y-auto">
+        <a routerLink="/floorplan" routerLinkActive="bg-orange-100 text-orange-600"
+          [routerLinkActiveOptions]="{ exact: true }"
+          class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors">
+          <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+          </svg>
+          <span class="font-medium" *ngIf="!sidebarCollapsed">Dashboard</span>
+        </a>
+
+          <a routerLink="/management"
+            routerLinkActive="bg-orange-100 text-orange-600"
+            class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors">
+            <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066
+                      c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572
+                      c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573
+                      c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065
+                      c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066
+                      c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572
+                      c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573
+                      c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+            <span class="font-medium" *ngIf="!sidebarCollapsed">Management</span>
+          </a>
+
+      </nav>
+      <!-- Sidebar footer -->
+      <div class="mt-auto p-4 border-t border-gray-200">
+        <button
+          (click)="logout()"
+          class="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium
+                 text-white bg-orange-600 rounded-lg hover:bg-orange-700 transition-colors"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a2 2 0 01-2 2H5
+                     a2 2 0 01-2-2V7a2 2 0 012-2h6a2 2 0 012 2v1" />
+          </svg>
+          <span *ngIf="!sidebarCollapsed">Logout</span>
+        </button>
+      </div>
+    </aside>
+
+      <!-- Image button to toggle sidebar-->
+      <button
+        *ngIf="sidebarCollapsed"
+        (click)="$event.stopPropagation();toggleSidebar()"
+        class="fixed top-5 left-4 z-50 flex items-center justify-center h-10 w-10 
+              rounded-full shadow-md bg-white hover:bg-gray-100 transition-transform hover:scale-105"
+        aria-label="Toggle sidebar"
+      >
+        <img src="assets/app.png" alt="Menu Icon" class="h-6 w-6 object-contain" />
+      </button>
+
+    <!-- Backdrop (mobile) -->
+    <div class="fixed inset-0 z-30 bg-black/40 lg:hidden" *ngIf="mobileOpen" (click)="closeMobile()"></div>
+
+    
+
+<!-- Mobile open button (hamburger) – show only when sidebar is closed on mobile 
+<button
+  class="fixed top-4 left-4 z-40 p-3 bg-yellow-300 rounded-full shadow-lg hover:bg-yellow-400 transition-colors lg:hidden"
+  *ngIf="!mobileOpen"
+  (click)="openMobile()"
+  aria-label="Open navigation">
+  <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+  </svg>
+</button>-->
+
+
+  <!-- Main Content Area -->
+  <main class="flex-1 overflow-auto p-4">
   <!-- Left Panel -->
+  <div class="mx-auto max-w-[1600px] grid grid-cols-1 lg:grid-cols-12 gap-6">
   <div class="flex flex-col p-6 transition-all duration-500 bg-white shadow-lg rounded-2xl lg:col-span-4">
     <h1 class="mb-4 text-2xl font-bold text-orange-600">
       PS Occupancy
@@ -220,6 +319,7 @@
       <ng-container *ngIf="filters.outlet !== 'Select Outlet'; else askToPick">
         <!-- Fixed height container for floorplan -->
         <div class="floorplan-container relative h-[600px] bg-gray-50 rounded-xl overflow-hidden" (click)="onFloorplanContainerClick($event)">
+          <!-- Info banner: how many Firebase SVGs were found for this outlet -->
           <!-- Loading overlay -->
           <div *ngIf="isLoading" class="absolute inset-0 z-30 grid place-items-center bg-white/90 backdrop-blur-sm">
             <div class="text-center">
@@ -246,8 +346,37 @@
               </div>
             -->
             <!-- Single floorplan display -->
-            <div *ngIf="currentFloorplan" class="w-full h-full flex items-center justify-center transition-opacity duration-300">
-              <div class="svg-host max-w-full max-h-full" #svgHost [innerHTML]="svgHtmlMap.get(currentFloorplan)" (click)="onSvgHostClick($event)"></div>
+            <div *ngIf="currentFloorplan && svgHtmlMap.get(normalizeUrlKey(currentFloorplan)) && !isLoading" class="w-full h-full flex items-center justify-center transition-opacity duration-300">
+              <div class="svg-host max-w-full max-h-full" #svgHost [innerHTML]="svgHtmlMap.get(normalizeUrlKey(currentFloorplan))" (click)="onSvgHostClick($event)"></div>
+            </div>
+
+            <!-- Loading state for SVG (when URLs exist but not yet loaded) -->
+            <div *ngIf="currentFloorplan && !svgHtmlMap.get(normalizeUrlKey(currentFloorplan)) && !isLoading && floorplansLoaded && !noSvgsFromFirebase"
+                 class="absolute inset-0 z-10 flex items-center justify-center text-center p-6">
+              <div class="space-y-2">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600 mx-auto"></div>
+                <div class="text-sm text-gray-600">Loading floorplan image...</div>
+              </div>
+            </div>
+
+            <!-- Empty state: no SVGs uploaded for this outlet // this for fixing the svgs error--> 
+            <div *ngIf="!currentFloorplan && !isLoading && noSvgsFromFirebase && floorplansLoaded"
+                 class="absolute inset-0 z-10 flex items-center justify-center text-center p-6">
+              <div class="space-y-2">
+                <div class="text-4xl mb-1">🏢</div>
+                <div class="text-base font-medium text-gray-800">No floorplan found for this outlet</div>
+                <div class="text-sm text-gray-600">This outlet has no SVG uploaded on Firebase yet.</div>
+              </div>
+            </div>
+
+            <!-- Empty state: no floorplans selected -->
+            <div *ngIf="!currentFloorplan && !isLoading && !noSvgsFromFirebase && floorplansLoaded && totalFloorplans === 0"
+                 class="absolute inset-0 z-10 flex items-center justify-center text-center p-6">
+              <div class="space-y-2">
+                <div class="text-4xl mb-1">🗺️</div>
+                <div class="text-base font-medium text-gray-800">No floorplan available</div>
+                <div class="text-sm text-gray-600">Please select a different floor or outlet.</div>
+              </div>
             </div>
             
           <!-- Previous arrow -->
@@ -287,16 +416,6 @@
                   class="transition-all duration-200 transform">
                 </button>
               </div>
-            </div>
-          </div>
-
-          <!-- Error banner -->
-          <div *ngIf="svgFailed && !isLoading" class="absolute bottom-0 left-0 right-0 bg-red-100 border-t border-red-200 p-2">
-            <div class="flex items-center justify-center text-sm text-red-700">
-              <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
-              </svg>
-              Failed to load floorplan. Please try again.
             </div>
           </div>
         </div>
@@ -365,7 +484,6 @@
       </div>
     </div>
   </div>
-</div>
 
 <!-- YouTube Video Modal -->
 <app-youtube-modal

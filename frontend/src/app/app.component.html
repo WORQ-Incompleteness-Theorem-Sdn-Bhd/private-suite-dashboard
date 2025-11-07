@@ -1,10 +1,18 @@
-<!-- Your global shell -->
+<!-- app.component.html -->
 <div class="min-h-screen overflow-y-auto bg-gray-100">
-  <button
+  
+  <!-- Floating Logout (only when sidebar is collapsed AND not on login) -->
+  <!--<button
     aria-label="Logout"
     class="group fixed z-50 right-2 top-2 sm:right-4 sm:top-4 flex items-center p-2 sm:p-3 rounded-full bg-amber-300 hover:bg-amber-600 text-xs sm:text-sm shadow-md opacity-60 hover:opacity-100 focus-visible:opacity-100 transition-all"
-    *ngIf="!isLoginPage()" (click)="logout()"><span class="material-symbols-outlined text-base sm:text-lg">
-      exit_to_app
-    </span><span class="max-w-0 overflow-hidden opacity-0 transition-all duration-200 group-hover:max-w-[200px] group-hover:opacity-100 group-hover:ml-1 group-focus:max-w-[200px] group-focus:opacity-100 group-focus:ml-1">Logout</span></button>
+    *ngIf="!isLoginPage()"
+    (click)="logout()"
+  >
+    <span class="material-symbols-outlined text-base sm:text-lg">exit_to_app</span>
+    <span class="max-w-0 overflow-hidden opacity-0 transition-all duration-200 group-hover:max-w-[200px] group-hover:opacity-100 group-hover:ml-1">
+      Logout
+    </span>
+  </button>-->
+
   <router-outlet></router-outlet>
 </div>

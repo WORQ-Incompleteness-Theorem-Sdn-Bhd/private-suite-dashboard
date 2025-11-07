@@ -1,9 +1,10 @@
 import { Routes } from '@angular/router';
+import { FloorplanComponent } from './floorplan.component';
 
 export const FLOORPLAN_ROUTES: Routes = [
   {
     path: '',
-    loadComponent: () =>
-      import('./floorplan.component').then((m) => m.FloorplanComponent),
-  },
+    component: FloorplanComponent,
+    title: 'Floorplan Dashboard'
+  }
 ];

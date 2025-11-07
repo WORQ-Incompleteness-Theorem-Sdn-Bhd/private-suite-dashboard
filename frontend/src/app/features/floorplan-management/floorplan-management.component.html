@@ -1,6 +1,25 @@
 
-<div class="grid grid-cols-1 gap-6 py-6 mx-auto lg:grid-cols-12 max-w-7xl">
-  <!-- Left Panel - Management Controls -->
+<!-- 🔙 Back Arrow Top Bar -->
+<div class="w-full px-6 py-4 bg-white shadow-sm rounded-lg mb-6 flex items-center">
+  <button
+    (click)="goBackToDashboard()"
+    class="flex items-center gap-2 text-gray-600 hover:text-orange-600 transition-colors"
+  >
+    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        d="M10 19l-7-7m0 0l7-7m-7 7h18"
+      />
+    </svg>
+    <span class="text-sm font-medium">Back to Dashboard</span>
+  </button>
+</div>
+
+<!-- 🧭 Main Page Layout -->
+<div class="grid grid-cols-1 gap-6 mx-auto lg:grid-cols-12 max-w-7xl">
+    <!-- Left Panel - Management Controls -->
   <div class="flex flex-col p-6 transition-all duration-500 bg-white shadow-lg rounded-2xl lg:col-span-4">
     <h1 class="mb-4 text-2xl font-bold text-orange-600">
       PS Management
@@ -270,8 +289,26 @@
       </div>
     </div>
 
-    <!-- Floorplan Display - Single SVG (fallback) -->
-    <div *ngIf="safeSvgUrl && !svgHtml && !loading && !error" class="bg-white border rounded-xl overflow-hidden">
+    <!-- Floorplan Display - Multiple SVGs (inline) - preferred method -->
+    <div *ngIf="currentFloorplan && svgHtmlMap.get(normalizeUrlKey(currentFloorplan)) && !loading && !error" class="bg-white border rounded-xl overflow-hidden">
+      <div class="p-3 bg-orange-100 border-b border-orange-200">
+        <span class="text-sm font-semibold text-orange-800">
+          🏢 {{ getSelectedOfficeLabel() }}
+          <span *ngIf="selectedFloor" class="ml-2 text-gray-600">
+            - {{ getSelectedFloorLabel() }}
+          </span>
+          <span *ngIf="totalFloorplans > 1" class="ml-2 text-blue-600">
+            ({{ currentFloorplanIndex + 1 }}/{{ totalFloorplans }})
+          </span>
+        </span>
+      </div>
+      <div class="p-4">
+        <div [innerHTML]="currentFloorplan ? svgHtmlMap.get(normalizeUrlKey(currentFloorplan)) : null" class="w-full h-auto"></div>
+      </div>
+    </div>
+
+    <!-- Floorplan Display - Single SVG (fallback for non-inline) -->
+    <div *ngIf="safeSvgUrl && !(currentFloorplan && svgHtmlMap.get(normalizeUrlKey(currentFloorplan))) && !svgHtml && !loading && !error" class="bg-white border rounded-xl overflow-hidden">
       <div class="p-3 bg-orange-100 border-b border-orange-200">
         <span class="text-sm font-semibold text-orange-800">
           🏢 {{ getSelectedOfficeLabel() }}
@@ -285,8 +322,8 @@
       </div>
     </div>
 
-    <!-- Floorplan Display - Multiple SVGs (inline) -->
-    <div *ngIf="svgHtml && !loading && !error" class="bg-white border rounded-xl overflow-hidden">
+    <!-- Legacy inline SVG display (fallback) -->
+    <div *ngIf="svgHtml && !(currentFloorplan && svgHtmlMap.get(normalizeUrlKey(currentFloorplan))) && !safeSvgUrl && !loading && !error" class="bg-white border rounded-xl overflow-hidden">
       <div class="p-3 bg-orange-100 border-b border-orange-200">
         <span class="text-sm font-semibold text-orange-800">
           🏢 {{ getSelectedOfficeLabel() }}
@@ -303,8 +340,16 @@
       </div>
     </div>
 
+    <!-- Loading state for SVG content (when URLs exist but not yet loaded) -->
+    <div *ngIf="currentFloorplan && !(currentFloorplan && svgHtmlMap.get(normalizeUrlKey(currentFloorplan))) && !safeSvgUrl && !svgHtml && !loading && !error && displayedSvgs.length > 0" 
+         class="p-8 text-center text-gray-600 bg-gray-50 rounded-xl">
+      <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600 mx-auto mb-4"></div>
+      <div>Loading floorplan image...</div>
+    </div>
+
     <!-- Empty state -->
-    <div *ngIf="!safeSvgUrl && !svgHtml && !loading && !error" class="p-8 text-center text-gray-600 bg-gray-50 rounded-xl">
+    <div *ngIf="!safeSvgUrl && !svgHtml && !(currentFloorplan && svgHtmlMap.get(normalizeUrlKey(currentFloorplan))) && !loading && !error && (!currentFloorplan || displayedSvgs.length === 0)" 
+         class="p-8 text-center text-gray-600 bg-gray-50 rounded-xl">
       <div class="text-4xl mb-4">🏢</div>
       <div>Select an outlet to view its floorplan</div>
     </div>

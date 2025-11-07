@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpEvent, HttpEventType } from '@angular/common/http';
 import { Observable, map } from 'rxjs';
-import { environment } from '../../environments/environment.prod';
+import { environment } from '../../environments/environment';
 
 export interface UploadResponse {
   ok: boolean;
@@ -21,35 +21,10 @@ export interface UploadResponse {
   providedIn: 'root',
 })
 export class BQService {
-  private bqUrl = environment.bqUrl;
-  private floorplanUrl = environment.floorplanUrl;
+  private bqUrl = `${environment.apiBaseUrl}/api/bigquery`;
+  private floorplanUrl = `${environment.apiBaseUrl}/api/floorplans`;
 
   constructor(private http: HttpClient) {}
-  getLocation(): Observable<{ label: string; value: string }[]> {
-    return this.http.get<any>(`${this.bqUrl}/locations`).pipe(
-      map((res) => {
-        // Backend returns { data: [...] } structure
-        const arr = res.data || [];
-        return arr.map((loc: any) => ({
-          label: loc.location_name,
-          value: loc.location_id,
-        }));
-      })
-    );
-  }
-
-  getFloor(): Observable<{ label: string; value: string }[]> {
-    return this.http.get<any>(`${this.bqUrl}/floors`).pipe(
-      map((res) => {
-        // Backend returns { data: [...] } structure
-        const arr = res.data || [];
-        return arr.map((floor: any) => ({
-          label: floor.floor_name,
-          value: floor.floor_id,
-        }));
-      })
-    );
-  }
 
   uploadFloorplan(opts: {
     officeId: string;

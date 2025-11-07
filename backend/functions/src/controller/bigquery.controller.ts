@@ -2,6 +2,7 @@
 import { Request, Response } from "express";
 import { fetchFromTable, queryRows } from "../services/bq.service";
 import { parseLimit } from "../utils/bigquery.utils";
+
 export async function getResources(req: Request, res: Response): Promise<void> {
   const q = req.query ?? {};
   const b = (req.body ?? {}) as Record<string, any>;
@@ -162,57 +163,85 @@ export async function getLocations(req: Request, res: Response): Promise<void> {
 export async function getFloors(req: Request, res: Response): Promise<void> {
   const q = req.query ?? {};
 
+  // Accept either office_id or outlet from the client
+  const rawOffice = (q as any).location_id ?? (q as any).outlet;
+  const office = rawOffice ? String(rawOffice) : undefined;
+
   const today = new Date().toISOString().split("T")[0];
   const limit = parseLimit(q.limit, 200);
   const offset =
     typeof limit === "number" ? Math.max(Number(q.offset ?? 0), 0) : 0;
 
   try {
-    
-    // Debug: show fetchFromTable inputs
+    // Dev logs
+    console.log("[getFloors] ENV_BQ_FLOOR_TABLE_ID:", process.env.BQ_FLOOR_TABLE_ID);
+    console.log("[getFloors] ENV_PROJECT/DATASET:", process.env.BIGQUERY_PROJECT_ID, process.env.BIGQUERY_DATASET_ID);
+    console.log("[getFloors] ENV_LOCATION:", process.env.BIGQUERY_LOCATION);
+
+    // Build filters — map office_id -> location_id for floors table
+    const filters: Record<string, any> = {
+      extraction_date: today,
+      ...(office ? { location_id: office } : {}),
+    };
+
     console.log('[getFloors] fetchFromTable inputs:', {
       limit,
       offset,
       allowedSelect: ["extraction_date", "floor_id", "floor_no", "floor_name", "location_id"],
-      allowedFilter: ["extraction_date"],
-      filters: { extraction_date: today },
+      allowedFilter: ["extraction_date", "location_id"],
+      filters,
       table: process.env.BQ_FLOOR_TABLE_ID,
     });
 
     const rows = await fetchFromTable({
       limit,
       offset,
-      allowedSelect: ["extraction_date", "floor_id", "floor_no", "floor_name", "location_id"],
+      allowedSelect: ["extraction_date", "floor_id", "floor_no", "floor_name","location_id"],
       allowedFilter: ["extraction_date"],
-      filters: {
-        extraction_date: today,
-      },
+      filters,
       table: process.env.BQ_FLOOR_TABLE_ID,
     });
 
-    // Return rows to avoid unused variable warning and provide API response
+    console.log("[getFloors] fetched rows count:", Array.isArray(rows) ? rows.length : typeof rows);
     res.json({
       data: rows,
       limit: limit || undefined,
       offset: limit ? offset : undefined,
-      filtersApplied: { extraction_date: today },
+      filtersApplied: filters,
     });
+    return;
   } catch (err: any) {
     const msg = String(err?.message || err);
+    console.error("[getFloors] BigQuery / fetchFromTable error:", msg, err?.stack);
+
     if (msg.includes("Access Denied")) {
-      res.status(403).json({ error: "BigQuery access denied" });
+      res.status(403).json({ error: "BigQuery access denied", message: msg });
       return;
     }
     if (msg.includes("location")) {
-      res
-        .status(400)
-        .json({ error: "Region mismatch. Check BIGQUERY_LOCATION." });
+      res.status(400).json({ error: "Region mismatch. Check BIGQUERY_LOCATION.", message: msg });
       return;
     }
-    console.error("[getFloors]", msg);
-    res.status(500).json({ error: "Internal Server Error" });
+
+    if (process.env.NODE_ENV !== "production") {
+      res.status(500).json({
+        error: "BigQuery query failed",
+        message: msg,
+        stack: (err?.stack || "").split("\n").slice(0, 6),
+      });
+      return;
+    }
+
+    res.status(500).json({
+      error: "BigQuery query failed",
+      message: msg,
+      hint: "Check BQ_FLOOR_TABLE_ID, BIGQUERY_PROJECT_ID, BIGQUERY_DATASET_ID, BIGQUERY_LOCATION and service account permissions",
+    });
+    return;
   }
 }
+
+
 
 const TZ = "Asia/Kuala_Lumpur";
 
@@ -229,10 +258,9 @@ export async function getAvailability(req: Request, res: Response) {
     // Inputs
     const startStr = String(req.query.start || "");
     const endStr = String(req.query.end || "");
-    const officeId =
-      req.query.office_id ?? req.query.outlet
-        ? String(req.query.office_id ?? req.query.outlet)
-        : undefined;
+    const rawOfficeId = (req.query.location_id ?? req.query.outlet);
+    const officeId = rawOfficeId ? String(rawOfficeId) : null;
+
 
     if (!startStr || !endStr) {
       return res
@@ -316,6 +344,16 @@ export async function getAvailability(req: Request, res: Response) {
       ORDER BY g.resource_id
     `;
 
+    console.log("[getAvailability] RES_FQN:", RES_FQN);
+    console.log("[getAvailability] MEM_FQN:", MEM_FQN);
+    console.log("[getAvailability] Query params:", {
+      range_start: startISO,
+      range_end: endISO,
+      office_id: officeId,
+      today: todayISO,
+    });
+
+
     const rows = await queryRows({
       sql,
       params: {
@@ -333,19 +371,24 @@ export async function getAvailability(req: Request, res: Response) {
       resource_type: "team_room",
       resources: rows,
     });
-  } catch (e: any) {
-    const msg = String(e?.message || e);
-    if (msg.includes("Access Denied")) {
-      return res.status(403).json({ error: "BigQuery access denied" });
+    } catch (e: any) {
+      const msg = String(e?.message || e);
+      console.error("[getAvailability] BigQuery error:", msg, e?.stack);
+
+      // DEV: return error + short stack so Postman shows the real reason
+      if (process.env.NODE_ENV !== "production") {
+        res.status(500).json({
+          error: "BigQuery query failed",
+          message: msg,
+          stack: (e?.stack || "").split("\n").slice(0, 6),
+          RES_FQN,
+          MEM_FQN,
+        });
+        return;
+      }
+
+      // production-safe response
+      res.status(500).json({ error: "Internal Server Error" });
+      return;
     }
-    if (msg.includes("location")) {
-      return res
-        .status(400)
-        .json({ error: "Region mismatch. Check BIGQUERY_LOCATION." });
-    }
-    console.error("[getAvailability]", msg);
-    return res.status(500).json({ error: "Internal Server Error" });
-  }
 }
-
-

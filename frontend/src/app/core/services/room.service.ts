@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { BehaviorSubject, Observable, range, tap, catchError, of } from 'rxjs';
 import { Room } from '../models/room.model';
-import { environment } from '../../environments/environment.prod';
+import { environment } from '../../environments/environment';
 import { OfficeService } from './office.service';
 
 export interface ResourceParams {
@@ -51,7 +51,7 @@ export class RoomService {
   }
 
   
-  private url = environment.bqUrl ;  
+  private url = `${environment.apiBaseUrl}/api/bigquery`;  
 //Populate filters from backend data
   getResources(params: ResourceParams): Observable<any> {
     this.loadingSubject.next(true);

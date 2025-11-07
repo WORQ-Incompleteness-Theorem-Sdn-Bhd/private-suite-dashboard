@@ -11,12 +11,14 @@ import {
   parseMultipartFromRawBody,
   sanitizeBaseName,
   clampInt,
-  // fetchUniqueSvg,
 } from "../utils/floorplan.util";
 
 /** CONFIG */
-const BUCKET = process.env.FLOORPLAN_BUCKET || 'floorplan-dashboard-2a468.appspot.com';
-const ROOT_PREFIX = 'floorplans';
+// Use firebasestorage.app format (matches user's Firebase Storage URL)
+const BUCKET = process.env.FLOORPLAN_BUCKET || 'floorplan-dashboard-2a468.firebasestorage.app';
+const ROOT_PREFIX = process.env.FLOORPLAN_ROOT_PREFIX || ''; // Empty = root level, 'floorplans' = under floorplans folder
+
+console.log('🔧 Backend Config:', { BUCKET, ROOT_PREFIX, ROOT_PREFIX_EMPTY: ROOT_PREFIX === '' });
 
 const storage: Storage = initializeStorage();
 const bucket = storage.bucket(BUCKET);
@@ -119,9 +121,10 @@ async function processUpload(
   try {
     // Build final destination key
     const sanitizedName = (sanitizeBaseName(fileName) || "floorplan") + ".svg";
+    const prefix = ROOT_PREFIX ? `${ROOT_PREFIX}/` : '';
     const finalKey = floorId
-      ? `${ROOT_PREFIX}/${officeId}/${floorId}/${sanitizedName}`
-      : `${ROOT_PREFIX}/${officeId}/${sanitizedName}`;
+      ? `${prefix}${officeId}/${floorId}/${sanitizedName}`
+      : `${prefix}${officeId}/${sanitizedName}`;
 
     console.log("🎯 Upload target path:", finalKey);
     console.log("📁 Office ID:", officeId);
@@ -226,13 +229,60 @@ async function processUpload(
 /** GET /api/floorplans/:officeId[/:floorId] */
 async function fetchAllSvgs(bucket: Bucket, prefix: string): Promise<File[]> {
   try {
+    console.log(`🔍 fetchAllSvgs: Searching for SVG files at prefix: "${prefix}"`);
+    console.log(`🔍 fetchAllSvgs: Bucket name: "${bucket.name}"`);
+    console.log(`🔍 fetchAllSvgs: Search options: prefix="${prefix}", no delimiter (recursive)`);
+    
     const opts: GetFilesOptions = {
       prefix,            // recursive search (no delimiter)
       autoPaginate: true
     };
-    const [files] = await bucket.getFiles(opts);
-    return files.filter((f) => f.name.toLowerCase().endsWith(".svg"));
-  } catch (error) {
+    
+    console.log(`🔍 fetchAllSvgs: Calling bucket.getFiles()...`);
+    const [allFiles] = await bucket.getFiles(opts);
+    console.log(`📁 fetchAllSvgs: Found ${allFiles.length} total files at prefix "${prefix}"`);
+    
+    // Log ALL files found (not just first 5) for debugging
+    if (allFiles.length > 0) {
+      console.log(`📋 All files found (${allFiles.length}):`, allFiles.map(f => ({
+        name: f.name,
+        isSvg: f.name.toLowerCase().endsWith('.svg'),
+        size: f.metadata?.size || 'unknown'
+      })));
+    } else {
+      console.log(`⚠️ fetchAllSvgs: No files found at all at prefix "${prefix}"`);
+      // Try listing what's actually in the bucket to debug
+      try {
+        const [testFiles] = await bucket.getFiles({ prefix: '', maxResults: 50 });
+        console.log(`📋 Root level files in bucket (first 50):`, testFiles.map(f => f.name));
+      } catch (e) {
+        console.error(`❌ Error listing root files:`, e);
+      }
+    }
+    
+    const svgFiles = allFiles.filter((f) => {
+      const isSvg = f.name.toLowerCase().endsWith(".svg");
+      if (!isSvg) {
+        console.log(`⚠️ Skipping non-SVG file: ${f.name}`);
+      }
+      return isSvg;
+    });
+    console.log(`✅ fetchAllSvgs: Found ${svgFiles.length} SVG files at prefix "${prefix}"`);
+    
+    if (svgFiles.length > 0) {
+      console.log(`📋 SVG files found:`, svgFiles.map(f => f.name));
+    } else if (allFiles.length > 0) {
+      console.warn(`⚠️ Found ${allFiles.length} files but none are SVG files!`);
+    }
+    
+    return svgFiles;
+  } catch (error: any) {
+    console.error("❌ fetchAllSvgs: Error searching for files:", error);
+    console.error("❌ fetchAllSvgs: Error details:", {
+      message: error?.message,
+      code: error?.code,
+      stack: error?.stack
+    });
     console.log("📭 fetchAllSvgs: No files found at prefix:", prefix, "- returning empty array");
     return [];
   }
@@ -276,7 +326,7 @@ export async function getFloorplan(req: Request, res: Response): Promise<void> {
 
     // ---- Case A: specific floor (unique SVG expected) ----
     if (floorId) {
-      const prefix = `${ROOT_PREFIX}/${officeId}/${floorId}/`;
+      const prefix = ROOT_PREFIX ? `${ROOT_PREFIX}/${officeId}/${floorId}/` : `${officeId}/${floorId}/`;
       const file = await fetchUniqueSvg(bucket, prefix);
       console.log("getFloorplan : file", file)
 
@@ -323,10 +373,56 @@ export async function getFloorplan(req: Request, res: Response): Promise<void> {
 
     // ---- Case B: list all floors under an office ----
     {
-      const prefix = `${ROOT_PREFIX}/${officeId}/`;
+      const prefix = ROOT_PREFIX ? `${ROOT_PREFIX}/${officeId}/` : `${officeId}/`;
       console.log("🔍 getFloorplan: Searching for files at prefix:", prefix);
+      console.log("🔍 getFloorplan: Bucket:", bucket.name, "ROOT_PREFIX:", ROOT_PREFIX || '(empty - root level)');
       const files = await fetchAllSvgs(bucket, prefix);
       console.log("🔍 getFloorplan: Found files:", files.length, "files");
+      if (files.length === 0) {
+        console.log("📁 No SVG files found. Debugging folder structure...");
+        try {
+          // List all files at this prefix to see what's there
+          const [allFilesAtPrefix] = await bucket.getFiles({ 
+            prefix: prefix, 
+            delimiter: '/',
+            maxResults: 100 
+          });
+          console.log(`📁 Found ${allFilesAtPrefix.length} files/directories at prefix "${prefix}"`);
+          
+          // List subfolders (prefixes)
+          const [subfolders] = await bucket.getFiles({ 
+            prefix: prefix, 
+            delimiter: '/',
+            autoPaginate: true 
+          });
+          const [_, __, apiResponse] = subfolders as any;
+          const prefixes = (apiResponse?.prefixes || []) as string[];
+          console.log(`📁 Found ${prefixes.length} subfolders at prefix "${prefix}":`, prefixes);
+          
+          // List all files recursively (no delimiter) to see what's actually there
+          const [allFilesRecursive] = await bucket.getFiles({ 
+            prefix: prefix,
+            maxResults: 100 
+          });
+          console.log(`📁 Found ${allFilesRecursive.length} total files recursively at prefix "${prefix}"`);
+          if (allFilesRecursive.length > 0) {
+            console.log(`📋 Sample files found recursively:`, allFilesRecursive.slice(0, 10).map(f => ({
+              name: f.name,
+              isSvg: f.name.toLowerCase().endsWith('.svg'),
+              size: f.metadata.size
+            })));
+          }
+          
+          // Also list root level to debug
+          const [rootFiles] = await bucket.getFiles({ prefix: '', maxResults: 20 });
+          console.log(`📁 Root level files/folders (first 20):`, rootFiles.map(f => ({
+            name: f.name,
+            isSvg: f.name.toLowerCase().endsWith('.svg')
+          })));
+        } catch (e) {
+          console.error("❌ Error listing bucket files:", e);
+        }
+      }
       if (!files.length) {
         // Return empty list for new offices instead of 404
         console.log("📭 No floorplans found for office:", officeId, "- returning empty list");

@@ -13,12 +13,15 @@ import {
 } from '@angular/forms';
 import { HttpClientModule } from '@angular/common/http'; 
 import { HttpClient } from '@angular/common/http';
-import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
+import { DomSanitizer, SafeResourceUrl, SafeHtml } from '@angular/platform-browser';
 import { OfficeService } from '../../core/services/office.service';
 import { FloorService } from '../../core/services/floor.service';
 import { BQService, UploadResponse } from './bq.service';
-import { environment } from '../../environments/environment.prod';
 import { getStorage, ref, getDownloadURL } from 'firebase/storage';
+import { Router, RouterLink } from '@angular/router';
+import { catchError } from 'rxjs/operators';
+import { of } from 'rxjs'; 
+
 
 type Option = { label: string; value: string };
 
@@ -43,7 +46,7 @@ export class FloorplanManagementComponent implements OnInit {
   // Multiple SVG support (like floorplan.component.ts)
   selectedOutletSvgs: string[] = [];
   displayedSvgs: string[] = [];
-  svgHtmlMap = new Map<string, SafeResourceUrl>();
+  svgHtmlMap = new Map<string, SafeHtml>(); // Store SafeHtml for [innerHTML] binding
   currentFloorplanIndex = 0;
 
   form: FormGroup;
@@ -64,13 +67,21 @@ export class FloorplanManagementComponent implements OnInit {
   // Tab management
   activeTab: 'overview' | 'upload' = 'overview';
 
+    sidebarCollapsed = true;  // start hidden
+
+  toggleSidebar() {
+  this.sidebarCollapsed = !this.sidebarCollapsed;
+}
+
   constructor(
     private fb: FormBuilder,
     private uploader: BQService,
     private sanitizer: DomSanitizer,
     private officeService: OfficeService,
     private floorService: FloorService,
-    private http: HttpClient
+    private http: HttpClient,
+    private router: Router
+    
   ) {
     this.form = this.fb.group({
       officeId: ['', Validators.required],
@@ -78,6 +89,10 @@ export class FloorplanManagementComponent implements OnInit {
       fileName: [''], // optional
       file: [null as File | null, Validators.required],
     });
+  }
+  //Navigate back to dashboard
+   goBackToDashboard(): void {
+    this.router.navigate(['/floorplan']);
   }
 
   ngOnInit(): void {
@@ -316,80 +331,88 @@ export class FloorplanManagementComponent implements OnInit {
     const floor = this.selectedFloor || undefined;
     console.log('🔍 Loading floorplan for office:', this.selectedOffice, 'floor:', floor);
     
-    this.uploader.getFloorplan(this.selectedOffice, floor).subscribe({
-      next: (response: any) => {
-        console.log('✅ Floorplan response received:', response);
-        console.log('Response type:', typeof response);
-        console.log('Response ok:', response.ok);
-        console.log('Response scope:', response.scope);
-        
-        if (response.ok) {
-          if (response.scope === 'single') {
-            // Single SVG - use signedUrl or construct URL
-            if (response.signedUrl) {
-              this.loadInlineSvg(response.signedUrl);
-            } else if (response.path) {
-              const rawUrl = `${environment.floorplanUrl}/${this.selectedOffice}${floor ? `/${floor}` : ''}?raw=1`;
-              console.log('Using raw fallback URL (single):', rawUrl);
-              this.loadInlineSvg(rawUrl);
-            }
-          } else if (response.scope === 'list' && response.items && response.items.length > 0) {
-            // Multiple SVGs - handle like floorplan.component.ts
-            console.log('📄 Multiple SVGs found:', response.items.length, 'items');
-            
-            // Extract all SVG URLs from the list
-            const svgUrls: string[] = [];
-            response.items.forEach((item: any) => {
-              if (item.signedUrl) {
-                svgUrls.push(item.signedUrl);
-              } else if (item.path) {
-                // Extract officeId and floorId from path
-                const match = String(item.path).match(/^([^/]+)\/([^/]+)\/[^/]+$/);
-                const extractedOffice = match ? match[1] : this.selectedOffice;
-                const extractedFloor = match ? match[2] : floor;
-                const rawUrl = `${environment.floorplanUrl}/${extractedOffice}${extractedFloor ? `/${extractedFloor}` : ''}?raw=1`;
-                svgUrls.push(rawUrl);
-              }
-            });
-            
-            if (svgUrls.length > 0) {
-              console.log('📋 Constructed SVG URLs:', svgUrls);
-              // Store all SVGs for this outlet
-              this.selectedOutletSvgs = svgUrls;
-              this.displayedSvgs = svgUrls.slice(); // Show all by default
-              this.currentFloorplanIndex = 0; // Reset to first SVG
-              
-              // Load all SVGs inline
-              this.loadInlineSvgs(svgUrls);
-              
-              console.log('✅ Loaded multiple SVGs:', svgUrls.length, 'total');
-            } else {
-              console.log('⚠️ No valid SVG URLs found in list');
-              this.error = 'No floorplan found for this outlet.';
-            }
-          } else {
-            console.log('⚠️ No floorplan found in response');
-            this.error = 'No floorplan found for this outlet.';
+    // Use the same pattern as floorplan.component.ts - try getAllSvgFilesForOutlet first
+    if (!floor) {
+      // Case 1: No floor selected - get all outlet SVGs (same as floorplan.component.ts)
+      this.floorService.getAllSvgFilesForOutlet(this.selectedOffice).pipe(
+        catchError((error: any) => {
+          // Only log as error if it's not a 404
+          if (error?.status !== 404) {
+            console.error('❌ Error loading outlet SVGs:', error);
+            this.error = 'Failed to load floorplan SVGs';
           }
+          return of<string[]>([]);
+        })
+      ).subscribe((svgs: string[]) => {
+        if (svgs && svgs.length > 0) {
+          this.selectedOutletSvgs = svgs;
+          this.displayedSvgs = svgs.slice();
+          this.currentFloorplanIndex = 0;
+          this.loadInlineSvgs(svgs);
+          this.loading = false;
         } else {
-          console.log('❌ Response not OK:', response);
-          this.error = 'Failed to load floorplan.';
+          // Try fallback to office-level cloud SVGs
+          this.tryOfficeLevelFallbackForManagement();
+        }
+      });
+    } else {
+      // Case 2: Specific floor selected - get floor SVGs
+      this.floorService.getFloorplanUrls(this.selectedOffice, floor).pipe(
+        catchError((err: any) => {
+          // 404 is expected for floors without SVGs
+          if (err?.status !== 404) {
+            console.error('Error loading floor SVG:', err);
+            this.error = 'Failed to load floor SVG';
+          }
+          this.loading = false;
+          return of<string[]>([]);
+        })
+      ).subscribe((urls: string[]) => {
+        if (urls && urls.length > 0) {
+          this.selectedOutletSvgs = urls;
+          this.displayedSvgs = urls;
+          this.currentFloorplanIndex = 0;
+          this.loadInlineSvgs(urls);
+        } else {
+          this.error = 'No floorplan found for this floor.';
+          this.displayedSvgs = [];
+          this.selectedOutletSvgs = [];
+          this.updateCurrentSvgDisplay();
         }
         this.loading = false;
-      },
-      error: (err) => {
-        console.error('❌ Floorplan loading error:', err);
-        console.error('❌ Floorplan error details:', {
-          status: err.status,
-          statusText: err.statusText,
-          url: err.url,
-          error: err.error,
-          message: err.message
-        });
-        this.error = 'Failed to load floorplan.';
-        this.loading = false;
-      },
-    });
+      });
+    }
+  }
+
+  private tryOfficeLevelFallbackForManagement() {
+    const selectedOffice = this.officeService.getOffices().find(o => o.id === this.selectedOffice);
+    if (!selectedOffice) {
+      this.error = 'No floorplan found for this outlet.';
+      this.loading = false;
+      return;
+    }
+
+    const officeSvgs = selectedOffice?.svg;
+    const normalizeArray = (value: string | string[] | undefined): string[] => 
+      Array.isArray(value) ? value : (value ? [value] : []);
+    const isCloudUrl = (u: string) => 
+      typeof u === 'string' && !u.startsWith('assets/') && (u.startsWith('https://') || u.startsWith('http://'));
+
+    const cloudSvgs = normalizeArray(officeSvgs).filter(isCloudUrl);
+    
+    if (cloudSvgs.length > 0) {
+      this.selectedOutletSvgs = cloudSvgs;
+      this.displayedSvgs = cloudSvgs;
+      this.currentFloorplanIndex = 0;
+      this.loadInlineSvgs(cloudSvgs);
+      this.loading = false;
+    } else {
+      this.error = 'No floorplan found for this outlet.';
+      this.displayedSvgs = [];
+      this.selectedOutletSvgs = [];
+      this.updateCurrentSvgDisplay();
+      this.loading = false;
+    }
   }
 
   private loadInlineSvg(url: string) {
@@ -436,9 +459,31 @@ export class FloorplanManagementComponent implements OnInit {
     });
   }
 
+  // Normalize URL key by removing query params for consistent lookup (public for template)
+  normalizeUrlKey(url: string | null): string {
+    if (!url) return '';
+    try {
+      const urlObj = new URL(url);
+      return `${urlObj.origin}${urlObj.pathname}`;
+    } catch {
+      // If URL parsing fails, just remove query string manually
+      return url.split('?')[0].split('#')[0];
+    }
+  }
+
   // Multiple SVG support methods (like floorplan.component.ts)
-  private loadInlineSvgs(urls: string[]) {
-    const toFetch = urls.filter(u => !this.svgHtmlMap.has(u));
+  private async loadInlineSvgs(urls: string[]) {
+    // Normalize URLs to keys (remove query params) for consistent lookup
+    const urlToKeyMap = new Map<string, string>();
+    urls.forEach(url => {
+      const key = this.normalizeUrlKey(url);
+      urlToKeyMap.set(url, key);
+    });
+    
+    const toFetch = urls.filter(u => {
+      const key = urlToKeyMap.get(u)!;
+      return !this.svgHtmlMap.has(key);
+    });
     
     if (toFetch.length === 0) {
       // If everything already cached, still process
@@ -453,21 +498,35 @@ export class FloorplanManagementComponent implements OnInit {
     let completedRequests = 0;
     const totalRequests = toFetch.length;
 
-    toFetch.forEach(async url => {
-      // Normalize Firebase URLs to ensure proper download URLs (same as floorplan.component.ts)
-      const normalizedUrl = await this.normalizeToDownloadUrl(url);
-      
+    // Normalize all URLs first using Promise.all to avoid race conditions
+    const normalizedUrls = await Promise.all(
+      toFetch.map(async url => {
+        try {
+          const normalizedUrl = await this.normalizeToDownloadUrl(url);
+          return { originalUrl: url, normalizedUrl };
+        } catch (err) {
+          console.warn('⚠️ Failed to normalize URL:', url, err);
+          return { originalUrl: url, normalizedUrl: url }; // Fallback to original URL
+        }
+      })
+    );
+
+    // Now process all normalized URLs
+    normalizedUrls.forEach(({ originalUrl, normalizedUrl }) => {
       // Add authentication token to request
       const token = sessionStorage.getItem('userAccessToken') || '';
       const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
       
       this.http.get(normalizedUrl, { responseType: 'text', headers }).subscribe({
         next: (svgText) => {
-          console.log('✅ SVG loaded successfully:', url);
+          console.log('✅ SVG loaded successfully:', originalUrl);
           // Process SVG for compact display
           const processedSvgText = this.processSvgForCompactDisplay(svgText);
           const safe = this.sanitizer.bypassSecurityTrustHtml(processedSvgText);
-          this.svgHtmlMap.set(url, safe);
+          // Store using normalized key (without query params) for consistent lookup
+          const key = this.normalizeUrlKey(originalUrl);
+          this.svgHtmlMap.set(key, safe);
+          console.log('✅ SVG stored with key:', key, 'Map keys:', Array.from(this.svgHtmlMap.keys()));
 
           completedRequests++;
           
@@ -476,17 +535,28 @@ export class FloorplanManagementComponent implements OnInit {
             setTimeout(() => {
               this.loading = false;
               this.updateCurrentSvgDisplay();
+              console.log('✅ All SVGs loaded, updated display');
             }, 200);
           }
         },
         error: (err) => {
-          console.error('❌ Failed to fetch SVG:', url, err);
+          console.error('❌ Failed to fetch SVG:', originalUrl, err);
           console.error('Error details:', {
             status: err.status,
             statusText: err.statusText,
             url: err.url,
             error: err.error
           });
+          
+          // Store fallback error SVG so UI doesn't look blank
+          const key = this.normalizeUrlKey(originalUrl);
+          const fallbackSvg = `<svg width="100%" height="200" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100%" height="100%" fill="#f3f4f6"/>
+            <text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" font-family="Arial" font-size="14" fill="#6b7280">
+              SVG load failed (${err.status || 'Network Error'})
+            </text>
+          </svg>`;
+          this.svgHtmlMap.set(key, this.sanitizer.bypassSecurityTrustHtml(fallbackSvg));
           
           // More specific error messages
           if (err.status === 401) {
@@ -505,6 +575,7 @@ export class FloorplanManagementComponent implements OnInit {
           if (completedRequests === totalRequests) {
             this.loading = false;
             this.updateCurrentSvgDisplay();
+            console.log('⚠️ Some SVGs failed to load, but updated display with available ones');
           }
         }
       });
@@ -522,22 +593,43 @@ export class FloorplanManagementComponent implements OnInit {
   }
 
   private updateCurrentSvgDisplay() {
-    // Reset single SVG display
-    this.safeSvgUrl = undefined;
-    this.svgHtml = undefined;
+    // Only reset if we're in multiple SVG mode (have displayedSvgs)
+    // Don't clear if we're in single SVG mode (loadInlineSvg sets svgHtml directly)
+    if (this.displayedSvgs.length > 0) {
+      this.safeSvgUrl = undefined;
+      this.svgHtml = undefined;
+    }
 
     if (this.displayedSvgs.length > 0 && this.currentFloorplan) {
       const currentUrl = this.currentFloorplan;
-      const cachedSvg = this.svgHtmlMap.get(currentUrl);
+      const key = this.normalizeUrlKey(currentUrl);
+      const cachedSvg = this.svgHtmlMap.get(key);
+      
+      console.log('🔍 updateCurrentSvgDisplay:', {
+        currentUrl,
+        key,
+        hasCachedSvg: !!cachedSvg,
+        mapKeys: Array.from(this.svgHtmlMap.keys())
+      });
       
       if (cachedSvg) {
+        // Use the cached SVG from map (preferred method for multiple SVGs)
+        // Set svgHtml for template compatibility
         this.svgHtml = cachedSvg;
-        console.log('✅ Displaying cached SVG for:', currentUrl);
+        console.log('✅ Displaying cached SVG for:', currentUrl, 'key:', key);
       } else {
-        console.log('⚠️ No cached SVG found for:', currentUrl);
-        // Fallback to direct URL
+        console.log('⚠️ No cached SVG found for:', currentUrl, 'key:', key);
+        // Fallback to direct URL if not yet loaded
         this.safeSvgUrl = this.sanitizer.bypassSecurityTrustResourceUrl(currentUrl);
       }
+    } else if (this.displayedSvgs.length === 0) {
+      // Only clear if we truly have nothing to display
+      this.safeSvgUrl = undefined;
+      this.svgHtml = undefined;
+      console.log('⚠️ No floorplan to display:', { 
+        displayedSvgsLength: this.displayedSvgs.length, 
+        currentFloorplan: this.currentFloorplan 
+      });
     }
   }
 
@@ -676,31 +768,36 @@ export class FloorplanManagementComponent implements OnInit {
 
   // Firebase URL normalization (same as floorplan.component.ts)
   private async normalizeToDownloadUrl(url: string): Promise<string> {
-    if (!url) return url;
+    try {
+      if (!url) return url;
 
-    // Already a Firebase download URL
-    if (url.includes('firebasestorage.googleapis.com/v0/b/')) return url;
+      // Already a Firebase download URL
+      if (url.includes('firebasestorage.googleapis.com/v0/b/')) return url;
 
-    // gs://bucket/path.svg  -> downloadURL
-    if (url.startsWith('gs://')) {
-      const withoutScheme = url.slice('gs://'.length);          // bucket/path
-      const firstSlash = withoutScheme.indexOf('/');
-      const bucket = withoutScheme.slice(0, firstSlash);
-      const objectPath = withoutScheme.slice(firstSlash + 1);
-      const storage = getStorage(undefined, `gs://${bucket}`);
-      return getDownloadURL(ref(storage, objectPath));
+      // gs://bucket/path.svg  -> downloadURL
+      if (url.startsWith('gs://')) {
+        const withoutScheme = url.slice('gs://'.length);          // bucket/path
+        const firstSlash = withoutScheme.indexOf('/');
+        const bucket = withoutScheme.slice(0, firstSlash);
+        const objectPath = withoutScheme.slice(firstSlash + 1);
+        const storage = getStorage(undefined, `gs://${bucket}`);
+        return await getDownloadURL(ref(storage, objectPath));
+      }
+
+      // https://storage.googleapis.com/bucket/path.svg -> downloadURL
+      const m = url.match(/^https:\/\/storage\.googleapis\.com\/([^/]+)\/(.+)$/);
+      if (m) {
+        const [, bucket, objectPath] = m;
+        const storage = getStorage(undefined, `gs://${bucket}`);
+        return await getDownloadURL(ref(storage, objectPath));
+      }
+
+      // Anything else: return as-is
+      return url;
+    } catch (err) {
+      console.warn('⚠️ normalizeToDownloadUrl failed:', url, err);
+      return url; // Return original URL on error
     }
-
-    // https://storage.googleapis.com/bucket/path.svg -> downloadURL
-    const m = url.match(/^https:\/\/storage\.googleapis\.com\/([^/]+)\/(.+)$/);
-    if (m) {
-      const [, bucket, objectPath] = m;
-      const storage = getStorage(undefined, `gs://${bucket}`);
-      return getDownloadURL(ref(storage, objectPath));
-    }
-
-    // Anything else: return as-is
-    return url;
   }
 
   onOutletSelected() {

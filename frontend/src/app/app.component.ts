@@ -1,7 +1,6 @@
 import { Component } from '@angular/core';
 import { Router, RouterOutlet } from '@angular/router';
-
-import { FormsModule } from '@angular/forms'; // 👈 Add this
+import { FormsModule } from '@angular/forms'; 
 import { AuthService } from './shared/services/auth.service';
 import { CommonModule } from '@angular/common';
 @Component({
@@ -9,7 +8,7 @@ import { CommonModule } from '@angular/common';
   standalone: true,
   imports: [RouterOutlet, FormsModule, CommonModule],
   templateUrl: './app.component.html',
-  styleUrl: './app.component.scss',
+  styleUrls: ['./app.component.scss'] // ✅ plural + array
 })
 export class AppComponent {
   title = 'private-suite-dashboard';

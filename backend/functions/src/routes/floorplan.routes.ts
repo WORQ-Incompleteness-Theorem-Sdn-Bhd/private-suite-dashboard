@@ -14,7 +14,7 @@ const router = Router();
 
 router.post("/", handleUpload);
 router.get("/", getAllFloorplans); 
-router.get("/:officeId/:floorId", getFloorplan);
 router.get("/:officeId", getFloorplan); 
+router.get("/:officeId/:floorId", getFloorplan);
 
 export default router;

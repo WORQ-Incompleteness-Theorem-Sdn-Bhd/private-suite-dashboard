@@ -28,7 +28,7 @@ import { ToastComponent } from '../../shared/components/toast.component';
 import { YoutubeModalComponent } from '../../shared/components/youtube-modal.component';
 import { HttpClient } from '@angular/common/http';
 import { getStorage, ref, getDownloadURL } from 'firebase/storage';
-import { environment } from '../../environments/environment.dev';
+import { environment } from '../../environments/environment.prod';
 
 
 type FilterKey = 'outlet' | 'status' | 'pax';

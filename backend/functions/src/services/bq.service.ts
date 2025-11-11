@@ -65,7 +65,7 @@ export async function fetchFromTable(opts: FetchOptions) { //Fetch from table
   let paramIndex = 0;
 
   // Always exclude null office_id values for PS management
-  whereParts.push(`office_id IS NOT NULL`);
+  // whereParts.push(`\`${whereClause}\` IS NOT NULL`);  // If the table doesn't have these columns, this will cause SQL errors
 
   for (const [key, value] of Object.entries(filters)) {
     if (allowedFilter.length > 0 && !allowedFilter.includes(key)) continue;

@@ -184,19 +184,10 @@ export async function getFloors(req: Request, res: Response): Promise<void> {
       ...(office ? { location_id: office } : {}),
     };
 
-    console.log('[getFloors] fetchFromTable inputs:', {
-      limit,
-      offset,
-      allowedSelect: ["extraction_date", "floor_id", "floor_no", "floor_name", "location_id"],
-      allowedFilter: ["extraction_date", "location_id"],
-      filters,
-      table: process.env.BQ_FLOOR_TABLE_ID,
-    });
-
     const rows = await fetchFromTable({
       limit,
       offset,
-      allowedSelect: ["extraction_date", "floor_id", "floor_no", "floor_name","location_id"],
+      allowedSelect: ["extraction_date", "floor_id", "floor_no", "floor_name"],
       allowedFilter: ["extraction_date"],
       filters,
       table: process.env.BQ_FLOOR_TABLE_ID,
@@ -255,12 +246,16 @@ const MEM_FQN = `\`${BQ_PROJECT}.${BQ_DATASET}.${TBL_MEMBERS}\``;
 
 export async function getAvailability(req: Request, res: Response) {
   try {
-    // Inputs
+    // Inputs (normalize office/location keys, prefer office_id)
     const startStr = String(req.query.start || "");
     const endStr = String(req.query.end || "");
-    const rawOfficeId = (req.query.location_id ?? req.query.outlet);
-    const officeId = rawOfficeId ? String(rawOfficeId) : null;
 
+    // Normalize possible query keys (office_id, location_id, outlet)
+    const rawOffice =
+      req.query.office_id ?? req.query.location_id ?? req.query.outlet ?? null;
+    const officeId: string | null = rawOffice !== null && rawOffice !== ""
+      ? String(rawOffice)
+      : null;
 
     if (!startStr || !endStr) {
       return res
@@ -274,8 +269,8 @@ export async function getAvailability(req: Request, res: Response) {
     if (isNaN(+startD) || isNaN(+endD) || endD < startD) {
       return res.status(400).json({ error: "Invalid date range" });
     }
+
     const dayCount = Math.round((+endD - +startD) / 86400000) + 1; // inclusive
-    // Allow up to 366 days to account for inclusive end date and leap years
     if (dayCount > 366) {
       return res.status(400).json({ error: "Range too large (<= 366 days)" });
     }
@@ -285,7 +280,7 @@ export async function getAvailability(req: Request, res: Response) {
         .toISOString()
         .slice(0, 10);
 
-    const startISO = toISODate(startD);
+    const startISO = toISODate(startD); // 'YYYY-MM-DD'
     const endISO = toISODate(endD);
     const todayISO = toISODate(new Date());
 
@@ -298,25 +293,26 @@ export async function getAvailability(req: Request, res: Response) {
         SELECT range_start, range_end
       ),
       days AS (
-        SELECT d AS day FROM params, UNNEST(GENERATE_DATE_ARRAY(range_start, range_end))
+        -- UNNEST needs an alias for the generated dates
+        SELECT d AS day
+        FROM params, UNNEST(GENERATE_DATE_ARRAY(range_start, range_end)) AS d
       ),
       resources AS (
         SELECT DISTINCT resource_id, resource_name AS name, office_id
         FROM ${RES_FQN}
         WHERE extraction_date = @today
           AND resource_type = 'team_room'
+          -- use office_id_p (declared above) so NULL means "all offices"
           AND (office_id_p IS NULL OR office_id = office_id_p)
       ),
-     memberships AS (
-  SELECT
-    resource_id,
-    DATE(start_date) AS start_date,                          
-    COALESCE(DATE(end_date), DATE '9999-12-31') AS end_date  
-  FROM ${MEM_FQN}
-  WHERE extraction_date = @today
-  
-),
-
+      memberships AS (
+        SELECT
+          resource_id,
+          DATE(start_date) AS start_date,
+          COALESCE(DATE(end_date), DATE '9999-12-31') AS end_date
+        FROM ${MEM_FQN}
+        WHERE extraction_date = @today
+      ),
       grid AS (
         SELECT r.resource_id, r.name, d.day
         FROM resources r
@@ -344,8 +340,6 @@ export async function getAvailability(req: Request, res: Response) {
       ORDER BY g.resource_id
     `;
 
-    console.log("[getAvailability] RES_FQN:", RES_FQN);
-    console.log("[getAvailability] MEM_FQN:", MEM_FQN);
     console.log("[getAvailability] Query params:", {
       range_start: startISO,
       range_end: endISO,
@@ -353,16 +347,17 @@ export async function getAvailability(req: Request, res: Response) {
       today: todayISO,
     });
 
-
+    // BigQuery automatically infers parameter types from values
+    // Null values are handled correctly by the client library
     const rows = await queryRows({
       sql,
       params: {
         range_start: startISO,
         range_end: endISO,
-        office_id: officeId,
+        office_id: officeId, // may be null
         today: todayISO,
       },
-      location: "asia-southeast1",
+      location: process.env.BIGQUERY_LOCATION || "asia-southeast1"
     });
 
     return res.json({
@@ -371,24 +366,22 @@ export async function getAvailability(req: Request, res: Response) {
       resource_type: "team_room",
       resources: rows,
     });
-    } catch (e: any) {
-      const msg = String(e?.message || e);
-      console.error("[getAvailability] BigQuery error:", msg, e?.stack);
+  } catch (e: any) {
+    const msg = String(e?.message || e);
+    console.error("[getAvailability] BigQuery error:", msg, e?.stack);
 
-      // DEV: return error + short stack so Postman shows the real reason
-      if (process.env.NODE_ENV !== "production") {
-        res.status(500).json({
-          error: "BigQuery query failed",
-          message: msg,
-          stack: (e?.stack || "").split("\n").slice(0, 6),
-          RES_FQN,
-          MEM_FQN,
-        });
-        return;
-      }
-
-      // production-safe response
-      res.status(500).json({ error: "Internal Server Error" });
+    if (process.env.NODE_ENV !== "production") {
+      res.status(500).json({
+        error: "BigQuery query failed",
+        message: msg,
+        stack: (e?.stack || "").split("\n").slice(0, 6),
+        RES_FQN,
+        MEM_FQN,
+      });
       return;
     }
+
+    res.status(500).json({ error: "Internal Server Error" });
+    return;
+  }
 }

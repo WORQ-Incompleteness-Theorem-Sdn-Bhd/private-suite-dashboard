@@ -30,14 +30,6 @@ import { HttpClient } from '@angular/common/http';
 import { getStorage, ref, getDownloadURL } from 'firebase/storage';
 import { environment } from '../../environments/environment.dev';
 
-/**
- * Floorplan rendering fixes (2025-10-31):
- * - Normalize outlet selection to store office ID (not display name)
- * - Fix race conditions: call updateDisplayedSvgs() only after URLs are fetched
- * - Keep floorOptions as "<label>|<floorId>" only (never URLs)
- * - Ensure loadInlineSvgs() is invoked immediately after displayedSvgs updates
- * - Add concise logging for outlet normalization, URL fetching, and inline SVG loading
- */
 
 type FilterKey = 'outlet' | 'status' | 'pax';
 
@@ -126,6 +118,9 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     return !this.isLoading && this.floorplansLoaded && this.noSvgsFromFirebase; //this one will show the message when svg doesn't exist in Firebase
   }
 
+  Occupied: number = 0;
+  Available: number = 0;
+
   // Pax-based color palette //legend
   paxPalette = ['rgb(61, 168, 218)', 'rgb(20, 50, 218)', 'rgb(215, 66, 218)', 'rgb(173, 4, 63)', 'rgb(240, 70, 40)', 'rgb(255, 166, 0)'] as const;
   paxBuckets = [
@@ -202,9 +197,6 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
 
   // Compact mode for PDF export
   private compactMode = true;
-
-  Occupied = 0;
-  Available = 0;
 
   safeSvgUrl!: SafeResourceUrl;
 
@@ -584,14 +576,14 @@ onMainContentClick(event: MouseEvent) {
     // Find the selected office by ID
     const selectedOffice = this.officeService.getOffices().find(office => office.id === outletId);
     if (!selectedOffice) {
-      console.error('Office not found for ID:', outletId);
-      this.uiMessage = 'Selected outlet not found.';
-      this.floorplansLoaded = true;
+      // console.error('Office not found for ID:', outletId);
+      // this.uiMessage = 'Selected outlet not found.';
+      // this.floorplansLoaded = true;
       return;
-    }
+    } 
+   // Get rooms for the selected outlet
+   const outletRooms = this.rooms.filter((r) => r.outlet === selectedOffice.displayName);
 
-    // Get rooms for the selected outlet
-    const outletRooms = this.rooms.filter((r) => r.outlet === selectedOffice.displayName);
 
     // Extract unique floor IDs from rooms
     const floorIds = new Set<string>();
@@ -1357,7 +1349,7 @@ onMainContentClick(event: MouseEvent) {
           // When date is selected, check both availability AND original room status
           // If room status is reserved/unavailable/available_soon/occupied, keep it red
           const originalStatus = this.toStatusUnion(room.status);
-          if (originalStatus === 'Occupied') {
+          if (originalStatus === 'Occupied') { 
             // Room is reserved/unavailable/available_soon/occupied - keep red regardless of availability
             return 'Occupied';
           } else {
@@ -1450,7 +1442,7 @@ onMainContentClick(event: MouseEvent) {
               // Use pax-based palette for available rooms when filtering by Available (even with date range)
               color = this.getPaxColor(room.capacity);
             } else {
-              color = '#22c55e'; // Green for available (default)
+              color = '#22c55e'; // Green for available (default) 
             }
 
             el.setAttribute('fill', color);
@@ -2189,6 +2181,10 @@ onMainContentClick(event: MouseEvent) {
       pax: 'Select Pax',
       svg: 'all',
     };
+
+    // availability selected suites
+    this.Occupied = 0; 
+    this.Available = 0; 
 
     // Reset suite search term
     this.suiteSearchTerm = '';

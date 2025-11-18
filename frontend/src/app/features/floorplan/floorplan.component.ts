@@ -25,7 +25,6 @@ import { catchError, finalize, map, switchMap, tap, filter, first, takeUntil, ti
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { ToastComponent } from '../../shared/components/toast.component';
-import { YoutubeModalComponent } from '../../shared/components/youtube-modal.component';
 import { HttpClient } from '@angular/common/http';
 import { getStorage, ref, getDownloadURL } from 'firebase/storage';
 import { environment } from '../../environments/environment.prod';
@@ -41,7 +40,7 @@ interface FilterConfig {
 
 @Component({
   standalone: true,
-  imports: [CommonModule, FormsModule, ToastComponent, RouterLink,RouterLinkActive, YoutubeModalComponent],
+  imports: [CommonModule, FormsModule, ToastComponent, RouterLink,RouterLinkActive],
   selector: 'app-floorplan',
   templateUrl:'./floorplan.component.html',
   styleUrls: ['./floorplan.component.scss'],
@@ -118,11 +117,9 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     return !this.isLoading && this.floorplansLoaded && this.noSvgsFromFirebase; //this one will show the message when svg doesn't exist in Firebase
   }
 
-  Occupied: number = 0;
-  Available: number = 0;
-
+  
   // Pax-based color palette //legend
-  paxPalette = ['rgb(61, 168, 218)', 'rgb(20, 50, 218)', 'rgb(215, 66, 218)', 'rgb(173, 4, 63)', 'rgb(240, 70, 40)', 'rgb(255, 166, 0)'] as const;
+  paxPalette = ['rgb(61, 168, 218)', 'rgb(20, 50, 218)', 'rgb(215, 66, 218)', 'rgb(173, 4, 63)', 'rgb(240, 70, 40)', 'rgb(255, 166, 0)'] as const; //change this color match with dashboard theme
   paxBuckets = [
     { max: 4, label: '2-4' }, // ->rgb(61, 168, 218)
     { max: 6, label: '5–6' }, // ->rgb(20, 50, 218)
@@ -153,7 +150,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     { key: 'status', label: 'Status', options: [] as string[] },
     { key: 'pax', label: 'Pax', options: [] as string[] },
   ];
-
+  
   filters = {
     outlet: 'Select Outlet',
     status: 'Select Status',
@@ -169,17 +166,12 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   paxOptions: string[] = [];
   suiteOptions: string[] = [];
   leftPanelCollapsed = false;
-
+  
   selectedRoom: any;
   showPopup = false;
   showDownloadMenu = false;
   popupX = 0;
   popupY = 0;
-
-  // YouTube Modal
-  showYoutubeModal = false;
-  selectedVideoUrl: string | null = null;
-  selectedRoomName: string = '';
 
   // PDF export loading states
   isExportingFloorplan = false;
@@ -187,7 +179,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   // User feedback for PDF export
   pdfExportMessage = '';
   showPdfMessage = false;
-
+  
   // PDF quality settings - compact size for better fit
   private readonly pdfQuality = {
     scale: 1.5, // Reduced from 2 for more compact size
@@ -198,8 +190,11 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   // Compact mode for PDF export
   private compactMode = true;
 
-  safeSvgUrl!: SafeResourceUrl;
+  Occupied: number = 0;
+  Available: number = 0; 
 
+  safeSvgUrl!: SafeResourceUrl;
+  
   // 👉 for collapse toggle
   rightPanel: boolean = false;
   @ViewChildren('svgObject') svgObjects!: QueryList<
@@ -247,7 +242,6 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     this.auth.logout();
   }
   getSafeUrl(url: string): SafeResourceUrl {
-    console.log("getSafeUrl url", url)
     const cached = this.safeUrlCache.get(url);
     if (cached) return cached;
     const safe = this.sanitizer.bypassSecurityTrustResourceUrl(url);
@@ -366,13 +360,11 @@ onMainContentClick(event: MouseEvent) {
       })
     ).subscribe((floors) => {
       this.floors = floors;
-      console.log("floors", floors)
       // Build floor ID to floor mapping for quick lookup
       this.floorIdToFloorMap.clear();
       floors.forEach(floor => {
         this.floorIdToFloorMap.set(floor.floor_id, floor);
       });
-      console.log('Floors loaded:', floors);
     });
   }
 
@@ -397,7 +389,6 @@ onMainContentClick(event: MouseEvent) {
 
     // Get the office ID from the display name and store normalized ID in filters
     const officeId = this.getOfficeIdFromOutletName(outletDisplayName);
-    console.log("officeId", officeId)
     if (!officeId) {
       console.error('Office ID not found for outlet:', outletDisplayName);
       this.toastService.error('Invalid outlet selected');
@@ -509,9 +500,7 @@ onMainContentClick(event: MouseEvent) {
   // Floorplan navigation methods
   nextFloorplan() {
     if (this.hasNextFloorplan) {
-      console.log('➡️ NEXT FLOORPLAN: Moving from', this.currentFloorplanIndex, 'to', this.currentFloorplanIndex + 1);
       this.currentFloorplanIndex++;
-      console.log('➡️ New floorplan URL:', this.currentFloorplan);
       // Close any open popup when changing floorplans
       this.closePopup();
       // Apply filters to ensure resources data is maintained
@@ -555,7 +544,6 @@ onMainContentClick(event: MouseEvent) {
       
       // Force reattachment of event listeners after a short delay
       setTimeout(() => {
-        console.log('🔄 Force reattaching event listeners after navigation');
         this.attachAndColorAllInline();
       }, 100);
     }
@@ -621,27 +609,20 @@ onMainContentClick(event: MouseEvent) {
         const bNum = parseInt(bLabel) || 999;
         return aNum - bNum;
       }) as string[];
-    
-    console.log('📋 Built floor options:', { count: this.floorOptions.length, options: this.floorOptions });
 
     // Get all SVG files for this outlet from floor service
-    console.log('🔍 Starting Firebase lookup for outlet:', { outletId, officeName: selectedOffice?.displayName });
     this.floorService.getAllSvgFilesForOutlet(outletId).pipe(
-      tap(svgs => console.log('📋 getAllSvgFilesForOutlet returned:', { count: svgs?.length || 0, urls: svgs })),
       catchError(error => {
         console.error('❌ Error loading outlet SVGs:', { error, outletId, message: error?.message, status: error?.status });
         this.toastService.error('Failed to load floorplan SVGs');
         return of([]);
       })
     ).subscribe((svgs: string[]) => {
-      console.log('📊 SVG loading result:', { svgs, length: svgs?.length, outletId });
-      
       // Case 1: Got outlet-level SVGs → show all by default
       if (svgs && svgs.length > 0) {
         this.selectedOutletSvgs = svgs;
         this.noSvgsFromFirebase = false;
         this.floorplansLoaded = true;
-        console.log('✅ Outlet SVGs loaded (all floorplans):', this.selectedOutletSvgs);
         this.updateDisplayedSvgs();
         return;
       }
@@ -668,13 +649,11 @@ onMainContentClick(event: MouseEvent) {
       this.selectedOutletSvgs = cloudSvgs;
       this.noSvgsFromFirebase = false;
       this.floorplansLoaded = true;
-      console.log('✅ Office-level cloud SVGs:', cloudSvgs);
       this.updateDisplayedSvgs();
     } else {
       this.selectedOutletSvgs = [];
       this.noSvgsFromFirebase = true;
       this.floorplansLoaded = true;
-      console.log('⚠️ No SVGs found via any method');
       this.updateDisplayedSvgs();
     }
   }
@@ -723,7 +702,6 @@ onMainContentClick(event: MouseEvent) {
         (event as MouseEvent).pageX ?? event.clientX + window.scrollX;
       const pageY =
         (event as MouseEvent).pageY ?? event.clientY + window.scrollY;
-      console.log('[Floorplan] SVG click', { pageX, pageY });
 
       let target = event.target as Element | null;
       const root = svgDoc.documentElement as Element | null;
@@ -743,17 +721,8 @@ onMainContentClick(event: MouseEvent) {
         }
         if (candidate) {
           const normalized = this.normalizeId(candidate);
-          console.log('[Floorplan] candidate', {
-            candidate,
-            normalized,
-            tag: el.tagName,
-          });
           const room = this.roomIdIndex.get(normalized);
           if (room) {
-            console.log('[Floorplan] matched room', {
-              id: room.id,
-              name: room.name,
-            });
             this.openPopupFromRoom(room, event);
             matched = true;
             return;
@@ -762,7 +731,6 @@ onMainContentClick(event: MouseEvent) {
         target = target.parentNode as Element | null;
       }
       if (!matched) {
-        console.log('[Floorplan] click had no matching room element');
         // Background click → reset view and close popup for better UX
         this.closePopup();
       }
@@ -790,10 +758,6 @@ onMainContentClick(event: MouseEvent) {
           this.ngZone.run(() => {
             ev.preventDefault();
             ev.stopPropagation();
-            console.log('[Floorplan] direct room click', {
-              id: room.id,
-              name: room.name,
-            });
             this.openPopupFromRoom(room, ev);
           })
         );
@@ -803,9 +767,6 @@ onMainContentClick(event: MouseEvent) {
   }
 
   buildOptions() {
-    console.log('=== Building Options ===');
-    console.log('Current filters:', this.filters);
-
     // Helper to compute effective status based on selected date range
     const getEffectiveStatus = (room: Room): 'Available' | 'Occupied' => {
       if (this.selectedStartDate) {
@@ -835,7 +796,7 @@ onMainContentClick(event: MouseEvent) {
         return selectedOffice && r.outlet === selectedOffice.displayName;
       }
     );
-    console.log('After outlet filter:', filteredForStatus);
+    //console.log('After outlet filter:', filteredForStatus);
 
     let filteredForPax = filteredForStatus.filter(
       (r) => {
@@ -843,27 +804,27 @@ onMainContentClick(event: MouseEvent) {
         return this.filters.status === 'Select Status' || effectiveStatus === this.filters.status;
       }
     );
-    console.log('After status filter:', filteredForPax);
+    //console.log('After status filter:', filteredForPax);
 
     let filteredForSuite = filteredForPax.filter(
       (r) =>
         this.filters.pax === 'Select Pax' ||
         r.capacity.toString() === this.filters.pax
     );
-    console.log('After pax filter:', filteredForSuite);
+    //console.log('After pax filter:', filteredForSuite);
 
     // Outlet options: from office service - label = displayName, value = id
     this.outletOptions = this.officeService.getOffices().map(office => ({
       label: office.displayName,
       value: office.id
     }));
-    console.log('Outlet options:', this.outletOptions);
+    //console.log('Outlet options:', this.outletOptions);
 
     // Status options: based on selected outlet
     this.statusOptions = Array.from(
       new Set(filteredForOutlet.map((r) => r.status))
     ).sort();
-    console.log('Status options:', this.statusOptions);
+    //console.log('Status options:', this.statusOptions);
 
     // Pax options: based on selected outlet & status, removing 0 or ''
     this.paxOptions = Array.from(
@@ -886,7 +847,7 @@ onMainContentClick(event: MouseEvent) {
       )
     ).sort((a, b) => Number(a) - Number(b));
 
-    console.log('Pax options:', this.paxOptions);
+    //console.log('Pax options:', this.paxOptions);
 
     // Suite options: based on outlet, status & pax + search term
     let allSuites = Array.from(
@@ -900,7 +861,7 @@ onMainContentClick(event: MouseEvent) {
     }
 
     this.suiteOptions = allSuites;
-    console.log('Suite options:', this.suiteOptions);
+    //console.log('Suite options:', this.suiteOptions);
 
     // Keep filtersConfig in sync
     this.filtersConfig.find((f) => f.key === 'outlet')!.options =
@@ -914,7 +875,7 @@ onMainContentClick(event: MouseEvent) {
     const key = type as keyof typeof this.filters;
     this.filters[key] = value;
     if (key === 'outlet'){
-      console.log('🧭 Outlet filter change:', { rawValue: value });
+      //console.log('🧭 Outlet filter change:', { rawValue: value });
       this.onOutletChange(value);
       this.updateSelectedOutletSvgs();
       // Rendering will be triggered after URLs are fetched in subscriptions
@@ -939,12 +900,12 @@ onMainContentClick(event: MouseEvent) {
       // Only auto-zoom if filtering yields exactly one room
       if (this.filteredRooms.length === 1) {
         const onlyRoom = this.filteredRooms[0];
-        console.log('[Floorplan] zoom due to filters yielding one room', {
+       /* console.log('[Floorplan] zoom due to filters yielding one room', {
           id: onlyRoom.id,
           name: onlyRoom.name,
           key,
           value: this.filters[key],
-        });
+        });*/
         setTimeout(() => this.openPopupFromRoom(onlyRoom), 60);
       } else {
         this.closePopup();
@@ -982,6 +943,7 @@ onMainContentClick(event: MouseEvent) {
         } else {
           // No start date either → clear availability and reset
           this.availabilityByRoomId.clear();
+          this.buildOptions();
           this.applyFilters();
           setTimeout(() => this.updateSvgColors(), 50);
         }
@@ -1073,11 +1035,6 @@ onMainContentClick(event: MouseEvent) {
             });
           });
           
-          console.log('📅 Availability data loaded (multi-window):', { 
-            roomsWithData: combined.size, 
-            totalRooms: this.rooms.length,
-            freeRooms: Array.from(combined.values()).filter(v => v === 'free').length
-          });
           this.availabilityByRoomId = combined;
           this.applyFilters();
           setTimeout(() => this.updateSvgColors(), 50);
@@ -1176,33 +1133,33 @@ onMainContentClick(event: MouseEvent) {
   private updateDisplayedSvgs() {
     const outletId = this.filters.outlet;
     const currentSource = this.selectedOutletSvgs.length > 0 ? this.detectSvgSource(this.selectedOutletSvgs[0]) : this.detectSvgSource('');
-    console.log('🔄 updateDisplayedSvgs called:', { 
+    /*console.log('🔄 updateDisplayedSvgs called:', { 
       outletId, 
       selectedFloorSvg: this.selectedFloorSvg, 
       selectedOutletSvgs: this.selectedOutletSvgs,
       selectedOutletSvgsCount: this.selectedOutletSvgs.length,
       floorplansLoaded: this.floorplansLoaded,
       source: currentSource.toUpperCase()
-    });
-    console.log('🧭 Rendering floorplans:', { count: this.selectedOutletSvgs.length, urls: this.selectedOutletSvgs });
+    });*/
+    //console.log('🧭 Rendering floorplans:', { count: this.selectedOutletSvgs.length, urls: this.selectedOutletSvgs });
     
     if (!outletId || outletId === 'Select Outlet') {
       this.displayedSvgs = [];
       this.currentFloorplanIndex = 0; // Reset pagination
-      console.log('❌ No outlet selected, clearing displayedSvgs');
+      //console.log('❌ No outlet selected, clearing displayedSvgs');
       return;
     }
 
     // Wait for floorplans to be loaded before displaying
     if (!this.floorplansLoaded) {
-      console.log('⏳ Floorplans not loaded yet, waiting...');
+      //console.log('⏳ Floorplans not loaded yet, waiting...');
       // Retry after a short delay
       setTimeout(() => {
         if (this.floorplansLoaded) {
-          console.log('✅ Floorplans loaded, retrying updateDisplayedSvgs');
+          //console.log('✅ Floorplans loaded, retrying updateDisplayedSvgs');
           this.updateDisplayedSvgs();
         } else {
-          console.warn('⚠️ Floorplans still not loaded after wait, proceeding anyway');
+          //console.warn('⚠️ Floorplans still not loaded after wait, proceeding anyway');
           // Proceed anyway after timeout to avoid infinite waiting
           this.floorplansLoaded = true; // Mark as loaded to prevent infinite waiting
           this.updateDisplayedSvgs();
@@ -1215,130 +1172,18 @@ onMainContentClick(event: MouseEvent) {
     // This ensures all floorplans for the outlet are shown without filtering by floor_id
     this.displayedSvgs = this.selectedOutletSvgs || [];
     this.currentFloorplanIndex = 0; // Reset pagination
-    console.log('🖼️ Displaying all outlet SVGs:', { count: this.displayedSvgs.length, total: this.selectedOutletSvgs.length });
+    //console.log('🖼️ Displaying all outlet SVGs:', { count: this.displayedSvgs.length, total: this.selectedOutletSvgs.length });
     
     if (this.displayedSvgs.length > 0) {
-      console.log('📥 Loading inline SVGs for display:', this.displayedSvgs.length, 'SVGs');
+      //console.log('📥 Loading inline SVGs for display:', this.displayedSvgs.length, 'SVGs');
       this.loadInlineSvgs(this.displayedSvgs);   // ✅ Load all SVGs
     } else {
-      console.warn('⚠️ No SVGs to display, selectedOutletSvgs is empty');
+      //console.warn('⚠️ No SVGs to display, selectedOutletSvgs is empty');
       this.svgLoading = false;
       this.svgFailed = true;
       this.floorplansLoaded = true; // Ensure loaded state is set
     }
   }
-
-
-  // onFloorChange(event: Event) {
-  //   const select = event.target as HTMLSelectElement | null;
-  //   const raw = select?.value ?? '';
-  //   this.selectedFloorSvg = raw;
-  //   console.log("onFloorChange selectedFloorSvg", this.selectedFloorSvg)
-  //   console.log("onFloorChange raw", raw)
-  //   this.updateDisplayedSvgs();
-  //   if (!raw) return;
-
-  // }
-
-  // private updateDisplayedSvgs() {
-  //   console.log("updateDisplayedSvgs", this.selectedFloorSvg)
-  //   console.log("updateDisplayedSvgs", this.selectedFloorSvg)
-  //   // "9|63f5decf5de9f10007e115a6" -> extract floorId
-  //   const _hasPipe = this.selectedFloorSvg.includes('|');
-  //   const hasPipe = _hasPipe ? true:false;
-  //   console.log("hasPipe", hasPipe)
-  //   // const floorId = hasPipe ? this.selectedFloorSvg.split('|')[1]?.trim() : '';
-  //   const floorId = this.selectedFloorSvg.split('|')[1];
-  //   const outletId = this.filters.outlet;
-  //   console.log("floorId", floorId)
-  //   console.log("outletId", outletId)
-  //   console.log("selectedFloorSvg", this.selectedFloorSvg)
-
-  //   if (hasPipe && floorId && outletId !== 'Select Outlet') {
-  //     console.log("hello")
-  //     this.floorService.getSvgFilesForFloor(outletId, floorId, this.floors).pipe(
-  //       catchError(err => {
-  //         console.error('Error loading floor SVGs:', err);
-  //         this.toastService.error('Failed to load floor SVGs');
-  //         return of<string[]>([]);
-  //       })
-  //     ).subscribe(floorSvgs => {
-  //       this.displayedSvgs = floorSvgs.length ? floorSvgs : this.selectedOutletSvgs.slice();
-  //     });
-  //   } else if (!hasPipe) {
-  //     console.log("hello 2")
-  //     // Fallback old behavior (value is a direct SVG url)
-  //     this.displayedSvgs = this.selectedOutletSvgs.filter(p => p === this.selectedFloorSvg);
-  //   } else {
-  //     console.log("hello 3")
-  //     this.displayedSvgs = this.selectedOutletSvgs.slice();
-  //   }
-  //   if (!this.selectedOutletSvgs?.length) {
-  //     this.displayedSvgs = [];
-  //     return;
-  //   }
-
-  //   if (this.selectedFloorSvg === 'all') {
-  //     this.displayedSvgs = this.selectedOutletSvgs.slice();
-  //     return;
-  //   }
-
-
-
-
-  // }
-
-  // // Floor selection handler
-  // onFloorChange(event: Event) {
-  //   console.log("onFloorChange event.target", event.target)
-  //   const select: any = event.target as HTMLSelectElement | null;
-  //   console.log("onFloorChange select", select)
-  //   console.log("onFloorChange select.value", select.value)
-  //   if (select) {
-  //     this.selectedFloorSvg = select.value;
-  //     this.updateDisplayedSvgs();
-  //     // colors/handlers will reattach on next load event automatically
-  //   }
-  // }
-
-  // private updateDisplayedSvgs() {
-  //   console.log("updateDisplayedSvgs selectedOutletSvgs", this.selectedOutletSvgs)
-  //   if (!this.selectedOutletSvgs || this.selectedOutletSvgs.length === 0) {
-  //     this.displayedSvgs = [];
-  //     return;
-  //   }
-  //   if (this.selectedFloorSvg === 'all') {
-  //     this.displayedSvgs = this.selectedOutletSvgs.slice();
-  //   } else {
-  //     // Check if selectedFloorSvg is in the new format (floorNumber|floorId)
-  //     if (this.selectedFloorSvg.includes('|')) {
-  //       const floorId = this.selectedFloorSvg.split('|')[1];
-  //       const outletId = this.filters.outlet;
-  //       console.log("floorId", floorId)
-  //       console.log("outletId", outletId)
-  //       if (outletId && outletId !== 'Select Outlet') {
-  //         // Get SVG files for the specific floor
-  //         this.floorService.getSvgFilesForFloor(outletId, floorId, this.floors).pipe(
-  //           catchError(error => {
-  //             console.error('Error loading floor SVGs:', error);
-  //             this.toastService.error('Failed to load floor SVGs');
-  //             return of([]);
-  //           })
-  //         ).subscribe(floorSvgs => {
-  //           console.log("getSvgFilesForFloor : floorSvgs", floorSvgs)
-  //           this.displayedSvgs = floorSvgs.length > 0 ? floorSvgs : this.selectedOutletSvgs.slice();
-  //         });
-  //       } else {
-  //         this.displayedSvgs = this.selectedOutletSvgs.slice();
-  //       }
-  //     } else {
-  //       // Fallback to old SVG-based filtering
-  //       this.displayedSvgs = this.selectedOutletSvgs.filter(
-  //         (p) => p === this.selectedFloorSvg
-  //       );
-  //     }
-  //   }
-  // }
 
   applyFilters() {
     // Helper to compute effective status based on selected date range
@@ -1441,7 +1286,7 @@ onMainContentClick(event: MouseEvent) {
             } else if (this.filters.status === 'Available') {
               // Use pax-based palette for available rooms when filtering by Available (even with date range)
               color = this.getPaxColor(room.capacity);
-            } else {
+            } else { 
               color = '#22c55e'; // Green for available (default) 
             }
 
@@ -1602,7 +1447,6 @@ onMainContentClick(event: MouseEvent) {
     const byDisplay = offices.find(o => (o.displayName || '').trim().toLowerCase() === normalized);
     const byId = offices.find(o => (o.id || '').trim().toLowerCase() === normalized);
     const chosen = byDisplay ?? byId;
-    console.log('🏢 Outlet normalization:', { input: outletName, id: chosen?.id, displayName: chosen?.displayName });
     return chosen?.id;
   }
 
@@ -1615,7 +1459,7 @@ onMainContentClick(event: MouseEvent) {
   }
 
   private buildRoomIdIndex(): Map<string, Room> {
-    console.log('🏗️ Building room ID index for', this.rooms.length, 'rooms');
+   //console.log('🏗️ Building room ID index for', this.rooms.length, 'rooms');
     const index = new Map<string, Room>();
     this.rooms.forEach((room, roomIndex) => {
       const candidates = [
@@ -1670,7 +1514,7 @@ onMainContentClick(event: MouseEvent) {
   }
 
   private openPopupFromRoom(room: Room, clickEvent?: MouseEvent) {
-    console.log('🚀 openPopupFromRoom called with room:', {
+   /* console.log('🚀 openPopupFromRoom called with room:', {
       id: room.id,
       name: room.name,
       status: room.status,
@@ -1678,7 +1522,7 @@ onMainContentClick(event: MouseEvent) {
       clickEvent: clickEvent ? 'present' : 'missing',
       currentShowPopup: this.showPopup,
       currentSelectedRoom: this.selectedRoom?.name
-    });
+    });*/
     
     let positioned = false;
     // Try inline SVG hosts first
@@ -1896,20 +1740,20 @@ onMainContentClick(event: MouseEvent) {
       this.showPopup = true;
       this.popupX = Math.max(16, window.innerWidth / 2 - 130);
       this.popupY = Math.max(16, window.innerHeight / 2 - 100);
-      console.log('[Floorplan] popup fallback center', {
+     /* console.log('[Floorplan] popup fallback center', {
         room: room.name,
         x: this.popupX,
         y: this.popupY,
-      });
+      });*/
     }
     
-    console.log('🎯 Final popup state:', {
+    /*console.log('🎯 Final popup state:', {
       showPopup: this.showPopup,
       selectedRoom: this.selectedRoom?.name,
       popupX: this.popupX,
       popupY: this.popupY,
       positioned: positioned
-    });
+    });*/
   }
 
   private downloadBlob(fileName: string, blob: Blob) {
@@ -1923,7 +1767,7 @@ onMainContentClick(event: MouseEvent) {
 
   async downloadFloorplanWithDetails(format: 'svg' | 'png' = 'svg') {  //allows the user to download the svg floorplan as svg or png
     if (!this.selectedOutletSvgs || this.selectedOutletSvgs.length === 0) {
-      console.warn('No floorplan to download.');
+      //console.warn('No floorplan to download.');
       return;
     }
     const first = this.svgObjects?.first?.nativeElement as //this one is for finding the first svg object element
@@ -2087,22 +1931,18 @@ onMainContentClick(event: MouseEvent) {
     if (this.popupX + popupWidth > vw) this.popupX = vw - popupWidth - 8;
     if (this.popupY + popupHeight > vh) this.popupY = vh - popupHeight - 8;
 
-    console.log('[Floorplan] popup opened (click)', {
+    /*console.log('[Floorplan] popup opened (click)', {
       OutletID: room.outlet,
       ID: room.id,
       room: room.name,
       x: this.popupX,
       y: this.popupY,
-    });
+    });*/
   }
 
   closePopup() {
     this.showPopup = false;
     this.selectedRoom = null;
-    // Briefly yield to allow DOM to update, then ensure new clicks re-open popup
-    setTimeout(() => {
-      console.log('[Floorplan] popup closed');
-    });
   }
 
   // Handle floorplan container clicks
@@ -2112,7 +1952,7 @@ onMainContentClick(event: MouseEvent) {
   }
 //Delete this later
   onSvgHostClick(event: MouseEvent) {
-    console.log('🎨 SVG HOST CLICK:', {
+    /*console.log('🎨 SVG HOST CLICK:', {
       target: event.target,
       targetTag: (event.target as Element)?.tagName,
       targetId: (event.target as Element)?.id,
@@ -2128,23 +1968,17 @@ onMainContentClick(event: MouseEvent) {
       isSVG: (event.target as Element)?.tagName === 'svg',
       isSVGChild: (event.target as Element)?.closest('svg') !== null,
       svgContent: (event.target as Element)?.innerHTML?.substring(0, 100) + '...'
-    });
+    });*/
   }
 
-  // YouTube Modal Methods
-  openYoutubeModal(room: Room) {
-    if (room.video) {
-      this.selectedVideoUrl = room.video;
-      this.selectedRoomName = room.name;
-      this.showYoutubeModal = true;
-      this.closePopup(); // Close the room popup when opening video modal
+  // Open YouTube link in new tab
+  openYouTubeLink(room: Room) {
+    const youtubeUrl = this.getYouTubeWatchUrlFor(room);
+    if (youtubeUrl) {
+      window.open(youtubeUrl, '_blank', 'noopener,noreferrer');
+    } else {
+      console.warn('No valid YouTube URL found for room:', room.name);
     }
-  }
-
-  closeYoutubeModal() {
-    this.showYoutubeModal = false;
-    this.selectedVideoUrl = null;
-    this.selectedRoomName = '';
   }
 
   // Download current outlet's SVG
@@ -2242,7 +2076,6 @@ onMainContentClick(event: MouseEvent) {
 
       // Process inline SVGs (your actual SVG display method)
       const svgHosts = this.svgHosts?.toArray?.() ?? [];
-      console.log('🔍 PDF Export: Found', svgHosts.length, 'inline SVG hosts');
       
       if (svgHosts.length === 0) {
         console.warn('❌ No SVG hosts found for PDF export');
@@ -2256,14 +2089,6 @@ onMainContentClick(event: MouseEvent) {
         const hostRef = svgHosts[idx];
         const hostEl = hostRef.nativeElement as HTMLDivElement;
         const rootSvg = hostEl.querySelector('svg') as SVGSVGElement | null;
-
-        console.log(`🔍 Processing SVG ${idx + 1}:`, {
-          hasHostEl: !!hostEl,
-          hasRootSvg: !!rootSvg,
-          svgWidth: rootSvg?.getAttribute('width'),
-          svgHeight: rootSvg?.getAttribute('height'),
-          viewBox: rootSvg?.getAttribute('viewBox')
-        });
 
         if (!rootSvg) {
           console.warn(`❌ No SVG found in host ${idx + 1}`);
@@ -2484,13 +2309,7 @@ onMainContentClick(event: MouseEvent) {
         this.addYouTubeLinksToSvg(svgClone);
 
         try {
-          console.log(`🎨 Converting SVG ${idx + 1} to canvas...`);
           let canvas = await this.svgToCanvas(svgClone);
-          console.log(`✅ Canvas created:`, {
-            width: canvas.width,
-            height: canvas.height,
-            hasContent: canvas.width > 0 && canvas.height > 0
-          });
           
           canvas = this.downscaleCanvasIfNeeded(canvas);
 
@@ -2516,14 +2335,8 @@ onMainContentClick(event: MouseEvent) {
 
           // Use PNG for crisp vectors; jsPDF will compress
           const imgData = canvas.toDataURL('image/png');
-          console.log(`📐 Image dimensions:`, {
-            imgX, imgY, imgWidth, imgHeight,
-            pageWidth, pageHeight,
-            imgDataLength: imgData.length
-          });
           
           pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'MEDIUM');
-          console.log(`✅ Image added to PDF page ${idx + 1}`);
 
           // Add clickable YouTube links for rooms with videos
           this.addYouTubeLinksToPdf(pdf, imgX, imgY, imgWidth, imgHeight, svgClone);
@@ -2816,7 +2629,6 @@ onMainContentClick(event: MouseEvent) {
   // Toggle compact mode for PDF export
   toggleCompactMode(): void {
     this.compactMode = !this.compactMode;
-    console.log('Compact mode:', this.compactMode ? 'ON' : 'OFF');
   }
 
   // Get compact mode status
@@ -3069,9 +2881,6 @@ onMainContentClick(event: MouseEvent) {
         // All fetches completed (success or failure)
         this.svgLoading = false;
         this.floorplansLoaded = true;
-        if (completed > 0) {
-          console.log(`✅ ${completed}/${total} SVGs loaded successfully`);
-        }
         if (failed > 0) {
           console.warn(`⚠️ ${failed}/${total} SVGs failed to load`);
         }
@@ -3096,8 +2905,6 @@ onMainContentClick(event: MouseEvent) {
     // Now process all normalized URLs
     normalizedUrls.forEach(({ originalUrl, normalizedUrl }) => {
       const source = this.detectSvgSource(originalUrl);
-      console.log(`⬇️ Fetching SVG URL from ${source.toUpperCase()}:`, originalUrl);
-      console.log(`🔄 Normalized URL:`, normalizedUrl);
       
       // Add authentication header if URL is from backend API
       const token = sessionStorage.getItem('userAccessToken') || '';
@@ -3111,13 +2918,6 @@ onMainContentClick(event: MouseEvent) {
           // Store using normalized key (without query params) for consistent lookup
           const key = this.normalizeUrlKey(originalUrl);
           this.svgHtmlMap.set(key, safe);
-          console.log(`✅ SVG fetched and processed from ${source.toUpperCase()}:`, { 
-            originalUrl, 
-            normalizedUrl,
-            key,
-            length: processedSvgText?.length || 0,
-            svgHtmlMapKeys: Array.from(this.svgHtmlMap.keys())
-          });
           completed++;
           checkComplete();
         },
@@ -3204,40 +3004,32 @@ onMainContentClick(event: MouseEvent) {
 
   private attachAndColorAllInline() {
     const currentKey = this.currentFloorplan ? this.normalizeUrlKey(this.currentFloorplan) : null;
-    console.log('🔗 attachAndColorAllInline called, svgHosts count:', this.svgHosts?.length || 0);
+    /*console.log('🔗 attachAndColorAllInline called, svgHosts count:', this.svgHosts?.length || 0);
     console.log('🎯 Current floorplan for display:', this.currentFloorplan);
     console.log('🔑 Normalized key:', currentKey);
-    console.log('📊 SVG HTML Map size:', this.svgHtmlMap.size);
-    console.log('📋 SVG HTML Map keys:', Array.from(this.svgHtmlMap.keys()));
-    console.log('🔍 Has current key?', currentKey ? this.svgHtmlMap.has(currentKey) : false);
+    console.log('📊 SVG HTML Map size:', this.svgHtmlMap.size);*/
+    // console.log('📋 SVG HTML Map keys:', Array.from(this.svgHtmlMap.keys()));
+    // console.log('🔍 Has current key?', currentKey ? this.svgHtmlMap.has(currentKey) : false);*/
     
     if (!this.svgHosts) {
-      console.log('❌ No svgHosts found');
+      //console.log('❌ No svgHosts found');
       return;
     }
 
     // For each inlined SVG root, run listeners + color
     this.svgHosts.forEach((hostRef, index) => {
       const host = hostRef.nativeElement;
-      console.log(`🔗 Processing host ${index}:`, host);
-      console.log(`🔗 Host innerHTML length:`, host.innerHTML?.length || 0);
+      // console.log(`🔗 Processing host ${index}:`, host);
+      // console.log(`🔗 Host innerHTML length:`, host.innerHTML?.length || 0);
       
       const rootSvg = host.querySelector('svg') as SVGSVGElement | null;
       if (!rootSvg) {
-        console.log(`❌ No SVG found in host ${index}`);
+        // console.log(`❌ No SVG found in host ${index}`);
         return;
       }
 
-      console.log(`✅ Found SVG in host ${index}:`, rootSvg);
-      console.log(`🔗 SVG children count: ${rootSvg.children.length}`);
-      console.log(`🔗 SVG viewBox:`, rootSvg.getAttribute('viewBox'));
-      
       // Check if SVG has room elements
       const roomElements = rootSvg.querySelectorAll('[id]');
-      console.log(`🔗 SVG elements with IDs: ${roomElements.length}`);
-      if (roomElements.length > 0) {
-        console.log(`🔗 First few IDs:`, Array.from(roomElements).slice(0, 3).map(el => el.id));
-      }
       
       // Attach click handlers on this inline SVG
       this.attachRoomListenersInline(rootSvg);
@@ -3248,12 +3040,10 @@ onMainContentClick(event: MouseEvent) {
   }
 
   private attachRoomListenersInline(rootSvg: SVGSVGElement) {
-    console.log('attachRoomListenersInline called for SVG:', rootSvg);
     const svgDoc = rootSvg.ownerDocument!;
     
     // Remove any existing listeners first to avoid duplicates
     if ((rootSvg as any).__ps_click_bound__) {
-      console.log('Removing existing click listener');
       rootSvg.removeEventListener('click', (rootSvg as any).__ps_click_handler);
     }
     
@@ -3261,22 +3051,6 @@ onMainContentClick(event: MouseEvent) {
     //  - Instead of searching in object.contentDocument,
     //  - search within rootSvg
     const handleClick = (event: MouseEvent) => {
-      console.log('🎯 SVG CLICK DETECTED:', {
-        target: event.target,
-        targetTagName: (event.target as Element)?.tagName,
-        targetId: (event.target as Element)?.id,
-        targetClass: (event.target as Element)?.className,
-        currentTarget: event.currentTarget,
-        clientX: event.clientX,
-        clientY: event.clientY,
-        pageX: event.pageX,
-        pageY: event.pageY,
-        offsetX: event.offsetX,
-        offsetY: event.offsetY,
-        screenX: event.screenX,
-        screenY: event.screenY
-      });
-      
       let target = event.target as Element | null;
       const root = rootSvg as Element;
       let matched = false;
@@ -3285,13 +3059,6 @@ onMainContentClick(event: MouseEvent) {
         const el = target as HTMLElement;
         let candidate = el.id || el.getAttribute?.('data-id') || el.getAttribute?.('data-room') || '';
         
-        console.log('Checking element:', {
-          tagName: el.tagName,
-          id: el.id,
-          candidate: candidate,
-          classList: el.classList.toString()
-        });
-        
         if (!candidate) {
           const href = el.getAttribute?.('href') || el.getAttribute?.('xlink:href') || '';
           if (href && href.startsWith('#')) candidate = href.slice(1);
@@ -3299,24 +3066,15 @@ onMainContentClick(event: MouseEvent) {
         
         if (candidate) {
           const normalized = this.normalizeId(candidate);
-          console.log('🔍 Found candidate:', { 
-            candidate, 
-            normalized,
-            roomIdIndexSize: this.roomIdIndex.size,
-            roomIdIndexKeys: Array.from(this.roomIdIndex.keys()).slice(0, 5) // Show first 5 keys
-          });
           const room = this.roomIdIndex.get(normalized);
           if (room) {
-            console.log('✅ Matched room:', { id: room.id, name: room.name });
             this.openPopupFromRoom(room, event);
             matched = true;
             return;
           } else {
-            console.log('❌ No room found for normalized ID:', normalized);
             // Try to find room by original candidate
             const roomByOriginal = this.roomIdIndex.get(candidate);
             if (roomByOriginal) {
-              console.log('✅ Found room by original candidate:', { id: roomByOriginal.id, name: roomByOriginal.name });
               this.openPopupFromRoom(roomByOriginal, event);
               matched = true;
               return;
@@ -3327,7 +3085,6 @@ onMainContentClick(event: MouseEvent) {
       }
       
       if (!matched) {
-        console.log('No room element matched, closing popup');
         this.closePopup();
       }
     };
@@ -3338,39 +3095,18 @@ onMainContentClick(event: MouseEvent) {
     // Add the click listener
     rootSvg.addEventListener('click', (rootSvg as any).__ps_click_handler);
     (rootSvg as any).__ps_click_bound__ = true;
-    
-    // Also add a simple test listener to verify clicks are being detected
-    rootSvg.addEventListener('click', (ev) => {
-      console.log('🔥 TEST CLICK DETECTED!', {
-        target: ev.target,
-        targetTag: (ev.target as Element)?.tagName,
-        targetId: (ev.target as Element)?.id,
-        coordinates: {
-          clientX: (ev as MouseEvent).clientX,
-          clientY: (ev as MouseEvent).clientY,
-          pageX: (ev as MouseEvent).pageX,
-          pageY: (ev as MouseEvent).pageY
-        }
-      });
-    });
-    
-    console.log('Click listener attached to SVG');
 
     // Strong bindings on specific room elements
-    console.log('Setting up room-specific click handlers for', this.rooms.length, 'rooms');
     this.rooms.forEach((room, index) => {
       const el = this.findRoomElementInline(rootSvg, room) as HTMLElement | null;
       if (!el) {
-        console.log(`Room ${index} (${room.name}) element not found in SVG`);
         return;
       }
-     // console.log(`Found room element for ${room.name}:`, el);
       el.style.cursor = 'pointer';
       el.style.pointerEvents = 'auto';
       if (!(el as any).__ps_room_bound__) {
         el.addEventListener('click', (ev: MouseEvent) =>
           this.ngZone.run(() => {
-            console.log('Room-specific click handler triggered for:', room.name);
             ev.preventDefault();
             ev.stopPropagation();
             this.openPopupFromRoom(room, ev);

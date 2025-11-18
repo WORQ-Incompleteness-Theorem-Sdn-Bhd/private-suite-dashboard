@@ -114,6 +114,12 @@ async function processUpload(
     return;
   }
 
+  if (!floorId) {
+    console.error("❌ Missing floorId in upload request");
+    res.status(400).json({ error: "floorId is required" });
+    return;
+  }
+
   const tempId = randomUUID();
   const tmp = path.join(os.tmpdir(), `upload-${tempId}.svg`);
   await fs.writeFile(tmp, file.buffer);
@@ -122,11 +128,9 @@ async function processUpload(
     // Build final destination key
     const sanitizedName = (sanitizeBaseName(fileName) || "floorplan") + ".svg";
     const prefix = ROOT_PREFIX ? `${ROOT_PREFIX}/` : '';
-    const finalKey = floorId
-      ? `${prefix}${officeId}/${floorId}/${sanitizedName}`
-      : `${prefix}${officeId}/${sanitizedName}`;
+    const finalKey = `${prefix}${officeId}/${floorId}/${sanitizedName}`;
 
-    console.log("🎯 Upload target path:", finalKey);
+    console.log("🎯 Upload target path:", finalKey)
     console.log("📁 Office ID:", officeId);
     console.log("🏢 Floor ID:", floorId || "none (office-level)");
     console.log("🔄 Overwrite mode:", overwrite);

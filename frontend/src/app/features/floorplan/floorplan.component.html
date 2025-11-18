@@ -190,58 +190,6 @@
         <span class="font-semibold text-green-600">{{ Available }}</span>
       </div>
     </div>
-
-    <!-- Room Table 
-    <div class="p-4 mt-6 border border-gray-200 bg-gray-50 rounded-xl">
-      <table class="w-full border">
-        <thead class="text-gray-700 bg-gray-100">
-          <tr>
-            <th class="p-2 text-left">Room Name</th>
-            <th class="p-2 text-left">Details</th>
-          </tr>
-        </thead>
-      </table>
-
-      <div id="details-body" class="overflow-y-auto border border-t-0 max-h-64">
-        <table class="w-full">
-          <tbody>
-            <tr *ngFor="let room of filteredRooms" class="transition border-b hover:bg-orange-50">
-              <!-- Room Name 
-              <td class="p-2 font-semibold">{{ room.name }}</td>
-
-              <!-- Room Details 
-              <td class="p-2 text-sm text-gray-600 min-w-[200px]">
-                <div><strong>Type:</strong> {{ room.type }}</div>
-                <div><strong>Status:</strong> {{ room.status }}</div>
-                <div *ngIf="selectedStartDate"><strong>Availability (Selected):</strong>
-                  <span [class]="(availabilityByRoomId.get(room.id) === 'free') ? 'text-green-600' : 'text-red-600'">
-                    {{ availabilityByRoomId.get(room.id) === 'free' ? 'Available' : 'Occupied' }}
-                  </span> <!--New functions availability by room id
-                </div>
-                <div><strong>Pax:</strong> {{ room.capacity }}</div>
-                <div><strong>Area:</strong> {{ room.area }} sqft</div>
-                <div><strong>Price:</strong> RM {{ room.price }}</div>
-                <div><strong>Deposit:</strong> RM {{ room.deposit }}</div>
-                <div *ngIf="room.video"><strong>Video:</strong>
-                  <a [href]="room.video" target="_blank" class="text-blue-600 hover:underline text-xs">
-                    {{ room.video }}
-                  </a>
-                </div>
-
-              </td>
-            </tr>
-
-            <!-- Show when no rooms match 
-            <tr *ngIf="filteredRooms.length === 0">
-              <td colspan="2" class="p-4 text-center text-gray-500">
-                No rooms found.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div> -->
-
     <!-- PDF Export Section -->
     <div class="p-4 mt-6 border border-orange-200 bg-orange-50 rounded-xl">
       <!-- User Feedback Message -->
@@ -332,24 +280,10 @@
               </div>
             </div>
           </div>
-          <!-- Not Functioning 
-          <!-- Floorplan content with loading state styling 
-          <div class="h-full flex items-center justify-center" 
-               [class.pointer-events-none]="isLoading"
-               [class.opacity-50]="isLoading"> -->
-               
-               <!-- No floorplan message - General case 
-               <div *ngIf="shouldShowNoFloorplanMessage" class="text-center text-gray-500">
-                 <p class="text-lg">No floorplan available</p>
-                 <p class="text-sm">Please select a different floor or outlet</p>
-                </div>
-              </div>
-            -->
             <!-- Single floorplan display -->
             <div *ngIf="currentFloorplan && svgHtmlMap.get(normalizeUrlKey(currentFloorplan)) && !isLoading" class="w-full h-full flex items-center justify-center transition-opacity duration-300">
               <div class="svg-host max-w-full max-h-full" #svgHost [innerHTML]="svgHtmlMap.get(normalizeUrlKey(currentFloorplan))" (click)="onSvgHostClick($event)"></div>
-            </div>
-
+            </div> 
             <!-- Loading state for SVG (when URLs exist but not yet loaded) -->
             <div *ngIf="currentFloorplan && !svgHtmlMap.get(normalizeUrlKey(currentFloorplan)) && !isLoading && floorplansLoaded && !noSvgsFromFirebase"
                  class="absolute inset-0 z-10 flex items-center justify-center text-center p-6">
@@ -358,7 +292,6 @@
                 <div class="text-sm text-gray-600">Loading floorplan image...</div>
               </div>
             </div>
-
             <!-- Empty state: no SVGs uploaded for this outlet // this for fixing the svgs error--> 
             <div *ngIf="!currentFloorplan && !isLoading && noSvgsFromFirebase && floorplansLoaded"
                  class="absolute inset-0 z-10 flex items-center justify-center text-center p-6">
@@ -368,7 +301,6 @@
                 <div class="text-sm text-gray-600">This outlet has no SVG uploaded on Firebase yet.</div>
               </div>
             </div>
-
             <!-- Empty state: no floorplans selected -->
             <div *ngIf="!currentFloorplan && !isLoading && !noSvgsFromFirebase && floorplansLoaded && totalFloorplans === 0"
                  class="absolute inset-0 z-10 flex items-center justify-center text-center p-6">
@@ -378,7 +310,6 @@
                 <div class="text-sm text-gray-600">Please select a different floor or outlet.</div>
               </div>
             </div>
-            
           <!-- Previous arrow -->
           <button 
             *ngIf="totalFloorplans > 1"
@@ -389,7 +320,6 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"></path>
             </svg>
           </button>
-
           <!-- Next arrow -->
           <button 
             *ngIf="totalFloorplans > 1"
@@ -400,7 +330,6 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"></path>
             </svg>
           </button>
-
           <!-- Floorplan pagination indicator -->
           <div *ngIf="totalFloorplans > 1" class="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-20">
             <div class="pagination-indicator flex items-center space-x-3 bg-white/95 px-5 py-3 rounded-full shadow-xl border border-gray-200">
@@ -469,7 +398,7 @@
         <!-- Watch Video Button -->
         <ng-container *ngIf="selectedRoom.video">
           <button
-            (click)="openYoutubeModal(selectedRoom); $event.stopPropagation()"
+            (click)="openYouTubeLink(selectedRoom); $event.stopPropagation()"
             class="mt-2 inline-flex items-center gap-2 rounded-md border border-gray-300 px-2 py-1 text-[13px] text-blue-600 hover:bg-blue-50 hover:border-blue-400 transition-colors"
             aria-label="Watch virtual tour video"
             title="Watch virtual tour video"
@@ -484,11 +413,3 @@
       </div>
     </div>
   </div>
-
-<!-- YouTube Video Modal -->
-<app-youtube-modal
-  [isOpen]="showYoutubeModal"
-  [videoUrl]="selectedVideoUrl"
-  [roomName]="selectedRoomName"
-  (close)="closeYoutubeModal()"
-></app-youtube-modal>

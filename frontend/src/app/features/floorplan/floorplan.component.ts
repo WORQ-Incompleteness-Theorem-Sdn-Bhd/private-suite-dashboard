@@ -433,11 +433,9 @@ ngOnInit() {
         if (response) {
           // Update selected outlet SVGs first
           this.updateSelectedOutletSvgs();
-          // Don't build filters yet if date is selected - wait for availability data
-          if (!this.selectedStartDate) {
-            // No date selected - safe to build filters immediately using base status
-            this.buildFiltersFromBackend();
-          }
+          // Always build filters immediately with base status for instant visual feedback
+          // Availability data will update colors later if date is selected
+          this.buildFiltersFromBackend();
           // SVG color updates will be handled by updateSelectedOutletSvgs -> updateDisplayedSvgs
         }
       }),
@@ -767,7 +765,7 @@ ngOnInit() {
   private async fetchAvailabilityForCurrentSelection() {
     const officeId = this.filters.outlet;
 
-    if (!officeId || !this.selectedStartDate) return;
+    if (!officeId || officeId === 'Select Outlet' || !this.selectedStartDate) return;
 
     const start = this.selectedStartDate;
     const end = this.selectedEndDate || this.selectedStartDate;
@@ -1399,7 +1397,14 @@ async downloadFloorplanWithDetails(format: 'svg' | 'png' = 'svg') {
         pdfQuality: this.pdfQuality
       });
 
-      let fileName = `floorplan-${this.filters.outlet !== 'Select Outlet' ? this.filters.outlet : 'all'}.pdf`;
+      // Get outlet display name instead of ID for filename
+      let outletName = 'all';
+      if (this.filters.outlet && this.filters.outlet !== 'Select Outlet') {
+        const selectedOffice = this.officeService.getOffices().find(office => office.id === this.filters.outlet);
+        outletName = selectedOffice ? selectedOffice.displayName : this.filters.outlet;
+      }
+
+      let fileName = `floorplan-${outletName}.pdf`;
       this.pdfExportService.savePdfSmart(pdf, fileName);
 
       this.showMessage(`Floorplan PDF exported successfully! 🎉`);

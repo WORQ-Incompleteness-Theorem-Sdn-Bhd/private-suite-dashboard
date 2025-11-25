@@ -13,7 +13,7 @@ export class SvgColorService {
     availabilityByRoomId: Map<string, 'free' | 'occupied'>,
     filtersStatus: string,
     toStatusUnion: (status: string) => 'Available' | 'Occupied',
-    getPaxColor: (capacity: number) => string
+    getPaxColor: (capacity: number) => string,
   ): void {
     // 🔍 DEBUG: Log when updateSvgColors is called
     console.log('🎨 updateSvgColors (object-embedded) called:', {

@@ -8,51 +8,49 @@ import { Observable, Subscription } from 'rxjs';
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="fixed top-4 right-4 z-50 space-y-2">
+    <div class="fixed top-4 right-4 z-50 space-y-2 pointer-events-none">
       <div
         *ngFor="let toast of toasts$ | async"
-        class="flex items-center p-4 rounded-lg shadow-lg max-w-sm transition-all duration-300 ease-in-out"
+        class="pointer-events-auto flex items-center p-4 rounded-lg shadow-lg max-w-sm transition-all duration-300 ease-in-out"
         [class]="getToastClasses(toast.type, toast.message)"
         [class.toast-centered]="isWelcomeMessage(toast.message)"
         (click)="removeToast(toast.id)"
       >
-        <div class="flex items-center">
-          <span class="mr-2 text-lg">{{ getToastIcon(toast.type, toast.message) }}</span>
+        <div class="flex items-center gap-3">
+          <span class="text-2xl">{{ getToastIcon(toast.type, toast.message) }}</span>
           <span class="text-sm font-medium">{{ toast.message }}</span>
         </div>
-        <button
-          class="ml-2 text-lg font-bold opacity-70 hover:opacity-100"
+        <!-- <button
+          class="ml-4 text-lg font-bold opacity-70 hover:opacity-100"
           (click)="removeToast(toast.id); $event.stopPropagation()"
         >
           ×
-        </button>
+        </button> -->
       </div>
     </div>
   `,
   styles: [`
-    .toast-enter {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-    .toast-enter-active {
-      transform: translateX(0);
-      opacity: 1;
-    }
+    /* Custom animation for the Welcome Toast */
     .toast-centered {
       position: fixed !important;
-      top: 10% !important;
-      left: 50% !important;
-      transform: translate(-50%, -50%) !important;
+      top: 10% !important;      /* FIX: Moves it to vertical middle */
+      left: 50% !important;     /* Moves it to horizontal middle */
       right: auto !important;
-      animation: welcomePulse 2s ease-in-out infinite;
+      transform: translate(-50%, -50%) !important; /* Centers it perfectly */
+      z-index: 9999 !important; /* Ensures it sits on top of everything */
+      min-width: 300px;
+      animation: welcomePop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
     }
     
-    @keyframes welcomePulse {
-      0%, 100% {
-        transform: translate(-50%, -50%) scale(1);
+    @keyframes welcomePop {
+      0% {
+        opacity: 0;
+        transform: translate(-50%, -10%) scale(0.9);
       }
-      50% {
-        transform: translate(-50%, -50%) scale(1.05);
+      100% {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
       }
     }
   `]
@@ -72,43 +70,38 @@ export class ToastComponent implements OnInit, OnDestroy {
   }
 
   getToastClasses(type: ToastMessage['type'], message: string): string {
-    const baseClasses = 'cursor-pointer';
+    const baseClasses = 'cursor-pointer border-l-4';
     
     // Special styling for welcome messages
     if (this.isWelcomeMessage(message)) {
-      return `${baseClasses} bg-white text-black border-2 border-orange-500 shadow-2xl text-center font-bold text-lg px-8 py-6 rounded-xl`;
-
+      // White background, Orange border, large text
+      return `${baseClasses} bg-white text-gray-800 border-orange-500 flex-col items-center justify-center gap-2 p-8 text-center`;
     }
     
+    // Standard Toast Styling
     switch (type) {
       case 'success':
-        return `${baseClasses} bg-green-100 text-green-800 border border-green-200`;
+        return `${baseClasses} bg-white text-gray-800 border-green-500`;
       case 'error':
-        return `${baseClasses} bg-red-100 text-red-800 border border-red-200`;
+        return `${baseClasses} bg-white text-gray-800 border-red-500`;
       case 'warning':
-        return `${baseClasses} bg-yellow-100 text-yellow-800 border border-yellow-200`;
+        return `${baseClasses} bg-white text-gray-800 border-yellow-500`;
       case 'info':
       default:
-        return `${baseClasses} bg-blue-100 text-blue-800 border border-blue-200`;
+        return `${baseClasses} bg-white text-gray-800 border-blue-500`;
     }
   }
 
   getToastIcon(type: ToastMessage['type'], message: string): string {
-    // Special icon for welcome messages
     if (this.isWelcomeMessage(message)) {
-      return '😎';
+      return '👋'; // Waving hand for welcome
     }
     
     switch (type) {
-      case 'success':
-        return '✅';
-      case 'error':
-        return '❌';
-      case 'warning':
-        return '⚠️';
-      case 'info':
-      default:
-        return 'ℹ️';
+      case 'success': return '✅';
+      case 'error': return '❌';
+      case 'warning': return '⚠️';
+      case 'info': default: return 'ℹ️';
     }
   }
 
@@ -117,6 +110,8 @@ export class ToastComponent implements OnInit, OnDestroy {
   }
 
   isWelcomeMessage(message: string): boolean {
-    return message.toLowerCase().includes('welcome') && message.toLowerCase().includes('worq floorplan dashboard');
+    // Check for "Welcome" AND "Floorplan" to be safe
+    return message.toLowerCase().includes('welcome') && 
+           message.toLowerCase().includes('floorplan');
   }
 }

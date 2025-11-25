@@ -1,43 +1,37 @@
 import { HttpInterceptorFn, HttpErrorResponse } from '@angular/common/http';
-import { environment } from '../../environments/environment';
+import { environment } from '../../environments/environment'; // Verify this path matches your project structure
 import { catchError, throwError } from 'rxjs';
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
-  // All API endpoints are under apiBaseUrl
+  // 1. Define allowed domains (security)
   const allowedDomains = [
-    environment.apiBaseUrl, // All API endpoints (auth, bigquery, floorplans)
+    environment.apiBaseUrl, 
   ].filter(Boolean);
 
+  // 2. Get the token from Session Storage (where AuthService puts it)
   const userAccessToken = sessionStorage.getItem('userAccessToken');
 
-  console.log('🔐 Auth Interceptor - URL:', req.url);
-  console.log('🔐 Auth Interceptor - Token exists:', !!userAccessToken);
-  console.log('🔐 Auth Interceptor - Token preview:', userAccessToken ? `${userAccessToken.substring(0, 20)}...` : 'No token');
+  // 3. Check if we should attach the token
+  const isAllowedDomain = allowedDomains.some((domain) => 
+    typeof domain === 'string' && domain.length && req.url.startsWith(domain)
+  );
 
-  if (
-    userAccessToken &&
-    allowedDomains.some((domain) => typeof domain === 'string' && domain.length && req.url.startsWith(domain))
-  ) {
-    console.log('🔐 Auth Interceptor - Adding Authorization header');
+  if (userAccessToken && isAllowedDomain) {
     req = req.clone({
       setHeaders: {
         Authorization: `Bearer ${userAccessToken}`,
       },
     });
-  } else {
-    console.log('🔐 Auth Interceptor - No token or URL not in allowed domains');
   }
 
+  // 4. Handle errors (Optional: clear token on 401)
   return next(req).pipe(
     catchError((error: HttpErrorResponse) => {
       if (error.status === 401) {
-        // Only clear token if it exists (meaning it was sent but rejected)
-        const hadToken = !!sessionStorage.getItem('userAccessToken');
-        if (hadToken) {
+        // Only clear if it was actually set
+        if (sessionStorage.getItem('userAccessToken')) {
+          console.warn('Token expired or invalid. Clearing session.');
           sessionStorage.removeItem('userAccessToken');
-          console.error('Authentication failed - token expired or invalid');
-        } else {
-          console.error('Authentication failed - no token found');
         }
       }
       return throwError(() => error);

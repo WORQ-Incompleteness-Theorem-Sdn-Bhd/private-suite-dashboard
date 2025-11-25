@@ -2,47 +2,43 @@
   display: block;
 }
 
-// SVG Container Styling for Compact Display
+// SVG Container Styling for Auto-Adjusting Display
 .svg-host {
   width: 100%;
-  max-width: 100%;
-  overflow: auto;
+  height: 100%;
+  flex: 1; // Grow to fill available space
+  min-height: 0; // Allow flexbox to shrink below content size
+  overflow: visible; // Remove scrolling
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   background: #f9fafb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   
-  // Make SVG responsive and compact
+  // Make SVG responsive and auto-adjusting
   svg {
     width: 100% !important;
-    height: auto !important;
-    max-height: 500px; // Limit maximum height for compactness
+    height: 100% !important;
+    max-width: 100%;
+    max-height: 100%;
     display: block;
+    flex-shrink: 1; // Allow SVG to shrink if needed
     
-    // Ensure SVG scales properly
-    object-fit: contain;
-    object-position: center;
-  }
-  
-  // Responsive breakpoints for different screen sizes
-  @media (max-width: 768px) {
-    svg {
-      max-height: 300px;
-    }
-  }
-  
-  @media (min-width: 1200px) {
-    svg {
-      max-height: 600px;
-    }
+    // Ensure SVG scales properly while maintaining aspect ratio
+    // The preserveAspectRatio="xMidYMid meet" attribute (set in svg-loader.service.ts)
+    // ensures the SVG scales to fit within the container while maintaining aspect ratio
+    // This prevents distortion and ensures the floorplan fits without scrolling
   }
 }
 
-// Compact floorplan container
+// Auto-adjusting floorplan container - uses flexbox for natural sizing
 .floorplan-container {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  min-height: 400px; // Ensure minimum height for loading area
+  flex: 1; // Grow to fill available space
+  min-height: 400px; // Minimum height for loading area
+  overflow: hidden; // Remove scrolling
   
   .floorplan-item {
     position: relative;

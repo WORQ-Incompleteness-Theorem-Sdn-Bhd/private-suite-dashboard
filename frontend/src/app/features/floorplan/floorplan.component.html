@@ -256,10 +256,10 @@
       
       <ng-container *ngIf="filters.outlet !== 'Select Outlet'; else askToPick">
         <!-- Auto-adjusting container for floorplan -->
-        <div class="floorplan-container relative bg-gray-50 rounded-xl overflow-hidden" (click)="onFloorplanContainerClick($event)">
+        <div class="floorplan-container" (click)="onFloorplanContainerClick($event)">
           <!-- Info banner: how many Firebase SVGs were found for this outlet -->
           <!-- Loading overlay -->
-          <div *ngIf="isLoading" class="absolute inset-0 z-30 grid place-items-center bg-white/90 backdrop-blur-sm">
+          <div *ngIf="isLoading" class="absolute inset-0 z-30 grid place-items-center backdrop-blur-sm">
             <div class="text-center">
               <div class="animate-spin rounded-full h-16 w-16 border-b-4 border-orange-600 mx-auto mb-4"></div>
               <p class="text-lg font-semibold text-gray-800 mb-2">Loading Floorplan</p>

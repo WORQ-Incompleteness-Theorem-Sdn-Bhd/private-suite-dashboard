@@ -9,8 +9,6 @@
   flex: 1; // Grow to fill available space
   min-height: 0; // Allow flexbox to shrink below content size
   overflow: visible; // Remove scrolling
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
   background: #f9fafb;
   display: flex;
   align-items: center;
@@ -44,7 +42,7 @@
     position: relative;
     
     // Optional: Add a subtle shadow for depth
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0);
     border-radius: 8px;
     overflow: hidden;
   }

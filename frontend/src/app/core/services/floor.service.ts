@@ -164,6 +164,29 @@ export class FloorService {
     return floorId;
   }
 
+  /**
+   * Get floor label from floor_id using floorIdToFloorMap
+   * Returns formatted floor label like "Level 5", "Level G", etc.
+   */
+  getFloorLabelFromMap(floorId: string, floorIdToFloorMap: Map<string, any>): string {
+    // Special case for Sibelco Office
+    if (floorId === '6348ba804d92f2ab589dc7e3') {
+      return 'Sibelco Office';
+    }
+
+    const floor = floorIdToFloorMap.get(floorId);
+    if (floor && floor.floor_no) {
+      // Remove "L" prefix if present and format as "Level {number}"
+      // e.g., "L12" -> "Level 12", "L3A" -> "Level 3A"
+      const floorNo = floor.floor_no.trim();
+      const floorNumber = floorNo.startsWith('L') || floorNo.startsWith('l')
+        ? floorNo.substring(1).trim()
+        : floorNo;
+      return `Level ${floorNumber}`;
+    }
+
+    return 'N/A';
+  }
 
   getFloorplanUrls(officeId: string, floorId?: string): Observable<string[]> {
     // Ask backend for signed URLs when available; fallback to raw

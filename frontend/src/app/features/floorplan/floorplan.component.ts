@@ -1394,6 +1394,7 @@ async downloadFloorplanWithDetails(format: 'svg' | 'png' = 'svg') {
         getFloorLabel: (path: string) => this.getFloorLabel(path),
         findRoomElementInline: (rootSvg: SVGSVGElement, room: Room) => this.findRoomElementInline(rootSvg, room),
         hexToRgb: (hex: string) => this.hexToRgb(hex),
+        floorIdToFloorMap: this.floorIdToFloorMap,
         pdfQuality: this.pdfQuality
       });
 

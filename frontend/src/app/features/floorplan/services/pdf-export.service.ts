@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Room } from '../../../core/models/room.model';
 import { OfficeService } from '../../../core/services/office.service';
+import { FloorService } from '../../../core/services/floor.service';
 import { ColorPaxService } from './color-pax.service';
 import { Filters } from './dropdown-filter.service';
 import jsPDF from 'jspdf';
@@ -24,6 +25,7 @@ export interface PdfExportParams {
   getFloorLabel: (path: string) => string;
   findRoomElementInline: (rootSvg: SVGSVGElement, room: Room) => Element | null;
   hexToRgb: (hex: string) => { r: number; g: number; b: number } | null;
+  floorIdToFloorMap: Map<string, any>;
   pdfQuality: {
     scale: number;
     quality: number;
@@ -37,6 +39,7 @@ export interface PdfExportParams {
 export class PdfExportService {
   constructor(
     private officeService: OfficeService,
+    private floorService: FloorService,
     // private colorPaxService: ColorPaxService /* no dependencies for now */
   ) {}
 
@@ -141,15 +144,28 @@ export class PdfExportService {
       pdf.text(`Outlet: ${outletDisplayName}`, 15, yPos);
       yPos += 6; // Increased line spacing to match image
 
-      // Floor - Always show
-      const currentFloorplan = params.displayedSvgs[idx];
-      const floorLabel = params.getFloorLabel(currentFloorplan || '');
-      if (floorLabel) {
-        const floorNumber = floorLabel.replace(/^Level\s*/i, '').trim();
-        pdf.text(`Floor: ${floorNumber}`, 15, yPos);
+      // Floor - Get floor_id from rooms visible on this SVG page
+      let floorLabel = 'N/A';
+
+      // Strategy 1: Try to get floor_id from the first visible room on this page
+      const visibleRooms = params.filteredRooms.filter(room => {
+        const el = params.findRoomElementInline(rootSvg, room);
+        return !!el && room.floor_id;
+      });
+
+      if (visibleRooms.length > 0 && visibleRooms[0].floor_id) {
+        // Get the floor label using the centralized floor service method
+        const floorId = visibleRooms[0].floor_id;
+        floorLabel = this.floorService.getFloorLabelFromMap(floorId, params.floorIdToFloorMap);
       } else {
-        pdf.text(`Floor: N/A`, 15, yPos);
+        // Strategy 2: Fallback to using the displayedSvgs URL
+        const currentFloorplan = params.displayedSvgs[idx];
+        if (currentFloorplan) {
+          floorLabel = params.getFloorLabel(currentFloorplan);
+        }
       }
+
+      pdf.text(`Floor: ${floorLabel}`, 15, yPos);
       yPos += 6; // Increased line spacing to match image
 
       // Pax - Get from selected suites if available, otherwise from filter
@@ -238,84 +254,92 @@ export class PdfExportService {
       }
 
       // --- IMAGE GENERATION ---
-      // Ensure viewBox is set on the live SVG for proper scaling
-// 1. Ensure ViewBox exists and fits the content perfectly
-      // if (!rootSvg.getAttribute('viewBox')) {
-      //   try {
-      //     // Measure the actual drawing content
-      //     const bbox = rootSvg.getBBox();
-          
-      //     // Set viewBox to the exact boundaries of the drawing
-      //     // bbox.x/y handles the offset if the drawing isn't at 0,0
-      //     rootSvg.setAttribute('viewBox', `${bbox.x} ${bbox.y} ${bbox.width} ${bbox.height}`);
-      //   } catch (e) {
-      //     // Only use this fallback if getBBox fails (rare)
-      //     // Ensure these numbers match your SVG's width/height attributes if possible
-      //     const width = rootSvg.getAttribute('width') || '1920';
-      //     const height = rootSvg.getAttribute('height') || '1018';
-      //     rootSvg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-      //   }
-      // }
-  // 1. Ensure ViewBox is set (do NOT auto-crop to avoid coordinate mismatch)
-      // We need the ViewBox to match what's actually rendered in the canvas
-      if (!rootSvg.getAttribute('viewBox')) {
-        const width = rootSvg.getAttribute('width') || '1920';
-        const height = rootSvg.getAttribute('height') || '1018';
-        rootSvg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+      // 1. FORCE AUTO-CROP (ALWAYS RUN THIS)
+      // We calculate the BBox of the actual drawing content and set the viewBox to match it.
+      // This removes empty whitespace and makes the floorplan appear much larger/zoomed-in.
+      try {
+        const bbox = rootSvg.getBBox();
+
+        // Sanity check: only crop if bbox has valid dimensions
+        if (bbox.width > 0 && bbox.height > 0) {
+          // Add a small padding (e.g. 10 units) so lines aren't cut off at the very edge
+          const padding = 10;
+          const newViewBox = `${bbox.x - padding} ${bbox.y - padding} ${bbox.width + (padding * 2)} ${bbox.height + (padding * 2)}`;
+
+          rootSvg.setAttribute('viewBox', newViewBox);
+          console.log('✅ Auto-cropped SVG ViewBox:', newViewBox);
+        }
+      } catch (e) {
+        console.warn('Could not auto-crop SVG, using fallback or existing viewBox', e);
+        // Only set default if absolutely nothing exists
+        if (!rootSvg.getAttribute('viewBox')) {
+           rootSvg.setAttribute('viewBox', '0 0 1920 1018');
+        }
       }
 
-try {
-        // Capture the live host element directly
+      try {
+        // ============================================================
+        // PIXEL-PERFECT PDF EXPORT WITH EXACT TARGET METRICS
+        // ============================================================
+
+        // A4 Landscape dimensions
+        const pageWidth = pdf.internal.pageSize.getWidth();   // 297.04mm
+        const pageHeight = pdf.internal.pageSize.getHeight(); // 210.08mm
+
+        // Step 1: Capture canvas at high quality
         let canvas = await this.captureHostElement(hostEl, params.pdfQuality);
         canvas = this.downscaleCanvasIfNeeded(canvas);
 
-        // 1. MINIMIZE TOP GAP
-        // Move image closer to the header text
-        const imgY = yPos + 2;
+        const canvasAspectRatio = canvas.width / canvas.height;
 
-        // 2. MAXIMIZE PAGE USAGE - MAKE FLOORPLAN BIGGER
-        // A4 Landscape is approx 297mm x 210mm.
-        // Use almost the ENTIRE page for the floorplan
-        const pageHeight = pdf.internal.pageSize.getHeight(); // ~210mm
-        const pageWidth = pdf.internal.pageSize.getWidth();   // ~297mm
-        const maxWidth = pageWidth - 6; // Only 3mm margin on each side (291mm - BIGGER!)
-        const maxHeight = pageHeight - imgY - 3; // Only 3mm bottom margin - BIGGER!
-
-        // 3. CALCULATE DIMENSIONS
-        const aspect = canvas.width / canvas.height;
-        let imgWidth = maxWidth;
-        let imgHeight = imgWidth / aspect;
-
-        // If the floorplan is very "tall" (square-ish), constrain by height so it doesn't get cut off
-        if (imgHeight > maxHeight) {
-          imgHeight = maxHeight;
-          imgWidth = imgHeight * aspect;
-        }
-
-        // 4. CENTER HORIZONTALLY
-        const imgX = (pageWidth - imgWidth) / 2;
-        const imgData = canvas.toDataURL('image/png');
-
-        // Draw Image
-        pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'MEDIUM');
-
-        // --- DRAW OVERLAYS & LINKS ON PDF ---
-        // We use the LIVE rootSvg to get coordinates, ensuring perfect alignment with captured image
-        console.log('🎯 Adding video overlays to PDF:', {
-          imgX, imgY, imgWidth, imgHeight,
-          viewBox: rootSvg.getAttribute('viewBox'),
-          roomsWithVideos: params.filteredRooms.filter(r => r.video).length
+        console.log('📸 Canvas captured:', {
+          width: canvas.width,
+          height: canvas.height,
+          aspectRatio: canvasAspectRatio.toFixed(3)
         });
 
-        this.addVideoOverlaysOnPdf(
-          pdf,
-          imgX, imgY, imgWidth, imgHeight,
-          rootSvg,
-          params.filteredRooms,
-          params
-        );
+        // Step 2: Calculate maximum available space - MAXIMUM SIZE
+        const imgY = yPos - 20; // Move floorplan way up, starting very high
+        const maxWidth = pageWidth * 1.5; // 150% of page width for absolute maximum
+        const maxHeight = pageHeight - imgY + 10; // Extend beyond page for max height
 
-        // Add visual indicators for selected suites
+        console.log('📐 Available space:', {
+          maxWidth: `${maxWidth.toFixed(2)}mm`,
+          maxHeight: `${maxHeight.toFixed(2)}mm`,
+          pageSize: `${pageWidth.toFixed(2)}mm × ${pageHeight.toFixed(2)}mm`
+        });
+
+        // Step 3: Calculate actual dimensions while maintaining aspect ratio
+        let imgWidth = maxWidth;
+        let imgHeight = imgWidth / canvasAspectRatio;
+
+        // If height exceeds available space, constrain by height instead
+        if (imgHeight > maxHeight) {
+          imgHeight = maxHeight;
+          imgWidth = imgHeight * canvasAspectRatio;
+        }
+
+        // Center horizontally on page
+        const imgX = (pageWidth - imgWidth) / 2;
+
+        console.log('📍 Floorplan positioning:', {
+          x: `${imgX.toFixed(2)}mm`,
+          y: `${imgY.toFixed(2)}mm`,
+          width: `${imgWidth.toFixed(2)}mm`,
+          height: `${imgHeight.toFixed(2)}mm`,
+          labelsEndedAt: `${yPos.toFixed(2)}mm`,
+          canvasAspect: canvasAspectRatio.toFixed(3),
+          wasConstrainedByHeight: imgHeight === maxHeight
+        });
+
+        // Step 3: Render floorplan image at exact size
+        const imgData = canvas.toDataURL('image/png');
+        pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'FAST');
+
+        console.log('✅ Floorplan image rendered at pixel-perfect dimensions');
+
+        // Step 4: Add interactive overlays for selected suites
         this.addSelectedSuiteIndicators(
           pdf,
           imgX, imgY, imgWidth, imgHeight,
@@ -323,6 +347,8 @@ try {
           params.filteredRooms,
           params
         );
+
+        console.log('✅ Interactive suite indicators added');
 
       } catch (canvasError) {
         console.warn('Failed to convert SVG to canvas on page', idx + 1, canvasError);
@@ -365,7 +391,7 @@ try {
   }
 
   /**
-   * 🎯 Add 'Watch Tour' video overlays on PDF
+   * Add clickable links for ALL colored suites and visual labels for selected suites on the PDF
    * Uses SVG Matrix Math with getCTM() for accurate positioning
    *
    * Algorithm:
@@ -373,267 +399,8 @@ try {
    * 2. Find room element by ID
    * 3. Get BBox and transform using Matrix Math (getCTM + matrixTransform)
    * 4. Map Global SVG coordinates to PDF coordinates
-   * 5. Draw Box & Text with clickable link
-   */
-// HELPER: Determines the box color based on room capacity
-  private getRoomColorForPdf(room: Room, params: PdfExportParams): string {
-    const capacity = room.capacity || 1;
-
-    for (let i = 0; i < params.paxBuckets.length; i++) {
-      const bucket = params.paxBuckets[i];
-      const prevMax = i === 0 ? 0 : params.paxBuckets[i - 1].max;
-
-      if (capacity > prevMax && capacity <= bucket.max) {
-        if (params.paxBucketColorMap && params.paxBucketColorMap.has(bucket.max)) {
-          return params.paxBucketColorMap.get(bucket.max)!;
-        }
-        return params.paxPalette[i] || '#cccccc';
-      }
-    }
-    return params.paxPalette[params.paxPalette.length - 1] || '#cccccc';
-  }
-private addVideoOverlaysOnPdf(
-    pdf: jsPDF,
-    imgX: number, imgY: number, imgWidth: number, imgHeight: number,
-    svgElement: SVGSVGElement,
-    filteredRooms: Room[],
-    params: PdfExportParams
-  ): void {
-    const roomsWithVideos = filteredRooms.filter(room => room.video && room.video.trim() !== '');
-    if (roomsWithVideos.length === 0) {
-      console.log('⚠️ No rooms with videos found in filtered rooms');
-      return;
-    }
-
-    // 1. Get the Map's Internal Coordinate System (ViewBox)
-    const vbAttr = svgElement.getAttribute('viewBox');
-    if (!vbAttr) {
-      console.error('❌ No viewBox attribute found on SVG element');
-      return;
-    }
-    const [vbX, vbY, vbW, vbH] = vbAttr.split(' ').map(Number);
-
-    console.log(`🎯 Processing ${roomsWithVideos.length} rooms with videos from ${filteredRooms.length} filtered rooms`);
-    console.log(`📏 ViewBox: ${vbX}, ${vbY}, ${vbW}, ${vbH}`);
-    console.log(`📄 PDF Image: x=${imgX.toFixed(2)}, y=${imgY.toFixed(2)}, w=${imgWidth.toFixed(2)}, h=${imgHeight.toFixed(2)}`);
-    console.log(`🏠 Rooms with videos:`, roomsWithVideos.map(r => `${r.name} (cap: ${r.capacity})`).join(', '));
-
-    roomsWithVideos.forEach(room => {
-      console.log(`\n🔍 Looking for room: "${room.name}" (ID: ${room.id}, Video: ${room.video?.substring(0, 50)}...)`);
-
-      // 2. Find the Room Element by ID (with fallbacks)
-      let roomElement = svgElement.getElementById(room.id) as SVGGraphicsElement;
-      let foundBy = roomElement ? 'by ID' : null;
-
-      // Fallback: try finding by name if ID doesn't work
-      if (!roomElement) {
-        roomElement = svgElement.getElementById(room.name) as SVGGraphicsElement;
-        foundBy = roomElement ? 'by name' : null;
-      }
-
-      // Last resort: use helper function to try variants
-      if (!roomElement && params.findRoomElementInline) {
-        roomElement = params.findRoomElementInline(svgElement, room) as SVGGraphicsElement;
-        foundBy = roomElement ? 'by helper function' : null;
-      }
-
-      if (!roomElement) {
-        console.warn(`❌ Room element not found for ${room.name} (ID: ${room.id})`);
-        return;
-      }
-
-      console.log(`   Found element ${foundBy}:`, {
-        elementId: roomElement.id || roomElement.getAttribute('id'),
-        tagName: roomElement.tagName
-      });
-
-      // CRITICAL FIX: The element we found might be a small label/icon
-      // We need to find the LARGEST polygon/path/rect that represents the actual visible room
-      // Strategy: Search up the DOM tree and within siblings to find the room polygon
-      const initialBBox = roomElement.getBBox();
-      const isSmall = initialBBox.width < 200 || initialBBox.height < 200;
-
-      if (isSmall) {
-        console.log(`🔍 Element is small (${initialBBox.width.toFixed(0)}×${initialBBox.height.toFixed(0)}), searching for actual room polygon...`);
-
-        // Strategy 1: Search in parent's children for the largest shape
-        let searchParent: Element | null = roomElement.parentElement;
-        let largestShape = roomElement;
-        let largestArea = initialBBox.width * initialBBox.height;
-
-        // Try up to 3 levels up to find a group containing the room polygon
-        for (let level = 0; level < 3 && searchParent; level++) {
-          const allShapes = Array.from(searchParent.querySelectorAll('polygon, path, rect, polyline')) as SVGGraphicsElement[];
-
-          console.log(`   Level ${level}: Found ${allShapes.length} shapes in parent <${(searchParent as Element).tagName}>`);
-
-          for (const shape of allShapes) {
-            try {
-              const shapeBBox = shape.getBBox();
-              const area = shapeBBox.width * shapeBBox.height;
-
-              // Only consider shapes that are significantly larger
-              if (area > largestArea * 2) {
-                largestArea = area;
-                largestShape = shape;
-                console.log(`   ✓ Found larger <${shape.tagName}> at level ${level}: ${shapeBBox.width.toFixed(0)}×${shapeBBox.height.toFixed(0)} (area: ${area.toFixed(0)})`);
-              }
-            } catch (e) {
-              // Skip shapes that can't get BBox
-            }
-          }
-
-          if (largestShape !== roomElement) {
-            break; // Found a larger shape, stop searching
-          }
-
-          searchParent = searchParent.parentElement;
-        }
-
-        if (largestShape !== roomElement) {
-          console.log(`   ✅ Using LARGEST shape (area: ${largestArea.toFixed(0)})`);
-          roomElement = largestShape;
-        } else {
-          console.warn(`   ⚠️ Could not find larger polygon for ${room.name}. Using original element.`);
-        }
-      }
-
-      const finalBBox = roomElement.getBBox();
-      console.log(`✅ Final room element for ${room.name}`, {
-        id: roomElement.id || roomElement.getAttribute('id'),
-        tagName: roomElement.tagName,
-        bboxSize: `${finalBBox.width.toFixed(0)}×${finalBBox.height.toFixed(0)}`,
-        transform: roomElement.getAttribute('transform'),
-        parentTransform: roomElement.parentElement?.getAttribute('transform')
-      });
-
-      // 3. Get the Matrix (CTM)
-      const ctm = roomElement.getCTM();
-      if (!ctm) {
-        console.error(`❌ No CTM for ${room.name}`);
-        return;
-      }
-      const bbox = roomElement.getBBox();
-
-      // Check if this element looks too small
-      const expectedMinSize = 50; // SVG units - rooms should be at least this big in local coords
-      if (bbox.width < expectedMinSize || bbox.height < expectedMinSize) {
-        console.warn(`⚠️ ${room.name} BBox seems small (w=${bbox.width.toFixed(1)}, h=${bbox.height.toFixed(1)}). Checking parent elements...`);
-      }
-
-      // Debug: Log CTM matrix values
-      console.log(`   Matrix for ${room.name}:`, {
-        a: ctm.a.toFixed(3), b: ctm.b.toFixed(3), c: ctm.c.toFixed(3),
-        d: ctm.d.toFixed(3), e: ctm.e.toFixed(3), f: ctm.f.toFixed(3)
-      });
-
-      // --- STEP 4: Calculate True Corners in Global SVG Space ---
-      let pt = svgElement.createSVGPoint();
-
-      // Top-Left Corner
-      pt.x = bbox.x;
-      pt.y = bbox.y;
-      const globalTL = pt.matrixTransform(ctm);
-
-      // Bottom-Right Corner
-      pt.x = bbox.x + bbox.width;
-      pt.y = bbox.y + bbox.height;
-      const globalBR = pt.matrixTransform(ctm);
-
-      // --- STEP 5: Convert "Map Units" to "PDF Pixels" ---
-      // Formula: ImageStart + ((GlobalPos - ViewBoxStart) / ViewBoxSize) * ImageSize
-      
-      // NOTICE: We subtract vbX and vbY. This is critical for maps that don't start at 0,0.
-      const pdfLeft = imgX + ((globalTL.x - vbX) / vbW) * imgWidth;
-      const pdfTop = imgY + ((globalTL.y - vbY) / vbH) * imgHeight;
-      
-      const pdfRight = imgX + ((globalBR.x - vbX) / vbW) * imgWidth;
-      const pdfBottom = imgY + ((globalBR.y - vbY) / vbH) * imgHeight;
-
-      // --- STEP 6: Calculate Center & Size ---
-      // We use Math.abs to ensure positive width/height regardless of rotation
-      const roomPdfW = Math.abs(pdfRight - pdfLeft);
-      const roomPdfH = Math.abs(pdfBottom - pdfTop);
-
-      const centerX = (pdfLeft + pdfRight) / 2;
-      const centerY = (pdfTop + pdfBottom) / 2;
-
-      // Scale the box to be smaller than the room (65% of smallest side)
-      const minDim = Math.min(roomPdfW, roomPdfH);
-      const boxSize = minDim * 0.65;
-
-      const boxX = centerX - (boxSize / 2);
-      const boxY = centerY - (boxSize / 2);
-
-      // Validate coordinates are within ViewBox bounds
-      const isWithinBounds =
-        globalTL.x >= vbX && globalTL.x <= (vbX + vbW) &&
-        globalTL.y >= vbY && globalTL.y <= (vbY + vbH) &&
-        globalBR.x >= vbX && globalBR.x <= (vbX + vbW) &&
-        globalBR.y >= vbY && globalBR.y <= (vbY + vbH);
-
-      console.log(`📦 ${room.name}:`, {
-        svgBBox: `x=${bbox.x.toFixed(1)}, y=${bbox.y.toFixed(1)}, w=${bbox.width.toFixed(1)}, h=${bbox.height.toFixed(1)}`,
-        globalTL: `x=${globalTL.x.toFixed(1)}, y=${globalTL.y.toFixed(1)}`,
-        globalBR: `x=${globalBR.x.toFixed(1)}, y=${globalBR.y.toFixed(1)}`,
-        pdfBox: `x=${boxX.toFixed(1)}, y=${boxY.toFixed(1)}, size=${boxSize.toFixed(1)}`,
-        withinBounds: isWithinBounds ? '✅' : '❌ OUT OF BOUNDS!'
-      });
-
-      if (!isWithinBounds) {
-        console.warn(`⚠️ ${room.name} coordinates are outside ViewBox bounds!`);
-      }
-
-      // --- STEP 7: Draw the Box ---
-      const color = this.getRoomColorForPdf(room, params);
-      const rgb = params.hexToRgb(color);
-
-      pdf.saveGraphicsState();
-      try { pdf.setGState(new (pdf as any).GState({ opacity: 0.8 })); } catch (e) {}
-
-      if (rgb) pdf.setFillColor(rgb.r, rgb.g, rgb.b);
-      else pdf.setFillColor(200, 200, 200);
-
-      pdf.rect(boxX, boxY, boxSize, boxSize, 'F'); // Fill box
-      pdf.restoreGraphicsState();
-
-      // Border
-      pdf.setDrawColor(0, 0, 0);
-      pdf.setLineWidth(0.1);
-      pdf.rect(boxX, boxY, boxSize, boxSize, 'D');
-
-      // Text
-      pdf.setTextColor(0, 0, 0);
-      pdf.setFont('helvetica', 'bold');
-
-      // Dynamic font size: fits 30% of box width (min 2pt, max 8pt)
-      const fontSize = Math.max(2, Math.min(8, boxSize * 0.3));
-      pdf.setFontSize(fontSize);
-
-      const lh = fontSize * 0.45;
-
-      // Suite name at top (smaller)
-      const suiteNameFontSize = Math.max(2, fontSize * 0.5 );
-      pdf.setFontSize(suiteNameFontSize);
-      pdf.text(room.name, centerX, centerY - lh * 2.5, {
-        align: 'center',
-        baseline: 'middle'
-      });
-
-      // "WATCH TOUR" text
-      pdf.setFontSize(fontSize);
-      pdf.text('WATCH', centerX, centerY - lh, { align: 'center', baseline: 'middle' });
-      pdf.text('TOUR', centerX, centerY + lh, { align: 'center', baseline: 'middle' });
-
-      // Link
-      pdf.link(boxX, boxY, boxSize, boxSize, {
-        url: room.video,
-        target: '_blank'
-      });
-    });
-  }
-  /**
-   * Add visual indicators (checkmarks/stars) for selected suites on the PDF
+   * 5. Add clickable link to ALL filtered rooms (all colored suites)
+   * 6. Draw blue border and "SELECTED" badge only for selected suites
    */
   private addSelectedSuiteIndicators(
     pdf: jsPDF,
@@ -642,23 +409,28 @@ private addVideoOverlaysOnPdf(
     filteredRooms: Room[],
     params: PdfExportParams
   ): void {
-    // Filter for selected suites
-    const selectedRooms = filteredRooms.filter(room =>
-      params.selectedSuites.includes(room.name)
-    );
-
-    if (selectedRooms.length === 0) return;
+    if (filteredRooms.length === 0) return;
 
     // Get the SVG's ViewBox for coordinate mapping
     const vbAttr = svgElement.getAttribute('viewBox');
     if (!vbAttr) {
-      console.warn('SVG missing viewBox, cannot calculate selected suite positions.');
+      console.warn('SVG missing viewBox, cannot calculate suite positions.');
       return;
     }
     const [vbX, vbY, vbW, vbH] = vbAttr.split(' ').map(Number);
 
-    selectedRooms.forEach(room => {
-      // Use helper method to get PDF coordinates
+    // Separate selected and non-selected rooms
+    const selectedRooms = filteredRooms.filter(room =>
+      params.selectedSuites.includes(room.name)
+    );
+    const nonSelectedRooms = filteredRooms.filter(room =>
+      !params.selectedSuites.includes(room.name)
+    );
+
+    console.log(`🔗 Making ${filteredRooms.length} colored suites clickable (${selectedRooms.length} selected, ${nonSelectedRooms.length} non-selected)`);
+
+    // First, add clickable links to ALL non-selected colored rooms (without visual badges)
+    nonSelectedRooms.forEach(room => {
       const coords = this.getRoomPdfCoordinates(
         room, svgElement,
         vbX, vbY, vbW, vbH,
@@ -666,29 +438,82 @@ private addVideoOverlaysOnPdf(
       );
       if (!coords) return;
 
-      const { pdfW  } = coords;
+      const { pdfX, pdfY, pdfW, pdfH } = coords;
 
-      // Draw a semi-transparent border around selected suites
-      pdf.saveGraphicsState();
-      try {
-        pdf.setGState(new (pdf as any).GState({ opacity: 0.8 }));
-      } catch (e) { }
+      // Create clickable link URL
+      let linkUrl = '';
+      if (room.video && room.video.trim() !== '') {
+        linkUrl = room.video;
+      } else {
+        const outletName = encodeURIComponent(params.filters.outlet || '');
+        const suiteName = encodeURIComponent(room.name);
+        linkUrl = `https://yourwebsite.com/book?suite=${suiteName}&outlet=${outletName}`;
+      }
 
-      // Draw a colored border 
-      // pdf.setDrawColor(0, 0, 0); // Black color
-      // pdf.setLineWidth(0.2);
-      // pdf.rect(pdfX, pdfY, pdfW, pdfH, 'S'); // Stroke only
+      // Add stroke border around clickable area
+      const adjustedY = pdfY - 4; // Move clickable area up by 2mm
+      pdf.setDrawColor(0,0,0); // Black stroke
+      pdf.setLineWidth(2); // Weight 2
+      pdf.rect(pdfX, adjustedY, pdfW, pdfH, 'S'); // Draw stroke only
 
-      pdf.restoreGraphicsState();
-
-      // Add a checkmark or "SELECTED" text indicator
-      pdf.setTextColor(0, 0, 0); // Orange color
-      pdf.setFont('helvetica', 'bold');
-
-      // Auto-size font: 25% of the box width, constrained between 3pt and 10pt
-      const fontSize = Math.max(3, Math.min(10, pdfW * 0.25));
-      pdf.setFontSize(fontSize);
+      // Add invisible clickable area - moved up slightly
+      pdf.link(pdfX, adjustedY, pdfW, pdfH, {
+        url: linkUrl,
+        target: '_blank'
+      });
     });
+
+    // Then, add clickable links with visual indicators for selected rooms
+    selectedRooms.forEach(room => {
+      // Use helper method to get PDF coordinates
+      const coords = this.getRoomPdfCoordinates(
+        room, svgElement,
+        vbX, vbY, vbW, vbH,
+        imgX, imgY, imgWidth, imgHeight
+      );
+      if (!coords) {
+        console.warn(`❌ Could not get coordinates for ${room.name}`);
+        return;
+      }
+
+      const { pdfX, pdfY, pdfW, pdfH } = coords;
+
+      // Create a clickable link URL
+      // You can customize this URL to point wherever you want
+      // Options:
+      // 1. YouTube video (if exists)
+      // 2. Room details page
+      // 3. Booking page with pre-filled suite info
+
+      let linkUrl = '';
+
+      if (room.video && room.video.trim() !== '') {
+        // Option 1: Link to YouTube video if exists
+        linkUrl = room.video;
+        console.log(`✅ ${room.name}: Video link - ${linkUrl.substring(0, 50)}...`);
+      } else {
+        // Option 2: Link to a booking/details page (customize this URL)
+        // Example: https://yourwebsite.com/book?suite=Suite+06&outlet=TTDI
+        const outletName = encodeURIComponent(params.filters.outlet || '');
+        const suiteName = encodeURIComponent(room.name);
+        linkUrl = `https://yourwebsite.com/book?suite=${suiteName}&outlet=${outletName}`;
+        console.log(`✅ ${room.name}: Booking link - ${linkUrl}`);
+      }
+
+      // Add stroke border around clickable area
+      const adjustedY = pdfY - 2; // Move clickable area up by 2mm
+      pdf.setDrawColor(0, 0, 0, 0); // Black stroke
+      pdf.setLineWidth(2); // Weight 2
+      pdf.rect(pdfX, adjustedY, pdfW, pdfH, 'S'); // Draw stroke only
+
+      // Add invisible clickable area - moved up slightly
+      pdf.link(pdfX, adjustedY, pdfW, pdfH, {
+        url: linkUrl,
+        target: '_blank'
+      });
+    });
+
+    console.log(`✅ Added ${filteredRooms.length} clickable suite links to PDF`);
   }
 
   /**

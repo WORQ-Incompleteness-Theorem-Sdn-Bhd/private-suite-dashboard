@@ -126,12 +126,12 @@ export class PdfExportService {
         firstPageRendered = true;
       }
 
-      pdf.setFontSize(13); // Larger header font
+      pdf.setFontSize(16); // Larger header font
       pdf.setTextColor(255, 102, 0);
-      pdf.text('Private Suite Dashboard - Floorplan', 15, 9);
-      pdf.setFontSize(10); // Larger label font (10pt)
+      pdf.text('Private Suite Dashboard - Floorplan', 15, 10);
+      pdf.setFontSize(12); // Increased label font to 12pt to match image
       pdf.setTextColor(0, 0, 0);
-      let yPos = 17; // Starting position for labels
+      let yPos = 20; // Starting position for labels
 
       // Outlet - Always show
       const selectedOffice = this.officeService.getOffices().find(office => office.id === params.filters.outlet);
@@ -139,7 +139,7 @@ export class PdfExportService {
         ? selectedOffice.displayName
         : params.filters.outlet;
       pdf.text(`Outlet: ${outletDisplayName}`, 15, yPos);
-      yPos += 4;
+      yPos += 6; // Increased line spacing to match image
 
       // Floor - Always show
       const currentFloorplan = params.displayedSvgs[idx];
@@ -150,7 +150,7 @@ export class PdfExportService {
       } else {
         pdf.text(`Floor: N/A`, 15, yPos);
       }
-      yPos += 4;
+      yPos += 6; // Increased line spacing to match image
 
       // Pax - Get from selected suites if available, otherwise from filter
       const paxValue = (() => {
@@ -168,7 +168,7 @@ export class PdfExportService {
         return params.filters.pax !== 'Select Pax' ? params.filters.pax : 'All';
       })();
       pdf.text(`Pax: ${paxValue}`, 15, yPos);
-      yPos += 4;
+      yPos += 6; // Increased line spacing to match image
 
       // Date - Always show
       if (params.selectedStartDate) {
@@ -186,7 +186,7 @@ export class PdfExportService {
         );
         pdf.text(`Date: ${formattedToday}`, 15, yPos);
       }
-      yPos += 4;
+      yPos += 6; // Increased line spacing to match image
 
       // Suites Logic - Show all filtered suites on the page
       const suitesToShow = (() => {
@@ -208,12 +208,12 @@ export class PdfExportService {
       })();
 
       // Always show Suites label
-      pdf.setFontSize(10); // Larger font
+      pdf.setFontSize(12); // Match the other labels font size
       if (suitesToShow.length > 0) {
-        const suitesLabel = 'Suites: ';
+        const suitesLabel = 'Suite: ';
         const suitesText = suitesToShow.join(', ');
         const manySuites = suitesToShow.length > 6;
-        const fontToUse = manySuites ? 7 : 9; // Larger fonts
+        const fontToUse = manySuites ? 9 : 11; // Slightly larger fonts to match
 
         pdf.setFontSize(fontToUse);
         const infoBlockWidth = pageWidth - 100;
@@ -222,51 +222,81 @@ export class PdfExportService {
           pdf.text(`${suitesLabel}${wrapped[0]}`, 15, yPos);
           let yy = yPos;
           for (let i = 1; i < wrapped.length; i++) {
-            yy += manySuites ? 3 : 3.5; // Proper spacing
+            yy += manySuites ? 5 : 5.5; // Increased spacing to match
             pdf.text(`        ${wrapped[i]}`, 15, yy);
           }
-          yPos = yy + (manySuites ? 3 : 3.5); // Proper spacing
+          yPos = yy + (manySuites ? 5 : 5.5); // Increased spacing to match
         } else {
           pdf.text(`${suitesLabel}`, 15, yPos);
-          yPos += 3.5;
+          yPos += 5.5;
         }
-        pdf.setFontSize(10);
+        pdf.setFontSize(12);
       } else {
-        // Show "Suites: None" when no suites match the filter
-        pdf.text('Suites: None', 15, yPos);
-        yPos += 3;
+        // Show "Suite: None" when no suites match the filter
+        pdf.text('Suite: None', 15, yPos);
+        yPos += 5;
       }
 
       // --- IMAGE GENERATION ---
       // Ensure viewBox is set on the live SVG for proper scaling
+// 1. Ensure ViewBox exists and fits the content perfectly
+      // if (!rootSvg.getAttribute('viewBox')) {
+      //   try {
+      //     // Measure the actual drawing content
+      //     const bbox = rootSvg.getBBox();
+          
+      //     // Set viewBox to the exact boundaries of the drawing
+      //     // bbox.x/y handles the offset if the drawing isn't at 0,0
+      //     rootSvg.setAttribute('viewBox', `${bbox.x} ${bbox.y} ${bbox.width} ${bbox.height}`);
+      //   } catch (e) {
+      //     // Only use this fallback if getBBox fails (rare)
+      //     // Ensure these numbers match your SVG's width/height attributes if possible
+      //     const width = rootSvg.getAttribute('width') || '1920';
+      //     const height = rootSvg.getAttribute('height') || '1018';
+      //     rootSvg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+      //   }
+      // }
+  // 1. Ensure ViewBox is set (do NOT auto-crop to avoid coordinate mismatch)
+      // We need the ViewBox to match what's actually rendered in the canvas
       if (!rootSvg.getAttribute('viewBox')) {
         const width = rootSvg.getAttribute('width') || '1920';
         const height = rootSvg.getAttribute('height') || '1018';
         rootSvg.setAttribute('viewBox', `0 0 ${width} ${height}`);
       }
 
-      try {
-        // Capture the live host element directly - this captures the exact rendered state with all colors
+try {
+        // Capture the live host element directly
         let canvas = await this.captureHostElement(hostEl, params.pdfQuality);
         canvas = this.downscaleCanvasIfNeeded(canvas);
 
-        const margin = 1; // Small margin for floorplan
-        const imgY = yPos + 1; // Small gap between labels and image
-        const maxWidth = pageWidth - margin * 2;
-        const maxHeight = pageHeight - imgY - margin; // Minimal bottom margin
+        // 1. MINIMIZE TOP GAP
+        // Move image closer to the header text
+        const imgY = yPos + 2;
 
+        // 2. MAXIMIZE PAGE USAGE - MAKE FLOORPLAN BIGGER
+        // A4 Landscape is approx 297mm x 210mm.
+        // Use almost the ENTIRE page for the floorplan
+        const pageHeight = pdf.internal.pageSize.getHeight(); // ~210mm
+        const pageWidth = pdf.internal.pageSize.getWidth();   // ~297mm
+        const maxWidth = pageWidth - 6; // Only 3mm margin on each side (291mm - BIGGER!)
+        const maxHeight = pageHeight - imgY - 3; // Only 3mm bottom margin - BIGGER!
+
+        // 3. CALCULATE DIMENSIONS
         const aspect = canvas.width / canvas.height;
-        let imgWidth = maxWidth; // Use full available width
+        let imgWidth = maxWidth;
         let imgHeight = imgWidth / aspect;
 
+        // If the floorplan is very "tall" (square-ish), constrain by height so it doesn't get cut off
         if (imgHeight > maxHeight) {
-          imgHeight = maxHeight; // Use full available height
+          imgHeight = maxHeight;
           imgWidth = imgHeight * aspect;
         }
 
+        // 4. CENTER HORIZONTALLY
         const imgX = (pageWidth - imgWidth) / 2;
         const imgData = canvas.toDataURL('image/png');
 
+        // Draw Image
         pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'MEDIUM');
 
         // --- DRAW OVERLAYS & LINKS ON PDF ---
@@ -336,16 +366,33 @@ export class PdfExportService {
 
   /**
    * 🎯 Add 'Watch Tour' video overlays on PDF
-   * Uses CLIENT coordinates (actual rendered size on dashboard) for accurate positioning
+   * Uses SVG Matrix Math with getCTM() for accurate positioning
    *
    * Algorithm:
-   * 1. Find room element by ID
-   * 2. Get room's CLIENT bounding rect (actual rendered position/size on screen)
-   * 3. Get SVG's CLIENT bounding rect (actual rendered size on screen)
-   * 4. Calculate room's position RELATIVE to SVG (in pixels)
-   * 5. Map those relative pixel coordinates to PDF coordinates
+   * 1. Get Map Boundaries (ViewBox)
+   * 2. Find room element by ID
+   * 3. Get BBox and transform using Matrix Math (getCTM + matrixTransform)
+   * 4. Map Global SVG coordinates to PDF coordinates
+   * 5. Draw Box & Text with clickable link
    */
-  private addVideoOverlaysOnPdf(
+// HELPER: Determines the box color based on room capacity
+  private getRoomColorForPdf(room: Room, params: PdfExportParams): string {
+    const capacity = room.capacity || 1;
+
+    for (let i = 0; i < params.paxBuckets.length; i++) {
+      const bucket = params.paxBuckets[i];
+      const prevMax = i === 0 ? 0 : params.paxBuckets[i - 1].max;
+
+      if (capacity > prevMax && capacity <= bucket.max) {
+        if (params.paxBucketColorMap && params.paxBucketColorMap.has(bucket.max)) {
+          return params.paxBucketColorMap.get(bucket.max)!;
+        }
+        return params.paxPalette[i] || '#cccccc';
+      }
+    }
+    return params.paxPalette[params.paxPalette.length - 1] || '#cccccc';
+  }
+private addVideoOverlaysOnPdf(
     pdf: jsPDF,
     imgX: number, imgY: number, imgWidth: number, imgHeight: number,
     svgElement: SVGSVGElement,
@@ -353,150 +400,238 @@ export class PdfExportService {
     params: PdfExportParams
   ): void {
     const roomsWithVideos = filteredRooms.filter(room => room.video && room.video.trim() !== '');
-    if (roomsWithVideos.length === 0) return;
+    if (roomsWithVideos.length === 0) {
+      console.log('⚠️ No rooms with videos found in filtered rooms');
+      return;
+    }
 
-    // Get SVG's actual CLIENT size (how it's rendered on screen)
-    // This is what html2canvas captures!
-    const svgClientRect = svgElement.getBoundingClientRect();
-    const svgClientW = svgClientRect.width;
-    const svgClientH = svgClientRect.height;
+    // 1. Get the Map's Internal Coordinate System (ViewBox)
+    const vbAttr = svgElement.getAttribute('viewBox');
+    if (!vbAttr) {
+      console.error('❌ No viewBox attribute found on SVG element');
+      return;
+    }
+    const [vbX, vbY, vbW, vbH] = vbAttr.split(' ').map(Number);
 
-    console.log('🎯 SVG Client Size (rendered on dashboard):', {
-      width: svgClientW.toFixed(2),
-      height: svgClientH.toFixed(2),
-      aspectRatio: (svgClientW / svgClientH).toFixed(2)
-    });
-    console.log('📄 PDF Image Size:', {
-      width: imgWidth.toFixed(2),
-      height: imgHeight.toFixed(2),
-      aspectRatio: (imgWidth / imgHeight).toFixed(2)
-    });
+    console.log(`🎯 Processing ${roomsWithVideos.length} rooms with videos from ${filteredRooms.length} filtered rooms`);
+    console.log(`📏 ViewBox: ${vbX}, ${vbY}, ${vbW}, ${vbH}`);
+    console.log(`📄 PDF Image: x=${imgX.toFixed(2)}, y=${imgY.toFixed(2)}, w=${imgWidth.toFixed(2)}, h=${imgHeight.toFixed(2)}`);
+    console.log(`🏠 Rooms with videos:`, roomsWithVideos.map(r => `${r.name} (cap: ${r.capacity})`).join(', '));
 
-    roomsWithVideos.forEach((room, index) => {
-      // 1. Find room element by ID
-      const roomElement = svgElement.getElementById(room.id) as SVGGraphicsElement;
+    roomsWithVideos.forEach(room => {
+      console.log(`\n🔍 Looking for room: "${room.name}" (ID: ${room.id}, Video: ${room.video?.substring(0, 50)}...)`);
+
+      // 2. Find the Room Element by ID (with fallbacks)
+      let roomElement = svgElement.getElementById(room.id) as SVGGraphicsElement;
+      let foundBy = roomElement ? 'by ID' : null;
+
+      // Fallback: try finding by name if ID doesn't work
       if (!roomElement) {
-        console.warn(`❌ Room element not found for ID: ${room.id}`);
+        roomElement = svgElement.getElementById(room.name) as SVGGraphicsElement;
+        foundBy = roomElement ? 'by name' : null;
+      }
+
+      // Last resort: use helper function to try variants
+      if (!roomElement && params.findRoomElementInline) {
+        roomElement = params.findRoomElementInline(svgElement, room) as SVGGraphicsElement;
+        foundBy = roomElement ? 'by helper function' : null;
+      }
+
+      if (!roomElement) {
+        console.warn(`❌ Room element not found for ${room.name} (ID: ${room.id})`);
         return;
       }
 
-      // 2. Get room's CLIENT bounding rect (actual position/size on screen)
-      const roomClientRect = roomElement.getBoundingClientRect();
-
-      // 3. Calculate room's position RELATIVE to SVG (in client pixels)
-      // This gives us the room's position within the SVG in the same coordinate system
-      // that html2canvas uses
-      const relativeX = roomClientRect.left - svgClientRect.left;
-      const relativeY = roomClientRect.top - svgClientRect.top;
-      const relativeW = roomClientRect.width;
-      const relativeH = roomClientRect.height;
-
-      // 4. Map relative client coordinates → PDF coordinates
-      // Formula: pdfCoord = imgStart + (clientCoord / svgClientSize) * imgSize
-      const fullPdfX = imgX + (relativeX / svgClientW) * imgWidth;
-      const fullPdfY = imgY + (relativeY / svgClientH) * imgHeight;
-      const fullPdfW = (relativeW / svgClientW) * imgWidth;
-      const fullPdfH = (relativeH / svgClientH) * imgHeight;
-
-      // Make the box smaller (70% of room size) and positioned slightly above center
-      const boxScale = 0.7; // Box is 70% of the room size
-      const pdfW = fullPdfW * boxScale;
-      const pdfH = fullPdfH * boxScale;
-      const pdfX = fullPdfX + (fullPdfW - pdfW) / 2; // Center horizontally
-      const pdfY = fullPdfY + (fullPdfH - pdfH) / 2 - (fullPdfH * 0.15); // Moved up 10%
-
-      // Debug logging
-      console.log(`📍 Room ${room.name} (${room.id}) overlay:`, {
-        clientRect: {
-          x: roomClientRect.left.toFixed(2),
-          y: roomClientRect.top.toFixed(2),
-          w: roomClientRect.width.toFixed(2),
-          h: roomClientRect.height.toFixed(2)
-        },
-        relativeToSvg: {
-          x: relativeX.toFixed(2),
-          y: relativeY.toFixed(2),
-          w: relativeW.toFixed(2),
-          h: relativeH.toFixed(2)
-        },
-        fullRoomPdfCoords: {
-          x: fullPdfX.toFixed(2),
-          y: fullPdfY.toFixed(2),
-          w: fullPdfW.toFixed(2),
-          h: fullPdfH.toFixed(2)
-        },
-        smallerBoxPdfCoords: {
-          x: pdfX.toFixed(2),
-          y: pdfY.toFixed(2),
-          w: pdfW.toFixed(2),
-          h: pdfH.toFixed(2)
-        }
+      console.log(`   Found element ${foundBy}:`, {
+        elementId: roomElement.id || roomElement.getAttribute('id'),
+        tagName: roomElement.tagName
       });
 
-      pdf.saveGraphicsState();
+      // CRITICAL FIX: The element we found might be a small label/icon
+      // We need to find the LARGEST polygon/path/rect that represents the actual visible room
+      // Strategy: Search up the DOM tree and within siblings to find the room polygon
+      const initialBBox = roomElement.getBBox();
+      const isSmall = initialBBox.width < 200 || initialBBox.height < 200;
 
-      // --- DRAW "WATCH TOUR" TEXT ---
+      if (isSmall) {
+        console.log(`🔍 Element is small (${initialBBox.width.toFixed(0)}×${initialBBox.height.toFixed(0)}), searching for actual room polygon...`);
+
+        // Strategy 1: Search in parent's children for the largest shape
+        let searchParent: Element | null = roomElement.parentElement;
+        let largestShape = roomElement;
+        let largestArea = initialBBox.width * initialBBox.height;
+
+        // Try up to 3 levels up to find a group containing the room polygon
+        for (let level = 0; level < 3 && searchParent; level++) {
+          const allShapes = Array.from(searchParent.querySelectorAll('polygon, path, rect, polyline')) as SVGGraphicsElement[];
+
+          console.log(`   Level ${level}: Found ${allShapes.length} shapes in parent <${(searchParent as Element).tagName}>`);
+
+          for (const shape of allShapes) {
+            try {
+              const shapeBBox = shape.getBBox();
+              const area = shapeBBox.width * shapeBBox.height;
+
+              // Only consider shapes that are significantly larger
+              if (area > largestArea * 2) {
+                largestArea = area;
+                largestShape = shape;
+                console.log(`   ✓ Found larger <${shape.tagName}> at level ${level}: ${shapeBBox.width.toFixed(0)}×${shapeBBox.height.toFixed(0)} (area: ${area.toFixed(0)})`);
+              }
+            } catch (e) {
+              // Skip shapes that can't get BBox
+            }
+          }
+
+          if (largestShape !== roomElement) {
+            break; // Found a larger shape, stop searching
+          }
+
+          searchParent = searchParent.parentElement;
+        }
+
+        if (largestShape !== roomElement) {
+          console.log(`   ✅ Using LARGEST shape (area: ${largestArea.toFixed(0)})`);
+          roomElement = largestShape;
+        } else {
+          console.warn(`   ⚠️ Could not find larger polygon for ${room.name}. Using original element.`);
+        }
+      }
+
+      const finalBBox = roomElement.getBBox();
+      console.log(`✅ Final room element for ${room.name}`, {
+        id: roomElement.id || roomElement.getAttribute('id'),
+        tagName: roomElement.tagName,
+        bboxSize: `${finalBBox.width.toFixed(0)}×${finalBBox.height.toFixed(0)}`,
+        transform: roomElement.getAttribute('transform'),
+        parentTransform: roomElement.parentElement?.getAttribute('transform')
+      });
+
+      // 3. Get the Matrix (CTM)
+      const ctm = roomElement.getCTM();
+      if (!ctm) {
+        console.error(`❌ No CTM for ${room.name}`);
+        return;
+      }
+      const bbox = roomElement.getBBox();
+
+      // Check if this element looks too small
+      const expectedMinSize = 50; // SVG units - rooms should be at least this big in local coords
+      if (bbox.width < expectedMinSize || bbox.height < expectedMinSize) {
+        console.warn(`⚠️ ${room.name} BBox seems small (w=${bbox.width.toFixed(1)}, h=${bbox.height.toFixed(1)}). Checking parent elements...`);
+      }
+
+      // Debug: Log CTM matrix values
+      console.log(`   Matrix for ${room.name}:`, {
+        a: ctm.a.toFixed(3), b: ctm.b.toFixed(3), c: ctm.c.toFixed(3),
+        d: ctm.d.toFixed(3), e: ctm.e.toFixed(3), f: ctm.f.toFixed(3)
+      });
+
+      // --- STEP 4: Calculate True Corners in Global SVG Space ---
+      let pt = svgElement.createSVGPoint();
+
+      // Top-Left Corner
+      pt.x = bbox.x;
+      pt.y = bbox.y;
+      const globalTL = pt.matrixTransform(ctm);
+
+      // Bottom-Right Corner
+      pt.x = bbox.x + bbox.width;
+      pt.y = bbox.y + bbox.height;
+      const globalBR = pt.matrixTransform(ctm);
+
+      // --- STEP 5: Convert "Map Units" to "PDF Pixels" ---
+      // Formula: ImageStart + ((GlobalPos - ViewBoxStart) / ViewBoxSize) * ImageSize
+      
+      // NOTICE: We subtract vbX and vbY. This is critical for maps that don't start at 0,0.
+      const pdfLeft = imgX + ((globalTL.x - vbX) / vbW) * imgWidth;
+      const pdfTop = imgY + ((globalTL.y - vbY) / vbH) * imgHeight;
+      
+      const pdfRight = imgX + ((globalBR.x - vbX) / vbW) * imgWidth;
+      const pdfBottom = imgY + ((globalBR.y - vbY) / vbH) * imgHeight;
+
+      // --- STEP 6: Calculate Center & Size ---
+      // We use Math.abs to ensure positive width/height regardless of rotation
+      const roomPdfW = Math.abs(pdfRight - pdfLeft);
+      const roomPdfH = Math.abs(pdfBottom - pdfTop);
+
+      const centerX = (pdfLeft + pdfRight) / 2;
+      const centerY = (pdfTop + pdfBottom) / 2;
+
+      // Scale the box to be smaller than the room (65% of smallest side)
+      const minDim = Math.min(roomPdfW, roomPdfH);
+      const boxSize = minDim * 0.65;
+
+      const boxX = centerX - (boxSize / 2);
+      const boxY = centerY - (boxSize / 2);
+
+      // Validate coordinates are within ViewBox bounds
+      const isWithinBounds =
+        globalTL.x >= vbX && globalTL.x <= (vbX + vbW) &&
+        globalTL.y >= vbY && globalTL.y <= (vbY + vbH) &&
+        globalBR.x >= vbX && globalBR.x <= (vbX + vbW) &&
+        globalBR.y >= vbY && globalBR.y <= (vbY + vbH);
+
+      console.log(`📦 ${room.name}:`, {
+        svgBBox: `x=${bbox.x.toFixed(1)}, y=${bbox.y.toFixed(1)}, w=${bbox.width.toFixed(1)}, h=${bbox.height.toFixed(1)}`,
+        globalTL: `x=${globalTL.x.toFixed(1)}, y=${globalTL.y.toFixed(1)}`,
+        globalBR: `x=${globalBR.x.toFixed(1)}, y=${globalBR.y.toFixed(1)}`,
+        pdfBox: `x=${boxX.toFixed(1)}, y=${boxY.toFixed(1)}, size=${boxSize.toFixed(1)}`,
+        withinBounds: isWithinBounds ? '✅' : '❌ OUT OF BOUNDS!'
+      });
+
+      if (!isWithinBounds) {
+        console.warn(`⚠️ ${room.name} coordinates are outside ViewBox bounds!`);
+      }
+
+      // --- STEP 7: Draw the Box ---
+      const color = this.getRoomColorForPdf(room, params);
+      const rgb = params.hexToRgb(color);
+
+      pdf.saveGraphicsState();
+      try { pdf.setGState(new (pdf as any).GState({ opacity: 0.8 })); } catch (e) {}
+
+      if (rgb) pdf.setFillColor(rgb.r, rgb.g, rgb.b);
+      else pdf.setFillColor(200, 200, 200);
+
+      pdf.rect(boxX, boxY, boxSize, boxSize, 'F'); // Fill box
+      pdf.restoreGraphicsState();
+
+      // Border
+      pdf.setDrawColor(0, 0, 0);
+      pdf.setLineWidth(0.1);
+      pdf.rect(boxX, boxY, boxSize, boxSize, 'D');
+
+      // Text
       pdf.setTextColor(0, 0, 0);
       pdf.setFont('helvetica', 'bold');
 
-      // Auto-size font based on box dimensions
-      // Minimum font size increased to 8 for better readability
-      const minDimension = Math.min(pdfW, pdfH);
-      const fontSize = Math.max(7, Math.min(17, minDimension * 0.5));
+      // Dynamic font size: fits 30% of box width (min 2pt, max 8pt)
+      const fontSize = Math.max(2, Math.min(8, boxSize * 0.3));
       pdf.setFontSize(fontSize);
 
-      // Calculate absolute center of the smaller box
-      const centerX = pdfX + (pdfW / 2);  // Horizontal center
-      const centerY = pdfY + (pdfH / 2);  // Vertical center
+      const lh = fontSize * 0.45;
 
-      // // --- DEBUG: Draw suite boundary box to verify positioning ---
-      pdf.setDrawColor(255, 0, 0); // Red border
-      pdf.setLineWidth(0.5);
-      pdf.rect(pdfX, pdfY, pdfW, pdfH);
-
-      // For two-line text centered around centerY:
-      // No gap between lines for compact appearance
-      const halfGap = fontSize * 0.2; // Minimal gap for tight spacing
-
-      // Suite name label - positioned above WATCH TOUR text
-      const suiteNameFontSize = Math.max(4, fontSize * 0.4); // Smaller than main text
+      // Suite name at top (smaller)
+      const suiteNameFontSize = Math.max(2, fontSize * 0.5 );
       pdf.setFontSize(suiteNameFontSize);
-      pdf.setTextColor(0, 0, 0);
-      const suiteNameY = centerY - halfGap - fontSize * 0.4; // Above WATCH text
-      pdf.text(room.name, centerX, suiteNameY, { align: 'center', baseline: 'middle' });
+      pdf.text(room.name, centerX, centerY - lh * 2.5, {
+        align: 'center',
+        baseline: 'middle'
+      });
 
-      // Position text lines symmetrically around the center point
-      pdf.setFontSize(fontSize); // Reset to main font size
-      pdf.setTextColor(0, 0, 0);
-      pdf.text('WATCH', centerX, centerY - halfGap, { align: 'center', baseline: 'middle' });
-      pdf.text('TOUR', centerX, centerY + halfGap, { align: 'center', baseline: 'middle' });
+      // "WATCH TOUR" text
+      pdf.setFontSize(fontSize);
+      pdf.text('WATCH', centerX, centerY - lh, { align: 'center', baseline: 'middle' });
+      pdf.text('TOUR', centerX, centerY + lh, { align: 'center', baseline: 'middle' });
 
-      // --- C. ADD CLICKABLE LINK ---
-      // Make the entire box clickable with the video URL
-      try {
-        (pdf as any).link(pdfX, pdfY, pdfW, pdfH, { url: room.video });
-
-        // Set NewWindow flag in the link annotation to force opening in new tab
-        const annotations = (pdf as any).internal.getCurrentPageInfo().pageContext.annotations || [];
-        if (annotations.length > 0) {
-          const lastAnnotation = annotations[annotations.length - 1];
-          // Add NewWindow flag to annotation dictionary
-          if (lastAnnotation && lastAnnotation.options) {
-            lastAnnotation.options.NewWindow = true;
-          }
-        }
-
-        if (index < 2) {
-          console.log(`✅ Added clickable link for room ${room.name} to ${room.video}`);
-        }
-      } catch (e) {
-        console.warn(`Failed to add link for room ${room.id}:`, e);
-      }
+      // Link
+      pdf.link(boxX, boxY, boxSize, boxSize, {
+        url: room.video,
+        target: '_blank'
+      });
     });
-
-    console.log(`✅ Added ${roomsWithVideos.length} video overlays to PDF`);
   }
-
   /**
    * Add visual indicators (checkmarks/stars) for selected suites on the PDF
    */
@@ -637,57 +772,6 @@ export class PdfExportService {
       }
     });
   }
-
-  /**
-   * Legacy method for cloning SVG - kept for reference
-   * Note: captureHostElement is preferred as it captures the live rendered state
-   */
-  // private async svgToCanvas(
-  //   svgElement: SVGSVGElement,
-  //   pdfQuality: { scale: number; dimensions: { width: number; height: number } }
-  // ): Promise<HTMLCanvasElement> {
-  //   return new Promise((resolve, reject) => {
-  //     try {
-  //       const tempDiv = document.createElement('div');
-  //       tempDiv.style.position = 'absolute';
-  //       tempDiv.style.left = '-9999px';
-  //       tempDiv.style.top = '-9999px';
-  //       tempDiv.style.width = `${pdfQuality.dimensions.width}px`;
-  //       tempDiv.style.height = `${pdfQuality.dimensions.height}px`;
-  //       // tempDiv.style.backgroundColor = '#ffffff';
-
-  //       const svgClone = svgElement.cloneNode(true) as SVGSVGElement;
-  //       svgClone.style.width = '100%';
-  //       svgClone.style.height = '100%';
-  //       tempDiv.appendChild(svgClone);
-  //       document.body.appendChild(tempDiv);
-
-  //       html2canvas(tempDiv, {
-  //         // backgroundColor: '#ffffff',
-  //         scale: pdfQuality.scale,
-  //         useCORS: true,
-  //         allowTaint: true,
-  //         logging: false,
-  //         width: pdfQuality.dimensions.width,
-  //         height: pdfQuality.dimensions.height,
-  //         removeContainer: true,
-  //         foreignObjectRendering: false,
-  //         imageTimeout: 30000
-  //       })
-  //         .then((canvas) => {
-  //           document.body.removeChild(tempDiv);
-  //           resolve(canvas);
-  //         })
-  //         .catch((error) => {
-  //           document.body.removeChild(tempDiv);
-  //           reject(error);
-  //         });
-  //     } catch (error) {
-  //       reject(error);
-  //     }
-  //   });
-  // }
-
   private downscaleCanvasIfNeeded(src: HTMLCanvasElement): HTMLCanvasElement {
     const MAX_PX = 8_000_000;
     const area = src.width * src.height;

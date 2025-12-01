@@ -916,6 +916,12 @@ ngOnInit() {
       timestamp: new Date().toISOString()
     });
 
+    console.log('🔍 [applyFilters] BEFORE filtering:', {
+      totalRooms: this.rooms.length,
+      selectedSuites: this.selectedSuites,
+      selectedSuitesCount: this.selectedSuites.length
+    });
+
     this.filteredRooms = this.dropdownFilterService.applyFilters(
       this.rooms,
       this.filters,
@@ -924,15 +930,11 @@ ngOnInit() {
       this.selectedStartDate
     );
 
-    console.log('✅ [applyFilters] FILTERED:', {
+    console.log('✅ [applyFilters] AFTER filtering:', {
       filteredRoomsCount: this.filteredRooms.length,
+      selectedSuites: this.selectedSuites,
       statusFilter: this.filters.status,
-      sampleFilteredRooms: this.filteredRooms.slice(0, 3).map(r => ({
-        id: r.id,
-        name: r.name,
-        status: r.status,
-        capacity: r.capacity
-      }))
+      filteredRoomNames: this.filteredRooms.map(r => r.name)
     });
 
     // Debug: Log filtered rooms when no date is selected
@@ -1147,10 +1149,20 @@ const getEffectiveStatus = (room: Room): 'Available' | 'Occupied' => {
   // Multi-select suite functionality
   toggleSuiteSelection(suiteName: string) {
     const index = this.selectedSuites.indexOf(suiteName);
+    const beforeState = [...this.selectedSuites];
+
     if (index > -1) {
       this.selectedSuites.splice(index, 1);
+      console.log(`➖ [Toggle] Removed "${suiteName}"`, {
+        before: beforeState,
+        after: this.selectedSuites
+      });
     } else {
       this.selectedSuites.push(suiteName);
+      console.log(`➕ [Toggle] Added "${suiteName}"`, {
+        before: beforeState,
+        after: this.selectedSuites
+      });
     }
     this.applyFilters(); // This will auto-switch to relevant floorplan
   }
@@ -1174,12 +1186,20 @@ const getEffectiveStatus = (room: Room): 'Available' | 'Occupied' => {
     // Toggle suite selection
     this.toggleSuiteSelection(room.name);
 
-    // Show toast notification
+    // Show toast notification with total count
     const isSelected = this.isSuiteSelected(room.name);
+    const totalSelected = this.selectedSuites.length;
     const message = isSelected
-      ? `Suite "${room.name}" selected`
-      : `Suite "${room.name}" deselected`;
+      ? `Suite "${room.name}" selected (${totalSelected} total)`
+      : `Suite "${room.name}" deselected (${totalSelected} remaining)`;
     this.toastService.success(message);
+
+    console.log('🎯 [Suite Selection]', {
+      action: isSelected ? 'SELECTED' : 'DESELECTED',
+      suite: room.name,
+      totalSelected: totalSelected,
+      allSelected: this.selectedSuites
+    });
   }
 
   // Handle suite search input changes

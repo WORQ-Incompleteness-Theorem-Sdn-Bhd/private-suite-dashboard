@@ -75,7 +75,7 @@ export class SvgColorService {
           el.setAttribute('opacity', '0.7');
           (el as any).style.pointerEvents = 'auto';
         } else {
-          el.setAttribute('fill', 'none');
+          el.setAttribute('fill', '#d1d5db'); // Light gray for unselected rooms (instead of 'none')
           el.setAttribute('opacity', '0.35');
           (el as any).style.pointerEvents = 'auto';
         }
@@ -129,7 +129,7 @@ export class SvgColorService {
       if (containerTag) return;
 
       const isSelected = filteredRooms.includes(room);
-      let color = 'none';
+      let color = '#d1d5db'; // Light gray for unselected rooms (instead of 'none')
       if (isSelected) {
         const avail = selectedStartDate ? availabilityByRoomId.get(room.id) : undefined;
         let effectiveStatus: 'Occupied' | 'Available';

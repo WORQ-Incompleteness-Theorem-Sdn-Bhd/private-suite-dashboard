@@ -102,18 +102,29 @@ export class PopupUiService {
         const scaleX = hostRect.width / vbW;
         const scaleY = hostRect.height / vbH;
 
-        const roomRightX = bbox.x + bbox.width;
-        const roomCenterY = bbox.y + bbox.height / 2;
-        let screenX = hostRect.left + (roomRightX - vbX) * scaleX + 10;
-        let screenY = hostRect.top + (roomCenterY - vbY) * scaleY;
+        // Use click event position if available, otherwise use suite center
+        let screenX: number;
+        let screenY: number;
+
+        if (clickEvent) {
+          // Position popup at actual click point
+          screenX = clickEvent.clientX;
+          screenY = clickEvent.clientY;
+        } else {
+          // Fallback: use suite's center position
+          const roomCenterX = bbox.x + bbox.width / 2;
+          const roomCenterY = bbox.y + bbox.height / 2;
+          screenX = hostRect.left + (roomCenterX - vbX) * scaleX;
+          screenY = hostRect.top + (roomCenterY - vbY) * scaleY;
+        }
 
         const containerEl = panelContainer?.nativeElement;
         const containerRect = containerEl?.getBoundingClientRect();
         let popupXInline = screenX;
         let popupYInline = screenY - 10;
         if (containerRect && containerEl) {
-          popupXInline = screenX - containerRect.left + (containerEl.scrollLeft || 0);
-          popupYInline = screenY - containerRect.top + (containerEl.scrollTop || 0) - 10;
+          popupXInline = screenX - containerRect.left + (containerEl.scrollLeft || 0) + 15;
+          popupYInline = screenY - containerRect.top + (containerEl.scrollTop || 0) - 30;
         }
 
         const popupWidthInline = 192;

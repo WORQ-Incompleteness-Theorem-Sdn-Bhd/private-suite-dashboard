@@ -268,10 +268,8 @@ export class PdfExportService {
           const newViewBox = `${bbox.x - padding} ${bbox.y - padding} ${bbox.width + (padding * 2)} ${bbox.height + (padding * 2)}`;
 
           rootSvg.setAttribute('viewBox', newViewBox);
-          console.log('✅ Auto-cropped SVG ViewBox:', newViewBox);
         }
       } catch (e) {
-        console.warn('Could not auto-crop SVG, using fallback or existing viewBox', e);
         // Only set default if absolutely nothing exists
         if (!rootSvg.getAttribute('viewBox')) {
            rootSvg.setAttribute('viewBox', '0 0 1920 1018');
@@ -293,24 +291,14 @@ export class PdfExportService {
 
         const canvasAspectRatio = canvas.width / canvas.height;
 
-        console.log('📸 Canvas captured:', {
-          width: canvas.width,
-          height: canvas.height,
-          aspectRatio: canvasAspectRatio.toFixed(3)
-        });
+        // Calculate floorplan space - maximize available area
+        const imgY = yPos + 5; // Start below the labels with small margin
+        const availableWidth = pageWidth - 60; // Leave 30mm margin on each side (reduced from 50mm)
+        const availableHeight = pageHeight - imgY - 15; // Leave 10mm margin at bottom (reduced from 15mm)
+        const maxWidth = availableWidth * 1.0;
+        const maxHeight = availableHeight * 1.0;
 
-        // Step 2: Calculate maximum available space - MAXIMUM SIZE
-        const imgY = yPos - 20; // Move floorplan way up, starting very high
-        const maxWidth = pageWidth * 1.5; // 150% of page width for absolute maximum
-        const maxHeight = pageHeight - imgY + 10; // Extend beyond page for max height
-
-        console.log('📐 Available space:', {
-          maxWidth: `${maxWidth.toFixed(2)}mm`,
-          maxHeight: `${maxHeight.toFixed(2)}mm`,
-          pageSize: `${pageWidth.toFixed(2)}mm × ${pageHeight.toFixed(2)}mm`
-        });
-
-        // Step 3: Calculate actual dimensions while maintaining aspect ratio
+        // Calculate actual dimensions while maintaining aspect ratio
         let imgWidth = maxWidth;
         let imgHeight = imgWidth / canvasAspectRatio;
 
@@ -320,26 +308,16 @@ export class PdfExportService {
           imgWidth = imgHeight * canvasAspectRatio;
         }
 
-        // Center horizontally on page
-        const imgX = (pageWidth - imgWidth) / 2;
+        // Center horizontally within the available area
+        const leftMargin = 40;
+        const availableSpace = pageWidth - (leftMargin * 2);
+        const imgX = leftMargin + (availableSpace - imgWidth) / 2;
 
-        console.log('📍 Floorplan positioning:', {
-          x: `${imgX.toFixed(2)}mm`,
-          y: `${imgY.toFixed(2)}mm`,
-          width: `${imgWidth.toFixed(2)}mm`,
-          height: `${imgHeight.toFixed(2)}mm`,
-          labelsEndedAt: `${yPos.toFixed(2)}mm`,
-          canvasAspect: canvasAspectRatio.toFixed(3),
-          wasConstrainedByHeight: imgHeight === maxHeight
-        });
-
-        // Step 3: Render floorplan image at exact size
+        // Render floorplan image
         const imgData = canvas.toDataURL('image/png');
         pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'FAST');
 
-        console.log('✅ Floorplan image rendered at pixel-perfect dimensions');
-
-        // Step 4: Add interactive overlays for selected suites
+        // Add interactive overlays for selected suites
         this.addSelectedSuiteIndicators(
           pdf,
           imgX, imgY, imgWidth, imgHeight,
@@ -348,10 +326,7 @@ export class PdfExportService {
           params
         );
 
-        console.log('✅ Interactive suite indicators added');
-
       } catch (canvasError) {
-        console.warn('Failed to convert SVG to canvas on page', idx + 1, canvasError);
         pdf.setFontSize(14);
         pdf.setTextColor(0, 0, 0);
         pdf.text('Floorplan SVG (could not render image)', 20, 20);
@@ -378,8 +353,19 @@ export class PdfExportService {
     const roomElement = svgElement.getElementById(room.id) as SVGGraphicsElement;
     if (!roomElement) return null;
 
-    // Get Room Position Directly in SVG Coordinates
+    // Skip text elements - we only want room shapes (path, polygon, rect, etc.)
+    const elementType = roomElement.tagName.toLowerCase();
+    if (elementType === 'text' || elementType === 'tspan') {
+      console.warn(`⚠️ ${room.name}: Found text element instead of room shape. Skipping.`);
+      return null;
+    }
+
     const bbox = roomElement.getBBox();
+
+    // Validate bbox is within reasonable bounds
+    if (bbox.width <= 0 || bbox.height <= 0) {
+      return null;
+    }
 
     // Map SVG ViewBox Units -> PDF Image Coordinates
     const pdfX = imgX + ((bbox.x - vbX) / vbW) * imgWidth;
@@ -419,18 +405,19 @@ export class PdfExportService {
     }
     const [vbX, vbY, vbW, vbH] = vbAttr.split(' ').map(Number);
 
-    // Separate selected and non-selected rooms
+    // Separate selected and non-selected rooms, and filter only those with video links
     const selectedRooms = filteredRooms.filter(room =>
-      params.selectedSuites.includes(room.name)
+      params.selectedSuites.includes(room.name) && room.video && room.video.trim() !== ''
     );
     const nonSelectedRooms = filteredRooms.filter(room =>
-      !params.selectedSuites.includes(room.name)
+      !params.selectedSuites.includes(room.name) && room.video && room.video.trim() !== ''
     );
 
-    console.log(`🔗 Making ${filteredRooms.length} colored suites clickable (${selectedRooms.length} selected, ${nonSelectedRooms.length} non-selected)`);
-
-    // First, add clickable links to ALL non-selected colored rooms (without visual badges)
+    // Add clickable links to ALL non-selected colored rooms with videos
     nonSelectedRooms.forEach(room => {
+      const roomElement = svgElement.getElementById(room.id);
+      if (!roomElement) return;
+
       const coords = this.getRoomPdfCoordinates(
         room, svgElement,
         vbX, vbY, vbW, vbH,
@@ -440,80 +427,92 @@ export class PdfExportService {
 
       const { pdfX, pdfY, pdfW, pdfH } = coords;
 
-      // Create clickable link URL
-      let linkUrl = '';
-      if (room.video && room.video.trim() !== '') {
-        linkUrl = room.video;
-      } else {
-        const outletName = encodeURIComponent(params.filters.outlet || '');
-        const suiteName = encodeURIComponent(room.name);
-        linkUrl = `https://yourwebsite.com/book?suite=${suiteName}&outlet=${outletName}`;
+      // More strict validation: Skip if box is outside OR suspiciously positioned
+      // Check if box is completely outside the floorplan area
+      const isOutsideLeft = pdfX + pdfW < imgX;
+      const isOutsideRight = pdfX > imgX + imgWidth;
+      const isOutsideTop = pdfY + pdfH < imgY;
+      const isOutsideBottom = pdfY > imgY + imgHeight;
+
+      // Check if box starts too far from floorplan (likely mapping error)
+      const isTooFarLeft = pdfX < imgX - 10; // More than 10mm outside
+      const isTooFarUp = pdfY < imgY - 10; // More than 10mm outside
+
+      if (isOutsideLeft || isOutsideRight || isOutsideTop || isOutsideBottom ||
+          isTooFarLeft || isTooFarUp) {
+        return;
       }
 
-      // Add stroke border around clickable area
-      const adjustedY = pdfY - 4; // Move clickable area up by 2mm
-      pdf.setDrawColor(0,0,0); // Black stroke
-      pdf.setLineWidth(2); // Weight 2
-      pdf.rect(pdfX, adjustedY, pdfW, pdfH, 'S'); // Draw stroke only
+      // Make box smaller (60% of original size) and center it
+      const smallerW = pdfW * 0.6;
+      const smallerH = pdfH * 0.6;
+      const boxX = pdfX + (pdfW - smallerW) / 2;
+      const boxY = pdfY + (pdfH - smallerH) / 2;
 
-      // Add invisible clickable area - moved up slightly
-      pdf.link(pdfX, adjustedY, pdfW, pdfH, {
-        url: linkUrl,
+      // Add blue border and suite label
+      pdf.setDrawColor(0, 0, 255);
+      pdf.setLineWidth(0.4);
+      pdf.rect(boxX, boxY, smallerW, smallerH, 'S');
+
+      pdf.setFontSize(8);
+      pdf.setTextColor(0, 0, 255);
+      pdf.text(room.name, boxX + smallerW / 2, boxY + smallerH / 2, { align: 'center', baseline: 'middle' });
+
+      // Add clickable area
+      pdf.link(boxX, boxY, smallerW, smallerH, {
+        url: room.video,
         target: '_blank'
       });
     });
 
-    // Then, add clickable links with visual indicators for selected rooms
+    // Add clickable links with visual indicators for selected rooms // sini clickable area
     selectedRooms.forEach(room => {
-      // Use helper method to get PDF coordinates
+      const roomElement = svgElement.getElementById(room.id);
+      if (!roomElement) return;
+
       const coords = this.getRoomPdfCoordinates(
         room, svgElement,
         vbX, vbY, vbW, vbH,
         imgX, imgY, imgWidth, imgHeight
       );
-      if (!coords) {
-        console.warn(`❌ Could not get coordinates for ${room.name}`);
-        return;
-      }
+      if (!coords) return;
 
       const { pdfX, pdfY, pdfW, pdfH } = coords;
 
-      // Create a clickable link URL
-      // You can customize this URL to point wherever you want
-      // Options:
-      // 1. YouTube video (if exists)
-      // 2. Room details page
-      // 3. Booking page with pre-filled suite info
+      // Validate position
+      const isOutsideLeft = pdfX + pdfW < imgX; //off to the left side of the image
+      const isOutsideRight = pdfX > imgX + imgWidth; //off to the right side of the image
+      const isOutsideTop = pdfY + pdfH < imgY; //off above the image
+      const isOutsideBottom = pdfY > imgY + imgHeight; //off below the image
+      const isTooFarLeft = pdfX < imgX - 10; //more than 10mm outside to the left
+      const isTooFarUp = pdfY < imgY - 10; //more than 10mm outside above
 
-      let linkUrl = '';
-
-      if (room.video && room.video.trim() !== '') {
-        // Option 1: Link to YouTube video if exists
-        linkUrl = room.video;
-        console.log(`✅ ${room.name}: Video link - ${linkUrl.substring(0, 50)}...`);
-      } else {
-        // Option 2: Link to a booking/details page (customize this URL)
-        // Example: https://yourwebsite.com/book?suite=Suite+06&outlet=TTDI
-        const outletName = encodeURIComponent(params.filters.outlet || '');
-        const suiteName = encodeURIComponent(room.name);
-        linkUrl = `https://yourwebsite.com/book?suite=${suiteName}&outlet=${outletName}`;
-        console.log(`✅ ${room.name}: Booking link - ${linkUrl}`);
+      if (isOutsideLeft || isOutsideRight || isOutsideTop || isOutsideBottom ||
+          isTooFarLeft || isTooFarUp) {
+        return;
       }
 
-      // Add stroke border around clickable area
-      const adjustedY = pdfY - 2; // Move clickable area up by 2mm
-      pdf.setDrawColor(0, 0, 0, 0); // Black stroke
-      pdf.setLineWidth(2); // Weight 2
-      pdf.rect(pdfX, adjustedY, pdfW, pdfH, 'S'); // Draw stroke only
+      // Make box smaller (60% of original size) and center it
+      const smallerW = pdfW * 0.6;
+      const smallerH = pdfH * 0.6;
+      const boxX = pdfX + (pdfW - smallerW) / 2;
+      const boxY = pdfY + (pdfH - smallerH) / 2;
 
-      // Add invisible clickable area - moved up slightly
-      pdf.link(pdfX, adjustedY, pdfW, pdfH, {
-        url: linkUrl,
+      // Add orange border and suite label for selected rooms
+      pdf.setDrawColor(255, 102, 0);
+      pdf.setLineWidth(0.8);
+      pdf.rect(boxX, boxY, smallerW, smallerH, 'S');
+
+      pdf.setFontSize(8);
+      pdf.setTextColor(255, 102, 0);
+      pdf.text(room.name, boxX + smallerW / 2, boxY + smallerH / 2, { align: 'center', baseline: 'middle' });
+
+      // Add clickable area
+      pdf.link(boxX, boxY, smallerW, smallerH, {
+        url: room.video!,
         target: '_blank'
       });
     });
-
-    console.log(`✅ Added ${filteredRooms.length} clickable suite links to PDF`);
   }
 
   /**

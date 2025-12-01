@@ -23,7 +23,8 @@ export class SvgEventsService {
     room: Room,
     event: MouseEvent,
     openPopupFromRoom: (room: Room, event?: MouseEvent) => void,
-    onSuiteSelect?: (room: Room) => void
+    onSuiteSelect?: (room: Room) => void,
+    isFiltered: boolean = true
   ): void {
     // Check if this is the same room as last click
     if (this.lastClickedRoom === room) {
@@ -40,17 +41,24 @@ export class SvgEventsService {
 
     // If double-click detected
     if (this.clickCount === 2) {
+      console.log('🎯 [SVG Events] Double-click detected!', {
+        room: room.name,
+        isFiltered: isFiltered,
+        willCallOnSuiteSelect: !!onSuiteSelect
+      });
       this.clickCount = 0;
       this.lastClickedRoom = null;
-      // Execute suite selection
+      // Execute suite selection (always allow for multi-select)
       if (onSuiteSelect) {
         onSuiteSelect(room);
       }
     } else {
       // Wait for potential second click
       this.clickTimer = setTimeout(() => {
-        // Single click - open popup
-        openPopupFromRoom(room, event);
+        // Single click - open popup (only if room is filtered/colored)
+        if (isFiltered) {
+          openPopupFromRoom(room, event);
+        }
         this.clickCount = 0;
         this.lastClickedRoom = null;
       }, this.DOUBLE_CLICK_DELAY);
@@ -129,13 +137,13 @@ export class SvgEventsService {
           const normalized = normalizeId(candidate);
           const room = roomIdIndex.get(normalized);
           if (room) {
-            // Only open popup if the room is in filteredRooms (i.e., colored)
-            // If room is in filteredRooms, it means it passed all filters and should be colored
-            if (filteredRooms.includes(room)) {
-              this.handleRoomClick(room, event, openPopupFromRoom, onSuiteSelect);
-              matched = true;
-              return;
-            }
+            // Check if room is in filteredRooms (i.e., colored)
+            const isFiltered = filteredRooms.includes(room);
+            // Always allow clicks for double-click suite selection
+            // But only open popup on single-click if room is filtered
+            this.handleRoomClick(room, event, openPopupFromRoom, onSuiteSelect, isFiltered);
+            matched = true;
+            return;
           }
         }
         target = target.parentNode as Element | null;
@@ -170,11 +178,11 @@ export class SvgEventsService {
         this.ngZone.run(() => {
           ev.preventDefault();
           ev.stopPropagation();
-          // Only open popup if the room is in filteredRooms (i.e., colored)
-          // If room is in filteredRooms, it means it passed all filters and should be colored
-          if (filteredRooms.includes(room)) {
-            this.handleRoomClick(room, ev, openPopupFromRoom, onSuiteSelect);
-          }
+          // Check if room is in filteredRooms (i.e., colored)
+          const isFiltered = filteredRooms.includes(room);
+          // Always allow clicks for double-click suite selection
+          // But only open popup on single-click if room is filtered
+          this.handleRoomClick(room, ev, openPopupFromRoom, onSuiteSelect, isFiltered);
         });
 
       el.addEventListener('click', handler);
@@ -216,23 +224,23 @@ export class SvgEventsService {
           const normalized = normalizeId(candidate);
           const room = roomIdIndex.get(normalized);
           if (room) {
-            // Only open popup if the room is in filteredRooms (i.e., colored)
-            // If room is in filteredRooms, it means it passed all filters and should be colored
-            if (filteredRooms.includes(room)) {
-              this.handleRoomClick(room, event, openPopupFromRoom, onSuiteSelect);
-              matched = true;
-              return;
-            }
+            // Check if room is in filteredRooms (i.e., colored)
+            const isFiltered = filteredRooms.includes(room);
+            // Always allow clicks for double-click suite selection
+            // But only open popup on single-click if room is filtered
+            this.handleRoomClick(room, event, openPopupFromRoom, onSuiteSelect, isFiltered);
+            matched = true;
+            return;
           } else {
             const roomByOriginal = roomIdIndex.get(candidate);
             if (roomByOriginal) {
-              // Only open popup if the room is in filteredRooms (i.e., colored)
-              // If room is in filteredRooms, it means it passed all filters and should be colored
-              if (filteredRooms.includes(roomByOriginal)) {
-                this.handleRoomClick(roomByOriginal, event, openPopupFromRoom, onSuiteSelect);
-                matched = true;
-                return;
-              }
+              // Check if room is in filteredRooms (i.e., colored)
+              const isFiltered = filteredRooms.includes(roomByOriginal);
+              // Always allow clicks for double-click suite selection
+              // But only open popup on single-click if room is filtered
+              this.handleRoomClick(roomByOriginal, event, openPopupFromRoom, onSuiteSelect, isFiltered);
+              matched = true;
+              return;
             }
           }
         }
@@ -267,11 +275,11 @@ export class SvgEventsService {
         this.ngZone.run(() => {
           ev.preventDefault();
           ev.stopPropagation();
-          // Only open popup if the room is in filteredRooms (i.e., colored)
-          // If room is in filteredRooms, it means it passed all filters and should be colored
-          if (filteredRooms.includes(room)) {
-            this.handleRoomClick(room, ev, openPopupFromRoom, onSuiteSelect);
-          }
+          // Check if room is in filteredRooms (i.e., colored)
+          const isFiltered = filteredRooms.includes(room);
+          // Always allow clicks for double-click suite selection
+          // But only open popup on single-click if room is filtered
+          this.handleRoomClick(room, ev, openPopupFromRoom, onSuiteSelect, isFiltered);
         });
 
       el.addEventListener('click', handler);

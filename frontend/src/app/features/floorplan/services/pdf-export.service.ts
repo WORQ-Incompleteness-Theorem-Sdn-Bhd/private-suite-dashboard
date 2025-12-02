@@ -6,6 +6,7 @@ import { ColorPaxService } from './color-pax.service';
 import { Filters } from './dropdown-filter.service';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import { svg2pdf } from 'svg2pdf.js';
 import * as FloorplanUtils from './floorplan-utils';
 
 export interface PdfExportParams {
@@ -132,149 +133,36 @@ export class PdfExportService {
       pdf.setFontSize(16); // Larger header font
       pdf.setTextColor(255, 102, 0);
       pdf.text('Private Suite Dashboard - Floorplan', 15, 10);
-      pdf.setFontSize(12); // Increased label font to 12pt to match image
+
+      // Add helpful note on top-right
+      pdf.setFontSize(8);
+      pdf.setTextColor(100, 100, 100); // Gray color
+      const noteText = 'Click the suite name or click directly on the suite in the floorplan to watch the tour.';
+      const noteWidth = pdf.getTextWidth(noteText);
+      pdf.text(noteText, pageWidth - noteWidth - 15, 10, { align: 'left' });
+
+      pdf.setFontSize(12);
       pdf.setTextColor(0, 0, 0);
-      let yPos = 20; // Starting position for labels
+      let yPos = 20;
 
-      // Outlet - Always show
-      const selectedOffice = this.officeService.getOffices().find(office => office.id === params.filters.outlet);
-      const outletDisplayName = params.filters.outlet !== 'Select Outlet' && selectedOffice
-        ? selectedOffice.displayName
-        : params.filters.outlet;
-      pdf.text(`Outlet: ${outletDisplayName}`, 15, yPos);
-      yPos += 6; // Increased line spacing to match image
-
-      // Floor - Get floor_id from rooms visible on this SVG page
-      let floorLabel = 'N/A';
-
-      // Strategy 1: Try to get floor_id from the first visible room on this page
-      const visibleRooms = params.filteredRooms.filter(room => {
-        const el = params.findRoomElementInline(rootSvg, room);
-        return !!el && room.floor_id;
-      });
-
-      if (visibleRooms.length > 0 && visibleRooms[0].floor_id) {
-        // Get the floor label using the centralized floor service method
-        const floorId = visibleRooms[0].floor_id;
-        floorLabel = this.floorService.getFloorLabelFromMap(floorId, params.floorIdToFloorMap);
-      } else {
-        // Strategy 2: Fallback to using the displayedSvgs URL
-        const currentFloorplan = params.displayedSvgs[idx];
-        if (currentFloorplan) {
-          floorLabel = params.getFloorLabel(currentFloorplan);
-        }
-      }
-
-      pdf.text(`Floor: ${floorLabel}`, 15, yPos);
-      yPos += 6; // Increased line spacing to match image
-
-      // Pax - Get from selected suites if available, otherwise from filter
-      const paxValue = (() => {
-        if (params.selectedSuites.length > 0) {
-          const selectedRooms = params.rooms.filter(r => params.selectedSuites.includes(r.name));
-          const paxCapacities = Array.from(new Set(selectedRooms.map(r => r.capacity)))
-            .sort((a, b) => a - b);
-
-          if (paxCapacities.length === 1) {
-            return paxCapacities[0].toString();
-          } else if (paxCapacities.length > 1) {
-            return paxCapacities.join(', ');
-          }
-        }
-        return params.filters.pax !== 'Select Pax' ? params.filters.pax : 'All';
-      })();
-      pdf.text(`Pax: ${paxValue}`, 15, yPos);
-      yPos += 6; // Increased line spacing to match image
-
-      // Date - Always show
-      if (params.selectedStartDate) {
-        const formattedStartDate = this.formatDateToDDMMYYYY(params.selectedStartDate);
-        if (params.selectedEndDate && params.selectedEndDate !== params.selectedStartDate) {
-          const formattedEndDate = this.formatDateToDDMMYYYY(params.selectedEndDate);
-          pdf.text(`Date: ${formattedStartDate} to ${formattedEndDate}`, 15, yPos);
-        } else {
-          pdf.text(`Date: ${formattedStartDate}`, 15, yPos);
-        }
-      } else {
-        const today = new Date();
-        const formattedToday = this.formatDateToDDMMYYYY(
-          `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-        );
-        pdf.text(`Date: ${formattedToday}`, 15, yPos);
-      }
-      yPos += 6; // Increased line spacing to match image
-
-      // Suites Logic - Show all filtered suites on the page
-      const suitesToShow = (() => {
-        const pageRoomHasName = (name: string) => {
-          const room = params.rooms.find(r => r.name === name);
-          return room ? !!params.findRoomElementInline(rootSvg!, room) : false;
-        };
-
-        if (params.selectedSuites.length > 0) {
-          return params.selectedSuites.filter(pageRoomHasName);
-        }
-
-        // Show ALL filtered rooms on this page
-        const roomsOnThisPage = params.filteredRooms
-          .filter(r => pageRoomHasName(r.name))
-          .map(r => r.name);
-        return Array.from(new Set(roomsOnThisPage))
-          .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-      })();
-
-      // Always show Suites label
-      pdf.setFontSize(12); // Match the other labels font size
-      if (suitesToShow.length > 0) {
-        const suitesLabel = 'Suite: ';
-        const suitesText = suitesToShow.join(', ');
-        const manySuites = suitesToShow.length > 6;
-        const fontToUse = manySuites ? 9 : 11; // Slightly larger fonts to match
-
-        pdf.setFontSize(fontToUse);
-        const infoBlockWidth = pageWidth - 100;
-        const wrapped = pdf.splitTextToSize(suitesText, infoBlockWidth - suitesLabel.length * (fontToUse / 2));
-        if (wrapped.length > 0) {
-          pdf.text(`${suitesLabel}${wrapped[0]}`, 15, yPos);
-          let yy = yPos;
-          for (let i = 1; i < wrapped.length; i++) {
-            yy += manySuites ? 5 : 5.5; // Increased spacing to match
-            pdf.text(`        ${wrapped[i]}`, 15, yy);
-          }
-          yPos = yy + (manySuites ? 5 : 5.5); // Increased spacing to match
-        } else {
-          pdf.text(`${suitesLabel}`, 15, yPos);
-          yPos += 5.5;
-        }
-        pdf.setFontSize(12);
-      } else {
-        // Show "Suite: None" when no suites match the filter
-        pdf.text('Suite: None', 15, yPos);
-        yPos += 5;
-      }
+      // Add metadata labels (Outlet, Floor, Pax, Date, Suites)
+      yPos = this.addMetadataLabels(pdf, params, rootSvg, idx, yPos, pageWidth);
 
       // --- IMAGE GENERATION ---
 
-      // 1. FORCE AUTO-CROP (ALWAYS RUN THIS)
-      // We calculate the BBox of the actual drawing content and set the viewBox to match it.
-      // This removes empty whitespace and makes the floorplan appear much larger/zoomed-in.
-      try {
-        const bbox = rootSvg.getBBox();
+      // Clone SVG to avoid modifying the original DOM element
+      const svgForRender = rootSvg.cloneNode(true) as SVGSVGElement;
 
-        // Sanity check: only crop if bbox has valid dimensions
-        if (bbox.width > 0 && bbox.height > 0) {
-          // Add a small padding (e.g. 10 units) so lines aren't cut off at the very edge
-          const padding = 10;
-          const newViewBox = `${bbox.x - padding} ${bbox.y - padding} ${bbox.width + (padding * 2)} ${bbox.height + (padding * 2)}`;
+      // Smart auto-crop based on actual room elements
+      this.applySmartAutoCrop(svgForRender, params, 'Raster ');
 
-          rootSvg.setAttribute('viewBox', newViewBox);
-        }
-      } catch (e) {
-        // Only set default if absolutely nothing exists
-        if (!rootSvg.getAttribute('viewBox')) {
-           rootSvg.setAttribute('viewBox', '0 0 1920 1018');
-        }
-      }
+      // Temporarily append to DOM for rendering (html2canvas needs it in DOM)
+      const tempContainer = document.createElement('div');
+      tempContainer.style.position = 'absolute';
+      tempContainer.style.left = '-9999px';
+      tempContainer.style.top = '-9999px';
+      tempContainer.appendChild(svgForRender);
+      document.body.appendChild(tempContainer);
 
       try {
         // ============================================================
@@ -285,8 +173,8 @@ export class PdfExportService {
         const pageWidth = pdf.internal.pageSize.getWidth();   // 297.04mm
         const pageHeight = pdf.internal.pageSize.getHeight(); // 210.08mm
 
-        // Step 1: Capture canvas at high quality
-        let canvas = await this.captureHostElement(hostEl, params.pdfQuality);
+        // Step 1: Capture canvas at high quality (use the cloned SVG)
+        let canvas = await this.captureHostElement(tempContainer, params.pdfQuality);
         canvas = this.downscaleCanvasIfNeeded(canvas);
 
         const canvasAspectRatio = canvas.width / canvas.height;
@@ -318,10 +206,11 @@ export class PdfExportService {
         pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'FAST');
 
         // Add interactive overlays for selected suites
+        // IMPORTANT: Use svgForRender (cloned/cropped) not rootSvg (original)
         this.addSelectedSuiteIndicators(
           pdf,
           imgX, imgY, imgWidth, imgHeight,
-          rootSvg,
+          svgForRender,
           params.filteredRooms,
           params
         );
@@ -330,6 +219,11 @@ export class PdfExportService {
         pdf.setFontSize(14);
         pdf.setTextColor(0, 0, 0);
         pdf.text('Floorplan SVG (could not render image)', 20, 20);
+      } finally {
+        // Clean up: Remove temporary container from DOM
+        if (tempContainer && tempContainer.parentNode) {
+          document.body.removeChild(tempContainer);
+        }
       }
     }
 
@@ -340,7 +234,7 @@ export class PdfExportService {
 
   /**
    * Helper method: Calculate PDF coordinates for a room element
-   * Uses getBBox() - same approach as the color feature
+   * Uses getBBox() and getCTM() for accurate positioning, avoiding <defs> templates
    *
    * @returns PDF coordinates {pdfX, pdfY, pdfW, pdfH} or null if room not found
    */
@@ -348,30 +242,87 @@ export class PdfExportService {
     room: Room,
     svgElement: SVGSVGElement,
     vbX: number, vbY: number, vbW: number, vbH: number,
-    imgX: number, imgY: number, imgWidth: number, imgHeight: number
+    imgX: number, imgY: number, imgWidth: number, imgHeight: number,
+    params: PdfExportParams
   ): { pdfX: number; pdfY: number; pdfW: number; pdfH: number } | null {
-    const roomElement = svgElement.getElementById(room.id) as SVGGraphicsElement;
-    if (!roomElement) return null;
+    // Find room element (automatically prefers shapes over text)
+    let roomElement = params.findRoomElementInline(svgElement, room) as SVGGraphicsElement;
 
-    // Skip text elements - we only want room shapes (path, polygon, rect, etc.)
+    if (!roomElement) {
+      console.warn(`⚠️ ${room.name}: Element not found in SVG`);
+      return null;
+    }
+
+    // Skip elements inside <defs> - these are just templates, not the actual rooms
+    if (roomElement.closest('defs')) {
+      console.warn(`⚠️ ${room.name}: Found element inside <defs> (template definition), skipping`);
+
+      // Fallback: try to find element NOT in <defs>
+      const candidates = [
+        room.id,
+        room.name,
+        room.name.replace(/\s+/g, ''),
+        room.name.replace(/\s+/g, '-'),
+        room.name.replace(/\s+/g, '_'),
+      ];
+
+      for (const candidate of candidates) {
+        const escaped = CSS.escape(candidate);
+        const elements = svgElement.querySelectorAll(`#${escaped}`);
+
+        for (let i = 0; i < elements.length; i++) {
+          const el = elements[i];
+          if (!el.closest('defs')) {
+            roomElement = el as SVGGraphicsElement;
+            console.log(`✅ ${room.name}: Found visible instance (not in <defs>)`);
+            break;
+          }
+        }
+        if (roomElement && !roomElement.closest('defs')) break;
+      }
+
+      // If still in <defs>, give up
+      if (roomElement.closest('defs')) {
+        console.warn(`❌ ${room.name}: All elements found are in <defs>, cannot position`);
+        return null;
+      }
+    }
+
+    // Verify we got a shape element, not text
     const elementType = roomElement.tagName.toLowerCase();
     if (elementType === 'text' || elementType === 'tspan') {
-      console.warn(`⚠️ ${room.name}: Found text element instead of room shape. Skipping.`);
+      console.warn(`❌ ${room.name}: Only text element found, no shape. Skipping.`);
       return null;
     }
 
     const bbox = roomElement.getBBox();
 
-    // Validate bbox is within reasonable bounds
+    // Validate bbox dimensions
     if (bbox.width <= 0 || bbox.height <= 0) {
+      console.warn(`⚠️ ${room.name}: Invalid bbox dimensions (${bbox.width}x${bbox.height})`);
       return null;
     }
 
     // Map SVG ViewBox Units -> PDF Image Coordinates
+    // getBBox() returns coordinates in the element's local coordinate system
+    // We need to map these to PDF coordinates using the viewBox
     const pdfX = imgX + ((bbox.x - vbX) / vbW) * imgWidth;
     const pdfY = imgY + ((bbox.y - vbY) / vbH) * imgHeight;
     const pdfW = (bbox.width / vbW) * imgWidth;
     const pdfH = (bbox.height / vbH) * imgHeight;
+
+    // Safety check: if the box is exactly at the top-left corner, something is wrong
+    if (Math.abs(pdfX - imgX) < 1 && Math.abs(pdfY - imgY) < 1) {
+      console.warn(`❌ ${room.name}: Box positioned at top-left corner (likely still finding <defs>), skipping`);
+      return null;
+    }
+
+    console.log(`📍 ${room.name}: Position calculated`, {
+      elementType,
+      svgCoords: { x: bbox.x.toFixed(1), y: bbox.y.toFixed(1), w: bbox.width.toFixed(1), h: bbox.height.toFixed(1) },
+      viewBox: { x: vbX, y: vbY, w: vbW, h: vbH },
+      pdfCoords: { x: pdfX.toFixed(2), y: pdfY.toFixed(2), w: pdfW.toFixed(2), h: pdfH.toFixed(2) }
+    });
 
     return { pdfX, pdfY, pdfW, pdfH };
   }
@@ -415,13 +366,11 @@ export class PdfExportService {
 
     // Add clickable links to ALL non-selected colored rooms with videos
     nonSelectedRooms.forEach(room => {
-      const roomElement = svgElement.getElementById(room.id);
-      if (!roomElement) return;
-
       const coords = this.getRoomPdfCoordinates(
         room, svgElement,
         vbX, vbY, vbW, vbH,
-        imgX, imgY, imgWidth, imgHeight
+        imgX, imgY, imgWidth, imgHeight,
+        params
       );
       if (!coords) return;
 
@@ -449,14 +398,27 @@ export class PdfExportService {
       const boxX = pdfX + (pdfW - smallerW) / 2;
       const boxY = pdfY + (pdfH - smallerH) / 2;
 
-      // Add blue border and suite label
-      pdf.setDrawColor(0, 0, 255);
-      pdf.setLineWidth(0.4);
-      pdf.rect(boxX, boxY, smallerW, smallerH, 'S');
+      // Add suite label (no border)
+      pdf.setFontSize(6);
+      pdf.setTextColor(0, 0, 0);  // Black color
+      pdf.setFont('helvetica', 'bold');
 
-      pdf.setFontSize(8);
-      pdf.setTextColor(0, 0, 255);
-      pdf.text(room.name, boxX + smallerW / 2, boxY + smallerH / 2, { align: 'center', baseline: 'middle' });
+      // Show pax if multiple suites selected
+      const totalSelectedWithVideo = selectedRooms.length + nonSelectedRooms.length;
+      const labelText = totalSelectedWithVideo > 1 && room.capacity
+        ? `${room.name}`
+        : room.name;
+
+      // Suite name above center
+      pdf.text(labelText, boxX + smallerW / 2, boxY + smallerH / 2 - 2, { align: 'center', baseline: 'middle' });
+
+      // "WATCH" on first line
+      pdf.setFontSize(4);
+      pdf.text('WATCH', boxX + smallerW / 2, boxY + smallerH / 2 + 0.5, { align: 'center', baseline: 'middle' });
+
+      // "TOUR" on second line (tight spacing)
+      pdf.setFontSize(4);
+      pdf.text('TOUR', boxX + smallerW / 2, boxY + smallerH / 2 + 2, { align: 'center', baseline: 'middle' });
 
       // Add clickable area
       pdf.link(boxX, boxY, smallerW, smallerH, {
@@ -467,13 +429,11 @@ export class PdfExportService {
 
     // Add clickable links with visual indicators for selected rooms // sini clickable area
     selectedRooms.forEach(room => {
-      const roomElement = svgElement.getElementById(room.id);
-      if (!roomElement) return;
-
       const coords = this.getRoomPdfCoordinates(
         room, svgElement,
         vbX, vbY, vbW, vbH,
-        imgX, imgY, imgWidth, imgHeight
+        imgX, imgY, imgWidth, imgHeight,
+        params
       );
       if (!coords) return;
 
@@ -498,14 +458,27 @@ export class PdfExportService {
       const boxX = pdfX + (pdfW - smallerW) / 2;
       const boxY = pdfY + (pdfH - smallerH) / 2;
 
-      // Add orange border and suite label for selected rooms
-      pdf.setDrawColor(255, 102, 0);
-      pdf.setLineWidth(0.8);
-      pdf.rect(boxX, boxY, smallerW, smallerH, 'S');
+      // Add suite label for selected rooms (no border)
+      pdf.setFontSize(5);
+      pdf.setTextColor(0, 0, 0);  // Black color
+      pdf.setFont('helvetica', 'bold');
 
-      pdf.setFontSize(8);
-      pdf.setTextColor(255, 102, 0);
-      pdf.text(room.name, boxX + smallerW / 2, boxY + smallerH / 2, { align: 'center', baseline: 'middle' });
+      // Show pax if multiple suites selected
+      const totalSelectedWithVideo = selectedRooms.length + nonSelectedRooms.length;
+      const labelText = totalSelectedWithVideo > 1 && room.capacity
+        ? `${room.name}`
+        : room.name;
+
+      // Suite name above center
+      pdf.text(labelText, boxX + smallerW / 2, boxY + smallerH / 2 - 2, { align: 'center', baseline: 'middle' });
+
+      // "WATCH" on first line
+      pdf.setFontSize(4);
+      pdf.text('WATCH', boxX + smallerW / 2, boxY + smallerH / 2 + 0.5, { align: 'center', baseline: 'middle' });
+
+      // "TOUR" on second line (tight spacing)
+      pdf.setFontSize(4);
+      pdf.text('TOUR', boxX + smallerW / 2, boxY + smallerH / 2 + 2, { align: 'center', baseline: 'middle' });
 
       // Add clickable area
       pdf.link(boxX, boxY, smallerW, smallerH, {
@@ -611,6 +584,543 @@ export class PdfExportService {
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(src, 0, 0, dst.width, dst.height);
     return dst;
+  }
+
+  /**
+   * NEW: Vector-based PDF export using svg2pdf.js
+   * Renders SVG directly to PDF for crisp, scalable output
+   * Includes clickable links and labels for selected suites
+   */
+  async exportFloorplanAsPdfVector(params: PdfExportParams): Promise<jsPDF> {
+    const pdf = new jsPDF('landscape', 'mm', 'a4');
+
+    pdf.setProperties({
+      title: 'Private Suite Dashboard - Floorplan',
+      subject: 'Floorplan Export',
+      author: 'Private Suite Dashboard',
+      creator: 'Private Suite Dashboard',
+    });
+
+    const pageWidth = pdf.internal.pageSize.getWidth();   // 297mm
+    const pageHeight = pdf.internal.pageSize.getHeight(); // 210mm
+
+    const svgHosts = params.svgHosts;
+    if (svgHosts.length === 0) {
+      throw new Error('No floorplan data available for export');
+    }
+
+    let firstPageRendered = false;
+
+    for (let idx = 0; idx < svgHosts.length; idx++) {
+      const hostRef = svgHosts[idx];
+      const hostEl = hostRef.nativeElement as HTMLDivElement;
+      const rootSvg = hostEl.querySelector('svg') as SVGSVGElement | null;
+
+      if (!rootSvg) {
+        console.warn(`❌ No SVG found in host ${idx + 1}`);
+        continue;
+      }
+
+      // Check if this page should be included
+      const shouldIncludeThisPage = (() => {
+        if (!rootSvg) return false;
+        if ((params.selectedSuites?.length ?? 0) === 0) return true;
+        return params.selectedSuites.some((suiteName) => {
+          const room = params.rooms.find(r => r.name === suiteName);
+          if (!room) return false;
+          const el = params.findRoomElementInline(rootSvg, room);
+          return !!el;
+        });
+      })();
+
+      if (!shouldIncludeThisPage) {
+        continue;
+      }
+
+      if (firstPageRendered) {
+        pdf.addPage('landscape');
+      } else {
+        firstPageRendered = true;
+      }
+
+      // Add header and labels
+      pdf.setFontSize(16);
+      pdf.setTextColor(255, 102, 0);
+      pdf.text('Private Suite Dashboard - Floorplan', 15, 10);
+
+      // Add helpful note on top-right
+      pdf.setFontSize(8);
+      pdf.setTextColor(100, 100, 100); // Gray color
+      const noteText = 'Click the suite name or click directly on the suite in the floorplan to watch the tour.';
+      const noteWidth = pdf.getTextWidth(noteText);
+      pdf.text(noteText, pageWidth - noteWidth - 15, 10, { align: 'left' });
+
+      pdf.setFontSize(12);
+      pdf.setTextColor(0, 0, 0);
+      let yPos = 20;
+
+      // Add metadata labels (Outlet, Floor, Pax, Date, Suites)
+      yPos = this.addMetadataLabels(pdf, params, rootSvg, idx, yPos, pageWidth);
+
+      // Clone SVG for manipulation
+      const svgClone = rootSvg.cloneNode(true) as SVGSVGElement;
+
+      // Smart auto-crop based on actual room elements
+      this.applySmartAutoCrop(svgClone, params, 'Vector ');
+
+      // Get viewBox for coordinate mapping
+      const vbAttr = svgClone.getAttribute('viewBox');
+      if (!vbAttr) {
+        console.warn('SVG missing viewBox, using defaults');
+        svgClone.setAttribute('viewBox', '0 0 1920 1018');
+      }
+      const [vbX, vbY, vbW, vbH] = (svgClone.getAttribute('viewBox') || '0 0 1920 1018').split(' ').map(Number);
+
+      // Calculate available space for SVG
+      const imgY = yPos + 5;
+      const availableWidth = pageWidth - 80;  // 40mm margins
+      const availableHeight = pageHeight - imgY - 15;
+
+      // Calculate aspect ratios
+      const svgAspectRatio = vbW / vbH;
+      const availableAspectRatio = availableWidth / availableHeight;
+
+      let imgWidth: number, imgHeight: number;
+
+      if (svgAspectRatio > availableAspectRatio) {
+        // SVG is wider - constrain by width
+        imgWidth = availableWidth;
+        imgHeight = imgWidth / svgAspectRatio;
+      } else {
+        // SVG is taller - constrain by height
+        imgHeight = availableHeight;
+        imgWidth = imgHeight * svgAspectRatio;
+      }
+
+      // Center horizontally
+      const leftMargin = 40;
+      const imgX = leftMargin + (availableWidth - imgWidth) / 2;
+
+      // Store transformation parameters for coordinate mapping
+      const scaleX = imgWidth / vbW;
+      const scaleY = imgHeight / vbH;
+
+      console.log(`📐 SVG Transformation:`, {
+        viewBox: { x: vbX, y: vbY, w: vbW, h: vbH },
+        pdfPosition: { x: imgX, y: imgY, w: imgWidth, h: imgHeight },
+        scale: { x: scaleX, y: scaleY }
+      });
+
+      // Render SVG to PDF using svg2pdf.js
+      try {
+        await svg2pdf(svgClone, pdf, {
+          x: imgX,
+          y: imgY,
+          width: imgWidth,
+          height: imgHeight
+        });
+
+        console.log(`✅ SVG rendered to PDF at position (${imgX}, ${imgY}) with size ${imgWidth}x${imgHeight}mm`);
+
+        // Add clickable links and labels overlay
+        // IMPORTANT: Use svgClone (not rootSvg) because that's what was rendered
+        this.addClickableLinksVector(
+          pdf,
+          imgX, imgY, imgWidth, imgHeight,
+          vbX, vbY, vbW, vbH,
+          scaleX, scaleY,
+          svgClone,  // Use the cloned/cropped SVG, not the original
+          params
+        );
+
+      } catch (error) {
+        console.error('Error rendering SVG to PDF:', error);
+        pdf.setFontSize(14);
+        pdf.setTextColor(255, 0, 0);
+        pdf.text('Error rendering floorplan', 20, imgY + 20);
+      }
+    }
+
+    pdf.setPage(pdf.getNumberOfPages());
+    return pdf;
+  }
+
+  /**
+   * Smart auto-crop SVG to focus on rooms with videos
+   * Calculates bounding box from room elements and applies padding
+   */
+  private applySmartAutoCrop(
+    svgElement: SVGSVGElement,
+    params: PdfExportParams,
+    logPrefix: string = ''
+  ): void {
+    try {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      let foundRooms = 0;
+
+      // Calculate bounds from ALL rooms with videos (not just filtered)
+      // This ensures clickable boxes don't get clipped on the right side
+      const roomsToInclude = params.filteredRooms.filter(r => r.video && r.video.trim() !== '');
+
+      roomsToInclude.forEach(room => {
+        const el = params.findRoomElementInline(svgElement, room) as SVGGraphicsElement;
+        if (el && el.tagName.toLowerCase() !== 'text' && el.tagName.toLowerCase() !== 'tspan') {
+          try {
+            const bbox = el.getBBox();
+            if (bbox.width > 0 && bbox.height > 0) {
+              minX = Math.min(minX, bbox.x);
+              minY = Math.min(minY, bbox.y);
+              maxX = Math.max(maxX, bbox.x + bbox.width);
+              maxY = Math.max(maxY, bbox.y + bbox.height);
+              foundRooms++;
+
+              console.log(`📏 ${room.name}: bbox = (${bbox.x.toFixed(0)}, ${bbox.y.toFixed(0)}, ${bbox.width.toFixed(0)}x${bbox.height.toFixed(0)})`);
+            }
+          } catch (e) {
+            // Skip elements that can't provide bbox
+          }
+        }
+      });
+
+      // If we found room bounds, use them; otherwise fall back to full SVG bbox
+      if (foundRooms > 0 && isFinite(minX)) {
+        const padding = 50; // Larger padding to ensure no clipping
+        const newViewBox = `${minX - padding} ${minY - padding} ${(maxX - minX) + (padding * 2)} ${(maxY - minY) + (padding * 2)}`;
+        svgElement.setAttribute('viewBox', newViewBox);
+        console.log(`📦 ${logPrefix}Auto-crop: Found ${foundRooms} rooms with videos`);
+        console.log(`📦 ${logPrefix}Bounds: minX=${minX.toFixed(0)}, minY=${minY.toFixed(0)}, maxX=${maxX.toFixed(0)}, maxY=${maxY.toFixed(0)}`);
+        console.log(`📦 ${logPrefix}ViewBox: ${newViewBox}`);
+      } else {
+        // Fallback to entire SVG bbox
+        const bbox = svgElement.getBBox();
+        if (bbox.width > 0 && bbox.height > 0) {
+          const padding = 10;
+          const newViewBox = `${bbox.x - padding} ${bbox.y - padding} ${bbox.width + (padding * 2)} ${bbox.height + (padding * 2)}`;
+          svgElement.setAttribute('viewBox', newViewBox);
+          console.log(`📦 ${logPrefix}Auto-crop: Using full SVG bbox, viewBox: ${newViewBox}`);
+        }
+      }
+    } catch (e) {
+      console.warn(`${logPrefix}Auto-crop failed, using existing viewBox:`, e);
+      // Only set default if absolutely nothing exists
+      if (!svgElement.getAttribute('viewBox')) {
+        svgElement.setAttribute('viewBox', '0 0 1920 1018');
+      }
+    }
+  }
+
+  /**
+   * Add metadata labels to PDF (Outlet, Floor, Pax, Date, Suites)
+   * Returns the final Y position after labels
+   */
+  private addMetadataLabels(
+    pdf: jsPDF,
+    params: PdfExportParams,
+    rootSvg: SVGSVGElement,
+    pageIdx: number,
+    startY: number,
+    pageWidth: number
+  ): number {
+    let yPos = startY;
+
+    // Outlet
+    const selectedOffice = this.officeService.getOffices().find(office => office.id === params.filters.outlet);
+    const outletDisplayName = params.filters.outlet !== 'Select Outlet' && selectedOffice
+      ? selectedOffice.displayName
+      : params.filters.outlet;
+    pdf.text(`Outlet: ${outletDisplayName}`, 15, yPos);
+    yPos += 6;
+
+    // Floor
+    let floorLabel = 'N/A';
+    const visibleRooms = params.filteredRooms.filter(room => {
+      const el = params.findRoomElementInline(rootSvg, room);
+      return !!el && room.floor_id;
+    });
+    if (visibleRooms.length > 0 && visibleRooms[0].floor_id) {
+      const floorId = visibleRooms[0].floor_id;
+      floorLabel = this.floorService.getFloorLabelFromMap(floorId, params.floorIdToFloorMap);
+    } else {
+      const currentFloorplan = params.displayedSvgs[pageIdx];
+      if (currentFloorplan) {
+        floorLabel = params.getFloorLabel(currentFloorplan);
+      }
+    }
+    pdf.text(`Floor: ${floorLabel}`, 15, yPos);
+    yPos += 6;
+
+    // Pax
+    const paxValue = (() => {
+      if (params.selectedSuites.length > 0) {
+        const selectedRooms = params.rooms.filter(r => params.selectedSuites.includes(r.name));
+        const paxCapacities = Array.from(new Set(selectedRooms.map(r => r.capacity)))
+          .sort((a, b) => a - b);
+        if (paxCapacities.length === 1) {
+          return paxCapacities[0].toString();
+        } else if (paxCapacities.length > 1) {
+          return paxCapacities.join(', ');
+        }
+      }
+      return params.filters.pax !== 'Select Pax' ? params.filters.pax : 'All';
+    })();
+    pdf.text(`Pax: ${paxValue}`, 15, yPos);
+    yPos += 6;
+
+    // Date
+    if (params.selectedStartDate) {
+      const formattedStartDate = this.formatDateToDDMMYYYY(params.selectedStartDate);
+      if (params.selectedEndDate && params.selectedEndDate !== params.selectedStartDate) {
+        const formattedEndDate = this.formatDateToDDMMYYYY(params.selectedEndDate);
+        pdf.text(`Date: ${formattedStartDate} to ${formattedEndDate}`, 15, yPos);
+      } else {
+        pdf.text(`Date: ${formattedStartDate}`, 15, yPos);
+      }
+    } else {
+      const today = new Date();
+      const formattedToday = this.formatDateToDDMMYYYY(
+        `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+      );
+      pdf.text(`Date: ${formattedToday}`, 15, yPos);
+    }
+    yPos += 6;
+
+    // Suites
+    const suitesToShow = (() => {
+      const pageRoomHasName = (name: string) => {
+        const room = params.rooms.find(r => r.name === name);
+        return room ? !!params.findRoomElementInline(rootSvg, room) : false;
+      };
+      if (params.selectedSuites.length > 0) {
+        return params.selectedSuites.filter(pageRoomHasName);
+      }
+      const roomsOnThisPage = params.filteredRooms
+        .filter(r => pageRoomHasName(r.name))
+        .map(r => r.name);
+      return Array.from(new Set(roomsOnThisPage))
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    })();
+
+    pdf.setFontSize(12);
+    if (suitesToShow.length > 0) {
+      const suitesLabel = 'Suite: ';
+      const manySuites = suitesToShow.length > 6;
+      const fontToUse = manySuites ? 9 : 11;
+
+      pdf.setFontSize(fontToUse);
+
+      // Render "Suite: " label
+      pdf.text(suitesLabel, 15, yPos);
+
+      // Calculate starting X position after "Suite: " label
+      const labelWidth = pdf.getTextWidth(suitesLabel);
+      let currentX = 15 + labelWidth;
+      let currentY = yPos;
+      const maxWidth = pageWidth - 100;
+      const lineHeight = manySuites ? 5 : 5.5;
+
+      // Render each suite with clickable link
+      suitesToShow.forEach((suiteName, index) => {
+        const room = params.rooms.find(r => r.name === suiteName);
+
+        // Build suite text with pax
+        const suiteText = (suitesToShow.length > 1 && room && room.capacity)
+          ? `${suiteName} (Pax: ${room.capacity})`
+          : suiteName;
+
+        // Add comma separator if not the first item
+        const displayText = index > 0 ? `, ${suiteText}` : suiteText;
+        const textWidth = pdf.getTextWidth(displayText);
+
+        // Check if we need to wrap to next line
+        if (currentX + textWidth > maxWidth && index > 0) {
+          currentY += lineHeight;
+          currentX = 15 + 8; // Indent wrapped lines (8 spaces)
+          // Remove leading comma and space for wrapped lines
+          const wrappedText = suiteText;
+          const wrappedWidth = pdf.getTextWidth(wrappedText);
+
+          pdf.text(wrappedText, currentX, currentY);
+
+          // Add clickable link if suite has video
+          if (room && room.video && room.video.trim() !== '') {
+            pdf.link(currentX, currentY - 3, wrappedWidth, 4, { url: room.video, target: '_blank' });
+          }
+
+          currentX += wrappedWidth;
+        } else {
+          pdf.text(displayText, currentX, currentY);
+
+          // Add clickable link if suite has video
+          if (room && room.video && room.video.trim() !== '') {
+            pdf.link(currentX, currentY - 3, textWidth, 4, { url: room.video, target: '_blank' });
+          }
+
+          currentX += textWidth;
+        }
+      });
+
+      yPos = currentY + lineHeight;
+      pdf.setFontSize(12);
+    } else {
+      pdf.text('Suite: None', 15, yPos);
+      yPos += 5;
+    }
+
+    return yPos;
+  }
+
+  /**
+   * Add clickable links and labels for suites with video URLs
+   * Uses the transformation parameters from svg2pdf rendering
+   */
+  private addClickableLinksVector(
+    pdf: jsPDF,
+    imgX: number, imgY: number, imgWidth: number, imgHeight: number,
+    vbX: number, vbY: number, vbW: number, vbH: number,
+    scaleX: number, scaleY: number,
+    rootSvg: SVGSVGElement,
+    params: PdfExportParams
+  ): void {
+    const filteredRooms = params.filteredRooms;
+
+    // Separate selected and non-selected rooms with video links
+    const selectedRooms = filteredRooms.filter(room =>
+      params.selectedSuites.includes(room.name) && room.video && room.video.trim() !== ''
+    );
+    const nonSelectedRooms = filteredRooms.filter(room =>
+      !params.selectedSuites.includes(room.name) && room.video && room.video.trim() !== ''
+    );
+
+    console.log(`🔗 Adding clickable links: ${selectedRooms.length} selected, ${nonSelectedRooms.length} non-selected`);
+
+    // Add blue boxes for non-selected suites
+    nonSelectedRooms.forEach(room => {
+      const coords = this.getRoomPdfCoordinatesVector(
+        room, rootSvg,
+        imgX, imgY, vbX, vbY, scaleX, scaleY,
+        params
+      );
+      if (!coords) return;
+
+      const { pdfX, pdfY, pdfW, pdfH } = coords;
+
+      // Make box smaller (60% of original size) and center it
+      const smallerW = pdfW * 0.6;
+      const smallerH = pdfH * 0.6;
+      const boxX = pdfX + (pdfW - smallerW) / 2;
+      const boxY = pdfY + (pdfH - smallerH) / 2;
+
+      // Blue border and label
+      pdf.setDrawColor(0, 0, 255);
+      pdf.setLineWidth(0.4);
+      pdf.rect(boxX, boxY, smallerW, smallerH, 'S');
+
+      pdf.setFontSize(6);
+      pdf.setTextColor(0, 0, 255);
+      pdf.text(room.name, boxX + smallerW / 2, boxY + smallerH / 2, { align: 'center', baseline: 'middle' });
+
+      // Add clickable link
+      pdf.link(boxX, boxY, smallerW, smallerH, { url: room.video, target: '_blank' });
+
+      console.log(`🔵 ${room.name}: Blue box at (${boxX.toFixed(1)}, ${boxY.toFixed(1)})`);
+    });
+
+    // Add orange boxes for selected suites
+    selectedRooms.forEach(room => {
+      const coords = this.getRoomPdfCoordinatesVector(
+        room, rootSvg,
+        imgX, imgY, vbX, vbY, scaleX, scaleY,
+        params
+      );
+      if (!coords) return;
+
+      const { pdfX, pdfY, pdfW, pdfH } = coords;
+
+      // Make box smaller (60% of original size) and center it
+      const smallerW = pdfW * 0.6;
+      const smallerH = pdfH * 0.6;
+      const boxX = pdfX + (pdfW - smallerW) / 2;
+      const boxY = pdfY + (pdfH - smallerH) / 2;
+
+      // Orange border and label
+      pdf.setDrawColor(255, 102, 0);
+      pdf.setLineWidth(0.8);
+      pdf.rect(boxX, boxY, smallerW, smallerH, 'S');
+
+      pdf.setFontSize(6);
+      pdf.setTextColor(255, 102, 0);
+      pdf.text(room.name, boxX + smallerW / 2, boxY + smallerH / 2, { align: 'center', baseline: 'middle' });
+
+      // Add clickable link
+      pdf.link(boxX, boxY, smallerW, smallerH, { url: room.video!, target: '_blank' });
+
+      console.log(`🟠 ${room.name}: Orange box at (${boxX.toFixed(1)}, ${boxY.toFixed(1)})`);
+    });
+  }
+
+  /**
+   * Calculate PDF coordinates for a room element using svg2pdf transformation
+   *
+   * KEY COORDINATE MAPPING FORMULA:
+   * 1. Get element's bounding box in SVG coordinates: bbox = element.getBBox()
+   * 2. Convert to PDF coordinates:
+   *    pdfX = imgX + (bbox.x - vbX) * scaleX
+   *    pdfY = imgY + (bbox.y - vbY) * scaleY
+   *    pdfW = bbox.width * scaleX
+   *    pdfH = bbox.height * scaleY
+   *
+   * Where:
+   * - imgX, imgY: PDF position where SVG starts (top-left corner)
+   * - vbX, vbY: ViewBox offset (from viewBox="vbX vbY vbW vbH")
+   * - scaleX, scaleY: Scaling factors (pdfWidth/viewBoxWidth, pdfHeight/viewBoxHeight)
+   */
+  private getRoomPdfCoordinatesVector(
+    room: Room,
+    svgElement: SVGSVGElement,
+    imgX: number, imgY: number,
+    vbX: number, vbY: number,
+    scaleX: number, scaleY: number,
+    params: PdfExportParams
+  ): { pdfX: number; pdfY: number; pdfW: number; pdfH: number } | null {
+    // Find room element (automatically prefers shapes over text)
+    const roomElement = params.findRoomElementInline(svgElement, room) as SVGGraphicsElement;
+
+    if (!roomElement) {
+      console.warn(`⚠️ ${room.name}: Element not found in SVG`);
+      return null;
+    }
+
+    // Verify we got a shape element, not text
+    const elementType = roomElement.tagName.toLowerCase();
+    if (elementType === 'text' || elementType === 'tspan') {
+      console.warn(`❌ ${room.name}: Only text element found, no shape. Skipping.`);
+      return null;
+    }
+
+    // Get bounding box in SVG coordinates
+    const bbox = roomElement.getBBox();
+
+    if (bbox.width <= 0 || bbox.height <= 0) {
+      console.warn(`⚠️ ${room.name}: Invalid bbox dimensions (${bbox.width}x${bbox.height})`);
+      return null;
+    }
+
+    // COORDINATE MAPPING FORMULA:
+    // Convert SVG coordinates → PDF coordinates using the transformation parameters
+    const pdfX = imgX + (bbox.x - vbX) * scaleX;
+    const pdfY = imgY + (bbox.y - vbY) * scaleY;
+    const pdfW = bbox.width * scaleX;
+    const pdfH = bbox.height * scaleY;
+
+    console.log(`📍 ${room.name}: Vector coordinate mapping`, {
+      elementType,
+      svgCoords: { x: bbox.x.toFixed(1), y: bbox.y.toFixed(1), w: bbox.width.toFixed(1), h: bbox.height.toFixed(1) },
+      viewBox: { x: vbX, y: vbY },
+      scale: { x: scaleX.toFixed(3), y: scaleY.toFixed(3) },
+      pdfCoords: { x: pdfX.toFixed(2), y: pdfY.toFixed(2), w: pdfW.toFixed(2), h: pdfH.toFixed(2) }
+    });
+
+    return { pdfX, pdfY, pdfW, pdfH };
   }
 
   savePdfSmart(pdf: jsPDF, fileName: string): void {

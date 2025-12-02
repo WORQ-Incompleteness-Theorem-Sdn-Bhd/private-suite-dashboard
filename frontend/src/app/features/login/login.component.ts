@@ -23,10 +23,10 @@ export class LoginComponent {
     this.buttonDisabled = true;
     try {
       await this.auth.signInWithGoogle();
-      this.toastService.success('Successfully signed in!');
+      // Success toast is now handled by AuthService based on email domain validation
     } catch (err: any) {
       console.error('[Login] Sign-in failed:', err);
-      
+
       // Handle specific error cases
       if (err?.code === 'auth/popup-closed-by-user') {
         this.toastService.info('Sign-in cancelled');

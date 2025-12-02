@@ -194,11 +194,11 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   pdfExportMessage = '';
   showPdfMessage = false;
   
-  // PDF quality settings - compact size for better fit
+  // PDF quality settings - high resolution for crisp labels
   private readonly pdfQuality = {
-    scale: 1.5, // Reduced from 2 for more compact size
-    quality: 0.85, // Slightly lower quality for smaller file size
-    dimensions: { width: 1800, height: 1200 } // Smaller dimensions for compact layout
+    scale: 3, // High resolution for crisp text and labels
+    quality: 0.95, // High quality for better readability
+    dimensions: { width: 2400, height: 1600 } // Larger dimensions for better detail
   };
 
   // Compact mode for PDF export

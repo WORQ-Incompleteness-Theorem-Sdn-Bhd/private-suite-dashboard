@@ -92,9 +92,57 @@ export function findRoomElementInDoc(doc: Document, room: Room): Element | null 
 }
 
 export function findRoomElementInline(rootSvg: SVGSVGElement, room: Room): Element | null {
-  const byId = rootSvg.querySelector(`#${CSS.escape(room.id)}`);
+  // Helper function to check if element is an actual shape (not text or group)
+  const isShapeElement = (el: Element | null): boolean => {
+    if (!el) return false;
+    const tag = el.tagName.toLowerCase();
+    // Only accept actual shape elements
+    return tag === 'path' || tag === 'polygon' || tag === 'rect' ||
+           tag === 'circle' || tag === 'ellipse' || tag === 'line' || tag === 'polyline';
+  };
+
+  // Helper function to find shape element from a selector
+  const findShapeElement = (selector: string): Element | null => {
+    const elements = rootSvg.querySelectorAll(selector);
+
+    console.log(`🔍 findRoomElementInline: ${room.name} with selector "${selector}" found ${elements.length} elements`);
+
+    // Log all elements found for debugging
+    for (let i = 0; i < elements.length; i++) {
+      const tag = elements[i].tagName.toLowerCase();
+      const isShape = isShapeElement(elements[i]);
+      const inDefs = !!elements[i].closest('defs');
+      console.log(`  [${i}] <${tag}> ${isShape ? '✅ SHAPE' : '❌ ' + tag}${inDefs ? ' [IN <defs>]' : ''}`);
+
+      // If it's a shape element, log its bbox
+      if (isShape) {
+        try {
+          const bbox = (elements[i] as SVGGraphicsElement).getBBox();
+          console.log(`       bbox: (${bbox.x.toFixed(1)}, ${bbox.y.toFixed(1)}, ${bbox.width.toFixed(1)}x${bbox.height.toFixed(1)})`);
+        } catch (e) {
+          console.log(`       bbox: error getting bbox`);
+        }
+      }
+    }
+
+    // First pass: look for shape elements NOT in <defs>
+    for (let i = 0; i < elements.length; i++) {
+      if (isShapeElement(elements[i]) && !elements[i].closest('defs')) {
+        console.log(`  ✅ Selected element [${i}] <${elements[i].tagName.toLowerCase()}> (not in <defs>)`);
+        return elements[i];
+      }
+    }
+
+    // Second pass: if no visible shape found, return null
+    console.log(`  ❌ No shape element found outside <defs> for ${room.name}, returning null`);
+    return null;
+  };
+
+  // Try room.id first
+  const byId = findShapeElement(`#${CSS.escape(room.id)}`);
   if (byId) return byId;
 
+  // Try name variants
   const variants = [
     room.name,
     room.name.replace(/\s+/g, ''),
@@ -102,9 +150,10 @@ export function findRoomElementInline(rootSvg: SVGSVGElement, room: Room): Eleme
     room.name.replace(/\s+/g, '_'),
   ];
   for (const v of variants) {
-    const el = rootSvg.querySelector(`#${CSS.escape(v)}`);
+    const el = findShapeElement(`#${CSS.escape(v)}`);
     if (el) return el;
   }
+
   return null;
 }
 

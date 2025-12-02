@@ -205,7 +205,7 @@ async function processUpload(
         bucket: BUCKET,
         path: finalKey,
         signedUrl: null,
-        signedUrlError: "Failed to generate signed URL",
+        // signedUrlError: "Failed to generate signed URL",
         metadata: {
           originalName: file.filename,
           size: file.size,

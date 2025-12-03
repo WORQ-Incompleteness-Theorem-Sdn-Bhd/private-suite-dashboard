@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, of } from 'rxjs';
-import { tap, map, catchError, switchMap } from 'rxjs/operators';
+import { tap, map, catchError, switchMap, combineLatest } from 'rxjs/operators';
 import { Office, OfficeResponse } from '../models/office.model';
 import { environment } from '../../environments/environment';
 
@@ -170,5 +170,147 @@ export class OfficeService {
 
   getOfficeById(id: string): Office | undefined {
     return this.officesSubject.value.find(office => office.id === id);
+  }
+
+  /**
+   * Temporarily set filtered offices in the subject
+   * Used by dashboard to show only offices with floorplans
+   * @param offices Filtered office array
+   */
+  setFilteredOffices(offices: Office[]): void {
+    console.log('🏢 [OFFICE SERVICE] Setting filtered offices:', offices.length);
+    this.officesSubject.next(offices);
+  }
+
+  /**
+   * Load offices and filter by floorplans availability
+   * This method loads all offices, filters them by floorplan availability, and updates the BehaviorSubject
+   * Use this for dashboard to ensure only offices with floorplans are shown
+   * @returns Observable with success status and count
+   */
+  loadOfficesWithFloorplans(): Observable<{ success: boolean; count: number }> {
+    this.loadingSubject.next(true);
+
+    // First load all offices, but DON'T update the subject yet
+    return this.http.get<any>(`${environment.apiBaseUrl}/api/bigquery/locations`).pipe(
+      map(bqResponse => {
+        const bqOffices = bqResponse.data || [];
+
+        // Map BigQuery office data to Office interface
+        const officesFromBq = bqOffices
+          .filter((office: any) => {
+            const hasValidId = office.location_id && office.location_id.trim() !== '';
+            const hasValidName = office.location_name && office.location_name.trim() !== '';
+            return hasValidId && hasValidName;
+          })
+          .map((office: any) => {
+            const staticOffice = this.staticOffices.find(so => so.id === office.location_id);
+
+            return {
+              id: office.location_id,
+              name: office.location_name,
+              displayName: office.location_name,
+              svg: staticOffice?.svg || []
+            } as Office;
+          });
+
+        return officesFromBq;
+      }),
+      switchMap((allOffices: Office[]) => {
+        // Now get floorplans to filter
+        return this.http.get<any[]>(`${environment.apiBaseUrl}/api/floorplans`).pipe(
+          map(floorplans => {
+            if (!floorplans || floorplans.length === 0) {
+              console.log('⚠️ No floorplans found in backend');
+              return [];
+            }
+
+            // Extract unique office IDs that have floorplans
+            const officeIdsWithFloorplans = new Set<string>();
+            floorplans.forEach((fp: any) => {
+              if (fp.officeId) {
+                officeIdsWithFloorplans.add(fp.officeId);
+              }
+            });
+
+            console.log('📊 Offices with floorplans:', Array.from(officeIdsWithFloorplans));
+
+            // Filter offices to only those with floorplans
+            const filteredOffices = allOffices.filter(office =>
+              officeIdsWithFloorplans.has(office.id)
+            );
+
+            console.log('✅ Filtered offices count:', filteredOffices.length);
+            return filteredOffices;
+          }),
+          catchError(error => {
+            console.error('❌ Error loading floorplans:', error);
+            return of<Office[]>([]);
+          })
+        );
+      }),
+      tap((filteredOffices: Office[]) => {
+        // Update the BehaviorSubject with filtered offices only
+        this.officesSubject.next(filteredOffices);
+        this.loadingSubject.next(false);
+        console.log('🏢 [OFFICE SERVICE] Updated subject with filtered offices:', filteredOffices.length);
+      }),
+      map((filteredOffices: Office[]) => ({
+        success: true,
+        count: filteredOffices.length
+      })),
+      catchError(error => {
+        console.error('❌ Error loading offices with floorplans:', error);
+        this.officesSubject.next([]);
+        this.loadingSubject.next(false);
+        return of({ success: false, count: 0 });
+      })
+    );
+  }
+
+  /**
+   * Get offices that have at least one floorplan uploaded
+   * @param filterByFloorplans If true, only return offices with floorplans; if false, return all offices
+   * @returns Observable of offices (filtered or all)
+   */
+  getOfficesWithFloorplans(filterByFloorplans: boolean = true): Observable<Office[]> {
+    if (!filterByFloorplans) {
+      // Return all offices without filtering
+      return this.offices$;
+    }
+
+    // Get all floorplans from backend
+    return this.http.get<any[]>(`${environment.apiBaseUrl}/api/floorplans`).pipe(
+      combineLatest(this.offices$),
+      map(([floorplans, allOffices]) => {
+        if (!floorplans || floorplans.length === 0) {
+          console.log('⚠️ No floorplans found in backend');
+          return [];
+        }
+
+        // Extract unique office IDs that have floorplans
+        const officeIdsWithFloorplans = new Set<string>();
+        floorplans.forEach((fp: any) => {
+          if (fp.officeId) {
+            officeIdsWithFloorplans.add(fp.officeId);
+          }
+        });
+
+        console.log('📊 Offices with floorplans:', Array.from(officeIdsWithFloorplans));
+
+        // Filter offices to only those with floorplans
+        const filteredOffices = allOffices.filter(office =>
+          officeIdsWithFloorplans.has(office.id)
+        );
+
+        console.log('✅ Filtered offices count:', filteredOffices.length);
+        return filteredOffices;
+      }),
+      catchError(error => {
+        console.error('❌ Error loading offices with floorplans:', error);
+        // On error, return empty array (will show "No floorplans available")
+        return of<Office[]>([]);
+      })
+    );
   }
 }

@@ -21,7 +21,7 @@ import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeResourceUrl, SafeHtml } from '@angular/platform-browser';
 import { AuthService } from '../../shared/services/auth.service';
 import { Observable, of, forkJoin, combineLatest, timer } from 'rxjs';
-import { catchError, finalize, map, switchMap, tap, filter, first, takeUntil, timeout } from 'rxjs/operators';
+import { catchError, finalize, tap } from 'rxjs/operators';
 import { ToastComponent } from '../../shared/components/toast.component';
 import { HttpClient } from '@angular/common/http';
 // Services
@@ -320,8 +320,11 @@ ngOnInit() {
       this.fetchAvailabilityForCurrentSelection();
     } else {
       // No date selected → use current room status
-      this.buildOptions();
-      this.applyFilters();
+      // Only build options if offices are already loaded (to prevent showing all offices)
+      if (this.officeService.getOffices().length > 0) {
+        this.buildOptions();
+        this.applyFilters();
+      }
     }
   });
   }
@@ -340,19 +343,31 @@ ngOnInit() {
   // Load offices on app start
   loadOffices() {
     this.isLoadingOffices = true;
-    this.officeService.loadOffices().pipe(
+    console.log('🏢 [DASHBOARD] Loading offices with floorplans...');
+
+    // Use the new method that loads and filters in one step
+    // This ensures the BehaviorSubject is only updated with filtered offices
+    this.officeService.loadOfficesWithFloorplans().pipe(
       catchError((error) => {
-        console.error('Error loading outlet:', error);
-        this.toastService.error('Failed to load outlet. Please try again.');
-        return of(null);
+        console.error('❌ [DASHBOARD] Error loading outlets:', error);
+        this.toastService.error('Failed to load outlets. Please try again.');
+        return of({ success: false, count: 0 });
       }),
       finalize(() => {
         this.isLoadingOffices = false;
       })
-    ).subscribe((response) => {
-      if (response && response.success) {
-        this.toastService.success('Outlets loaded successfully');
-        this.buildOptions();
+    ).subscribe((result) => {
+      if (result.success) {
+        console.log('✅ [DASHBOARD] Filtered offices count:', result.count);
+
+        if (result.count > 0) {
+          this.toastService.success('Outlets loaded successfully');
+          this.buildOptions();
+        } else {
+          console.warn('⚠️ [DASHBOARD] No outlets with floorplans found');
+          this.toastService.info('No outlets with floorplans available');
+          this.buildOptions(); // Still build options to show empty state
+        }
       }
     });
   }
@@ -450,8 +465,11 @@ ngOnInit() {
 
   // Build filters from backend data
   buildFiltersFromBackend() {
-    this.buildOptions();
-    this.applyFilters();
+    // Only build options if offices are loaded (for dashboard with filtered offices)
+    if (this.officeService.getOffices().length > 0) {
+      this.buildOptions();
+      this.applyFilters();
+    }
   }
 
   ngAfterViewInit() {
@@ -636,6 +654,8 @@ ngOnInit() {
   }
 
   buildOptions() {
+    console.log('🔨 [buildOptions] Building dropdown options. Current offices count:', this.officeService.getOffices().length);
+
     const result = this.dropdownFilterService.buildOptions(
       this.rooms,
       this.filters,
@@ -649,6 +669,8 @@ ngOnInit() {
     this.statusOptions = result.statusOptions;
     this.paxOptions = result.paxOptions;
     this.suiteOptions = result.suiteOptions;
+
+    console.log('🔨 [buildOptions] Outlet options built:', this.outletOptions.length, 'outlets');
 
     // Keep filtersConfig in sync
     this.filtersConfig.find((f) => f.key === 'outlet')!.options =
@@ -1390,10 +1412,11 @@ async downloadFloorplanWithDetails(format: 'svg' | 'png' = 'svg') {
       }
 
       // Get dynamic buckets and color map for current outlet (from /resources pax_size data)
-      const dynamicBuckets = this.paxBuckets;
+      let dynamicBuckets = this.paxBuckets;
       let paxBucketColorMap: Map<number, string> | undefined;
       if (this.rooms && this.rooms.length > 0) {
-        const { colorMap } = this.colorPaxService.buildDynamicBuckets(this.rooms);
+        const { buckets, colorMap } = this.colorPaxService.buildDynamicBuckets(this.rooms);
+        dynamicBuckets = buckets;
         paxBucketColorMap = colorMap;
       }
       

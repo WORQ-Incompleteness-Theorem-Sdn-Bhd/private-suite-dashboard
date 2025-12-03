@@ -187,8 +187,8 @@ export async function getFloors(req: Request, res: Response): Promise<void> {
     const rows = await fetchFromTable({
       limit,
       offset,
-      allowedSelect: ["extraction_date", "floor_id", "floor_no", "floor_name"],
-      allowedFilter: ["extraction_date"],
+      allowedSelect: ["extraction_date", "floor_id", "floor_no", "floor_name", "location_id"],
+      allowedFilter: ["extraction_date", "location_id"],
       filters,
       table: process.env.BQ_FLOOR_TABLE_ID,
     });

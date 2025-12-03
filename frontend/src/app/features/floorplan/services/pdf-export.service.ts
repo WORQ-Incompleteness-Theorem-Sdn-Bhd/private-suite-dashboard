@@ -8,7 +8,6 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { svg2pdf } from 'svg2pdf.js';
 import * as FloorplanUtils from './floorplan-utils';
-
 export interface PdfExportParams {
   svgHosts: any[];
   rooms: Room[];
@@ -33,7 +32,6 @@ export interface PdfExportParams {
     dimensions: { width: number; height: number };
   };
 }
-
 @Injectable({
   providedIn: 'root'
 })
@@ -41,34 +39,108 @@ export class PdfExportService {
   constructor(
     private officeService: OfficeService,
     private floorService: FloorService,
-    // private colorPaxService: ColorPaxService /* no dependencies for now */
+    private colorPaxService: ColorPaxService
   ) {}
-
   /**
    * Helper: Format date from YYYY-MM-DD to DD/MM/YYYY
    */
   private formatDateToDDMMYYYY(dateString: string): string {
     if (!dateString) return '';
-
     // Check if date is in YYYY-MM-DD format
     const parts = dateString.split('-');
     if (parts.length === 3) {
       const [year, month, day] = parts;
       return `${day}/${month}/${year}`;
     }
-
     // Return as-is if format is unexpected
     return dateString;
   }
-
+  /**
+   * Helper: Convert hex color to RGB
+   */
+  private hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? {
+      r: parseInt(result[1], 16),
+      g: parseInt(result[2], 16),
+      b: parseInt(result[3], 16)
+    } : null;
+  }
+  /**
+   * Add legend to PDF showing suite status indicators and capacity colors
+   * Logic:
+   * - If user selected date/date range (without status dropdown) -> Show STATUS colors (Available/Occupied)
+   * - If user selected status dropdown -> Show PAX capacity colors
+   */
+  private addLegendToPdf(
+    pdf: jsPDF,
+    pageWidth: number,
+    yPos: number,
+    params: PdfExportParams
+  ): number {
+    // Determine which legend to show
+    // Status filter values: "Available", "Occupied", "Select Status" (default)
+    const hasDateFilter = params.selectedStartDate && params.selectedStartDate.trim() !== '';
+    const hasStatusFilter = params.filters.status &&
+                           params.filters.status !== 'Select Status' &&
+                           (params.filters.status === 'Available' || params.filters.status === 'Occupied');
+    // Decision logic:
+    // - Show STATUS colors ONLY if date is selected AND status is NOT selected (status = "Select Status")
+    const showStatusColors = hasDateFilter && !hasStatusFilter;
+    // If no date selected or status is selected, don't show legend
+    if (!showStatusColors) {
+      return yPos;
+    }
+    // 1. Setup Legend Position (Right side of the header)
+    const legendWidth = 60;
+    const startX = pageWidth - legendWidth - 15; // 15mm from right edge
+    let currentY = 20; // Start at top aligned with header
+    // Calculate legend height dynamically
+    let legendHeight = 20; // Base height for title
+    if (showStatusColors) {
+      legendHeight += 15; // Space for Available and Occupied indicators
+    }
+    // Draw Legend Box (Optional background)
+    pdf.setFillColor(250, 250, 250); // Very light gray
+    pdf.setDrawColor(200, 200, 200);
+    pdf.rect(startX - 5, currentY - 5, legendWidth, legendHeight, 'FD');
+    // Title
+    pdf.setFontSize(10);
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Legend', startX, currentY);
+    currentY += 6;
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'normal');
+    // Show STATUS COLORS (Available = Green, Occupied = Red)
+    if (showStatusColors) {
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Status Colors:', startX, currentY);
+      currentY += 5;
+      pdf.setFont('helvetica', 'normal');
+      // Available (Green)
+      pdf.setFillColor(34, 197, 94); // Light green
+      pdf.setDrawColor(100, 100, 100);
+      pdf.rect(startX, currentY - 3, 4, 4, 'FD');
+      pdf.setTextColor(0, 0, 0);
+      pdf.text('Available', startX + 6, currentY);
+      currentY += 5;
+      // Occupied (Red)
+      pdf.setFillColor(239, 68, 68); // Light red/pink
+      pdf.setDrawColor(100, 100, 100);
+      pdf.rect(startX, currentY - 3, 4, 4, 'FD');
+      pdf.setTextColor(0, 0, 0);
+      pdf.text('Occupied', startX + 6, currentY);
+      currentY += 5;
+    }
+    return yPos; // Return original yPos so main layout isn't affected
+  }
   // HELPER: Determines the box color based on room capacity
   // private getRoomColorForPdf(room: Room, params: PdfExportParams): string {
   //   const capacity = room.capacity || 1;
-
   //   for (let i = 0; i < params.paxBuckets.length; i++) {
   //     const bucket = params.paxBuckets[i];
   //     const prevMax = i === 0 ? 0 : params.paxBuckets[i - 1].max;
-
   //     if (capacity > prevMax && capacity <= bucket.max) {
   //       if (params.paxBucketColorMap && params.paxBucketColorMap.has(bucket.max)) {
   //         return params.paxBucketColorMap.get(bucket.max)!;
@@ -78,37 +150,30 @@ export class PdfExportService {
   //   }
   //   return params.paxPalette[params.paxPalette.length - 1] || '#cccccc';
   // }
-
   async exportFloorplanAsPdf(params: PdfExportParams): Promise<jsPDF> {
     const pdf = new jsPDF('landscape', 'mm', 'a4');
-
     pdf.setProperties({
       title: 'Private Suite Dashboard - Floorplan',
       subject: 'Floorplan Export',
       author: 'Private Suite Dashboard',
       creator: 'Private Suite Dashboard',
     });
-
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
     // const pageHeight = pdf.internal.pageSize.getHeight(); // Unused
-
     const svgHosts = params.svgHosts;
     if (svgHosts.length === 0) {
       throw new Error('No floorplan data available for export');
     }
-
     let firstPageRendered = false;
     for (let idx = 0; idx < svgHosts.length; idx++) {
       const hostRef = svgHosts[idx];
       const hostEl = hostRef.nativeElement as HTMLDivElement;
       const rootSvg = hostEl.querySelector('svg') as SVGSVGElement | null;
-
       if (!rootSvg) {
         console.warn(`❌ No SVG found in host ${idx + 1}`);
         continue;
       }
-
       const shouldIncludeThisPage = (() => {
         if (!rootSvg) return false;
         if ((params.selectedSuites?.length ?? 0) === 0) return true;
@@ -119,43 +184,35 @@ export class PdfExportService {
           return !!el;
         });
       })();
-
       if (!shouldIncludeThisPage) {
         continue;
       }
-
       if (firstPageRendered) {
         pdf.addPage('landscape');
       } else {
         firstPageRendered = true;
       }
-
       pdf.setFontSize(16); // Larger header font
       pdf.setTextColor(255, 102, 0);
       pdf.text('Private Suite Dashboard - Floorplan', 15, 10);
-
       // Add helpful note on top-right
       pdf.setFontSize(8);
       pdf.setTextColor(100, 100, 100); // Gray color
       const noteText = 'Click the suite name or click directly on the suite in the floorplan to watch the tour.';
       const noteWidth = pdf.getTextWidth(noteText);
       pdf.text(noteText, pageWidth - noteWidth - 15, 10, { align: 'left' });
-
       pdf.setFontSize(12);
       pdf.setTextColor(0, 0, 0);
       let yPos = 20;
-
       // Add metadata labels (Outlet, Floor, Pax, Date, Suites)
       yPos = this.addMetadataLabels(pdf, params, rootSvg, idx, yPos, pageWidth);
-
+      // Add legend (Status colors or Pax capacity colors)
+      this.addLegendToPdf(pdf, pageWidth, yPos, params);
       // --- IMAGE GENERATION ---
-
       // Clone SVG to avoid modifying the original DOM element
       const svgForRender = rootSvg.cloneNode(true) as SVGSVGElement;
-
       // Smart auto-crop based on actual room elements
       this.applySmartAutoCrop(svgForRender, params, 'Raster ');
-
       // Temporarily append to DOM for rendering (html2canvas needs it in DOM)
       const tempContainer = document.createElement('div');
       tempContainer.style.position = 'absolute';
@@ -163,48 +220,38 @@ export class PdfExportService {
       tempContainer.style.top = '-9999px';
       tempContainer.appendChild(svgForRender);
       document.body.appendChild(tempContainer);
-
       try {
         // ============================================================
         // PIXEL-PERFECT PDF EXPORT WITH EXACT TARGET METRICS
         // ============================================================
-
         // A4 Landscape dimensions
         const pageWidth = pdf.internal.pageSize.getWidth();   // 297.04mm
         const pageHeight = pdf.internal.pageSize.getHeight(); // 210.08mm
-
         // Step 1: Capture canvas at high quality (use the cloned SVG)
         let canvas = await this.captureHostElement(tempContainer, params.pdfQuality);
         canvas = this.downscaleCanvasIfNeeded(canvas);
-
         const canvasAspectRatio = canvas.width / canvas.height;
-
         // Calculate floorplan space - maximize available area
         const imgY = yPos + 5; // Start below the labels with small margin
         const availableWidth = pageWidth - 60; // Leave 30mm margin on each side (reduced from 50mm)
         const availableHeight = pageHeight - imgY - 15; // Leave 10mm margin at bottom (reduced from 15mm)
         const maxWidth = availableWidth * 1.0;
         const maxHeight = availableHeight * 1.0;
-
         // Calculate actual dimensions while maintaining aspect ratio
         let imgWidth = maxWidth;
         let imgHeight = imgWidth / canvasAspectRatio;
-
         // If height exceeds available space, constrain by height instead
         if (imgHeight > maxHeight) {
           imgHeight = maxHeight;
           imgWidth = imgHeight * canvasAspectRatio;
         }
-
         // Center horizontally within the available area
         const leftMargin = 40;
         const availableSpace = pageWidth - (leftMargin * 2);
         const imgX = leftMargin + (availableSpace - imgWidth) / 2;
-
         // Render floorplan image
         const imgData = canvas.toDataURL('image/png');
         pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight, undefined, 'FAST');
-
         // Add interactive overlays for selected suites
         // IMPORTANT: Use svgForRender (cloned/cropped) not rootSvg (original)
         this.addSelectedSuiteIndicators(
@@ -214,7 +261,6 @@ export class PdfExportService {
           params.filteredRooms,
           params
         );
-
       } catch (canvasError) {
         pdf.setFontSize(14);
         pdf.setTextColor(0, 0, 0);
@@ -226,12 +272,10 @@ export class PdfExportService {
         }
       }
     }
-
     // NOTE: Removed summary list call as requested.
     pdf.setPage(pdf.getNumberOfPages());
     return pdf;
   }
-
   /**
    * Helper method: Calculate PDF coordinates for a room element
    * Uses getBBox() and getCTM() for accurate positioning, avoiding <defs> templates
@@ -247,16 +291,13 @@ export class PdfExportService {
   ): { pdfX: number; pdfY: number; pdfW: number; pdfH: number } | null {
     // Find room element (automatically prefers shapes over text)
     let roomElement = params.findRoomElementInline(svgElement, room) as SVGGraphicsElement;
-
     if (!roomElement) {
       console.warn(`⚠️ ${room.name}: Element not found in SVG`);
       return null;
     }
-
     // Skip elements inside <defs> - these are just templates, not the actual rooms
     if (roomElement.closest('defs')) {
       console.warn(`⚠️ ${room.name}: Found element inside <defs> (template definition), skipping`);
-
       // Fallback: try to find element NOT in <defs>
       const candidates = [
         room.id,
@@ -265,11 +306,9 @@ export class PdfExportService {
         room.name.replace(/\s+/g, '-'),
         room.name.replace(/\s+/g, '_'),
       ];
-
       for (const candidate of candidates) {
         const escaped = CSS.escape(candidate);
         const elements = svgElement.querySelectorAll(`#${escaped}`);
-
         for (let i = 0; i < elements.length; i++) {
           const el = elements[i];
           if (!el.closest('defs')) {
@@ -280,29 +319,24 @@ export class PdfExportService {
         }
         if (roomElement && !roomElement.closest('defs')) break;
       }
-
       // If still in <defs>, give up
       if (roomElement.closest('defs')) {
         console.warn(`❌ ${room.name}: All elements found are in <defs>, cannot position`);
         return null;
       }
     }
-
     // Verify we got a shape element, not text
     const elementType = roomElement.tagName.toLowerCase();
     if (elementType === 'text' || elementType === 'tspan') {
       console.warn(`❌ ${room.name}: Only text element found, no shape. Skipping.`);
       return null;
     }
-
     const bbox = roomElement.getBBox();
-
     // Validate bbox dimensions
     if (bbox.width <= 0 || bbox.height <= 0) {
       console.warn(`⚠️ ${room.name}: Invalid bbox dimensions (${bbox.width}x${bbox.height})`);
       return null;
     }
-
     // Map SVG ViewBox Units -> PDF Image Coordinates
     // getBBox() returns coordinates in the element's local coordinate system
     // We need to map these to PDF coordinates using the viewBox
@@ -310,23 +344,19 @@ export class PdfExportService {
     const pdfY = imgY + ((bbox.y - vbY) / vbH) * imgHeight;
     const pdfW = (bbox.width / vbW) * imgWidth;
     const pdfH = (bbox.height / vbH) * imgHeight;
-
     // Safety check: if the box is exactly at the top-left corner, something is wrong
     if (Math.abs(pdfX - imgX) < 1 && Math.abs(pdfY - imgY) < 1) {
       console.warn(`❌ ${room.name}: Box positioned at top-left corner (likely still finding <defs>), skipping`);
       return null;
     }
-
     console.log(`📍 ${room.name}: Position calculated`, {
       elementType,
       svgCoords: { x: bbox.x.toFixed(1), y: bbox.y.toFixed(1), w: bbox.width.toFixed(1), h: bbox.height.toFixed(1) },
       viewBox: { x: vbX, y: vbY, w: vbW, h: vbH },
       pdfCoords: { x: pdfX.toFixed(2), y: pdfY.toFixed(2), w: pdfW.toFixed(2), h: pdfH.toFixed(2) }
     });
-
     return { pdfX, pdfY, pdfW, pdfH };
   }
-
   /**
    * Add clickable links for ALL colored suites and visual labels for selected suites on the PDF
    * Uses SVG Matrix Math with getCTM() for accurate positioning
@@ -347,7 +377,6 @@ export class PdfExportService {
     params: PdfExportParams
   ): void {
     if (filteredRooms.length === 0) return;
-
     // Get the SVG's ViewBox for coordinate mapping
     const vbAttr = svgElement.getAttribute('viewBox');
     if (!vbAttr) {
@@ -355,7 +384,6 @@ export class PdfExportService {
       return;
     }
     const [vbX, vbY, vbW, vbH] = vbAttr.split(' ').map(Number);
-
     // Separate selected and non-selected rooms, and filter only those with video links
     const selectedRooms = filteredRooms.filter(room =>
       params.selectedSuites.includes(room.name) && room.video && room.video.trim() !== ''
@@ -363,7 +391,6 @@ export class PdfExportService {
     const nonSelectedRooms = filteredRooms.filter(room =>
       !params.selectedSuites.includes(room.name) && room.video && room.video.trim() !== ''
     );
-
     // Add clickable links to ALL non-selected colored rooms with videos
     nonSelectedRooms.forEach(room => {
       const coords = this.getRoomPdfCoordinates(
@@ -373,60 +400,48 @@ export class PdfExportService {
         params
       );
       if (!coords) return;
-
       const { pdfX, pdfY, pdfW, pdfH } = coords;
-
       // More strict validation: Skip if box is outside OR suspiciously positioned
       // Check if box is completely outside the floorplan area
       const isOutsideLeft = pdfX + pdfW < imgX;
       const isOutsideRight = pdfX > imgX + imgWidth;
       const isOutsideTop = pdfY + pdfH < imgY;
       const isOutsideBottom = pdfY > imgY + imgHeight;
-
       // Check if box starts too far from floorplan (likely mapping error)
       const isTooFarLeft = pdfX < imgX - 10; // More than 10mm outside
       const isTooFarUp = pdfY < imgY - 10; // More than 10mm outside
-
       if (isOutsideLeft || isOutsideRight || isOutsideTop || isOutsideBottom ||
           isTooFarLeft || isTooFarUp) {
         return;
       }
-
       // Make box smaller (60% of original size) and center it
       const smallerW = pdfW * 0.6;
       const smallerH = pdfH * 0.6;
       const boxX = pdfX + (pdfW - smallerW) / 2;
       const boxY = pdfY + (pdfH - smallerH) / 2;
-
       // Add suite label (no border)
       pdf.setFontSize(6);
       pdf.setTextColor(0, 0, 0);  // Black color
       pdf.setFont('helvetica', 'bold');
-
       // Show pax if multiple suites selected
       const totalSelectedWithVideo = selectedRooms.length + nonSelectedRooms.length;
       const labelText = totalSelectedWithVideo > 1 && room.capacity
         ? `${room.name}`
         : room.name;
-
       // Suite name above center
       pdf.text(labelText, boxX + smallerW / 2, boxY + smallerH / 2 - 2, { align: 'center', baseline: 'middle' });
-
       // "WATCH" on first line
       pdf.setFontSize(4);
       pdf.text('WATCH', boxX + smallerW / 2, boxY + smallerH / 2 + 0.5, { align: 'center', baseline: 'middle' });
-
       // "TOUR" on second line (tight spacing)
       pdf.setFontSize(4);
       pdf.text('TOUR', boxX + smallerW / 2, boxY + smallerH / 2 + 2, { align: 'center', baseline: 'middle' });
-
       // Add clickable area
       pdf.link(boxX, boxY, smallerW, smallerH, {
         url: room.video,
         target: '_blank'
       });
     });
-
     // Add clickable links with visual indicators for selected rooms // sini clickable area
     selectedRooms.forEach(room => {
       const coords = this.getRoomPdfCoordinates(
@@ -436,9 +451,7 @@ export class PdfExportService {
         params
       );
       if (!coords) return;
-
       const { pdfX, pdfY, pdfW, pdfH } = coords;
-
       // Validate position
       const isOutsideLeft = pdfX + pdfW < imgX; //off to the left side of the image
       const isOutsideRight = pdfX > imgX + imgWidth; //off to the right side of the image
@@ -446,40 +459,32 @@ export class PdfExportService {
       const isOutsideBottom = pdfY > imgY + imgHeight; //off below the image
       const isTooFarLeft = pdfX < imgX - 10; //more than 10mm outside to the left
       const isTooFarUp = pdfY < imgY - 10; //more than 10mm outside above
-
       if (isOutsideLeft || isOutsideRight || isOutsideTop || isOutsideBottom ||
           isTooFarLeft || isTooFarUp) {
         return;
       }
-
       // Make box smaller (60% of original size) and center it
       const smallerW = pdfW * 0.6;
       const smallerH = pdfH * 0.6;
       const boxX = pdfX + (pdfW - smallerW) / 2;
       const boxY = pdfY + (pdfH - smallerH) / 2;
-
       // Add suite label for selected rooms (no border)
       pdf.setFontSize(5);
       pdf.setTextColor(0, 0, 0);  // Black color
       pdf.setFont('helvetica', 'bold');
-
       // Show pax if multiple suites selected
       const totalSelectedWithVideo = selectedRooms.length + nonSelectedRooms.length;
       const labelText = totalSelectedWithVideo > 1 && room.capacity
         ? `${room.name}`
         : room.name;
-
       // Suite name above center
       pdf.text(labelText, boxX + smallerW / 2, boxY + smallerH / 2 - 2, { align: 'center', baseline: 'middle' });
-
       // "WATCH" on first line
       pdf.setFontSize(4);
       pdf.text('WATCH', boxX + smallerW / 2, boxY + smallerH / 2 + 0.5, { align: 'center', baseline: 'middle' });
-
       // "TOUR" on second line (tight spacing)
       pdf.setFontSize(4);
       pdf.text('TOUR', boxX + smallerW / 2, boxY + smallerH / 2 + 2, { align: 'center', baseline: 'middle' });
-
       // Add clickable area
       pdf.link(boxX, boxY, smallerW, smallerH, {
         url: room.video!,
@@ -487,7 +492,6 @@ export class PdfExportService {
       });
     });
   }
-
   /**
    * Capture the live host element directly - preserves all rendered colors and styles
    * This captures exactly what the user sees in the dashboard
@@ -500,21 +504,17 @@ export class PdfExportService {
       try {
         // Get the actual bounding box of the element
         const rect = hostElement.getBoundingClientRect();
-
         // Temporarily remove background from svg-host container
         const svgHostElement = hostElement.classList.contains('svg-host')
           ? hostElement
           : hostElement.querySelector('.svg-host') as HTMLElement;
-
         const originalBackground = svgHostElement ? svgHostElement.style.background : '';
         if (svgHostElement) {
           svgHostElement.style.background = 'transparent';
         }
-
         // Temporarily hide background elements in SVG
         const svg = hostElement.querySelector('svg');
         const hiddenElements: Array<{ element: SVGElement; originalDisplay: string }> = [];
-
         if (svg) {
           // Find and hide background rectangles (common in SVGs)
           const backgroundRects = svg.querySelectorAll('rect[fill="#ffffff"], rect[fill="white"], rect[fill="#f0f0f0"], rect[fill="#e5e5e5"], rect[fill="rgb(255,255,255)"]');
@@ -525,7 +525,6 @@ export class PdfExportService {
             element.style.display = 'none';
           });
         }
-
         html2canvas(hostElement, {
           backgroundColor: null, // Transparent background - removes gray floorplan container background
           scale: pdfQuality.scale,
@@ -573,19 +572,16 @@ export class PdfExportService {
     const MAX_PX = 8_000_000;
     const area = src.width * src.height;
     if (area <= MAX_PX) return src;
-
     const scale = Math.sqrt(MAX_PX / area);
     const dst = document.createElement('canvas');
     dst.width = Math.max(1, Math.floor(src.width * scale));
     dst.height = Math.max(1, Math.floor(src.height * scale));
-
     const ctx = dst.getContext('2d')!;
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(src, 0, 0, dst.width, dst.height);
     return dst;
   }
-
   /**
    * NEW: Vector-based PDF export using svg2pdf.js
    * Renders SVG directly to PDF for crisp, scalable output
@@ -593,34 +589,27 @@ export class PdfExportService {
    */
   async exportFloorplanAsPdfVector(params: PdfExportParams): Promise<jsPDF> {
     const pdf = new jsPDF('landscape', 'mm', 'a4');
-
     pdf.setProperties({
       title: 'Private Suite Dashboard - Floorplan',
       subject: 'Floorplan Export',
       author: 'Private Suite Dashboard',
       creator: 'Private Suite Dashboard',
     });
-
     const pageWidth = pdf.internal.pageSize.getWidth();   // 297mm
     const pageHeight = pdf.internal.pageSize.getHeight(); // 210mm
-
     const svgHosts = params.svgHosts;
     if (svgHosts.length === 0) {
       throw new Error('No floorplan data available for export');
     }
-
     let firstPageRendered = false;
-
     for (let idx = 0; idx < svgHosts.length; idx++) {
       const hostRef = svgHosts[idx];
       const hostEl = hostRef.nativeElement as HTMLDivElement;
       const rootSvg = hostEl.querySelector('svg') as SVGSVGElement | null;
-
       if (!rootSvg) {
         console.warn(`❌ No SVG found in host ${idx + 1}`);
         continue;
       }
-
       // Check if this page should be included
       const shouldIncludeThisPage = (() => {
         if (!rootSvg) return false;
@@ -632,42 +621,35 @@ export class PdfExportService {
           return !!el;
         });
       })();
-
       if (!shouldIncludeThisPage) {
         continue;
       }
-
       if (firstPageRendered) {
         pdf.addPage('landscape');
       } else {
         firstPageRendered = true;
       }
-
       // Add header and labels
       pdf.setFontSize(16);
       pdf.setTextColor(255, 102, 0);
       pdf.text('Private Suite Dashboard - Floorplan', 15, 10);
-
       // Add helpful note on top-right
       pdf.setFontSize(8);
       pdf.setTextColor(100, 100, 100); // Gray color
       const noteText = 'Click the suite name or click directly on the suite in the floorplan to watch the tour.';
       const noteWidth = pdf.getTextWidth(noteText);
       pdf.text(noteText, pageWidth - noteWidth - 15, 10, { align: 'left' });
-
       pdf.setFontSize(12);
       pdf.setTextColor(0, 0, 0);
       let yPos = 20;
-
       // Add metadata labels (Outlet, Floor, Pax, Date, Suites)
       yPos = this.addMetadataLabels(pdf, params, rootSvg, idx, yPos, pageWidth);
-
+      // CALL THE LEGEND HERE
+      this.addLegendToPdf(pdf, pageWidth, yPos, params);
       // Clone SVG for manipulation
       const svgClone = rootSvg.cloneNode(true) as SVGSVGElement;
-
       // Smart auto-crop based on actual room elements
       this.applySmartAutoCrop(svgClone, params, 'Vector ');
-
       // Get viewBox for coordinate mapping
       const vbAttr = svgClone.getAttribute('viewBox');
       if (!vbAttr) {
@@ -675,18 +657,14 @@ export class PdfExportService {
         svgClone.setAttribute('viewBox', '0 0 1920 1018');
       }
       const [vbX, vbY, vbW, vbH] = (svgClone.getAttribute('viewBox') || '0 0 1920 1018').split(' ').map(Number);
-
       // Calculate available space for SVG
       const imgY = yPos + 5;
       const availableWidth = pageWidth - 80;  // 40mm margins
       const availableHeight = pageHeight - imgY - 15;
-
       // Calculate aspect ratios
       const svgAspectRatio = vbW / vbH;
       const availableAspectRatio = availableWidth / availableHeight;
-
       let imgWidth: number, imgHeight: number;
-
       if (svgAspectRatio > availableAspectRatio) {
         // SVG is wider - constrain by width
         imgWidth = availableWidth;
@@ -696,21 +674,17 @@ export class PdfExportService {
         imgHeight = availableHeight;
         imgWidth = imgHeight * svgAspectRatio;
       }
-
       // Center horizontally
       const leftMargin = 40;
       const imgX = leftMargin + (availableWidth - imgWidth) / 2;
-
       // Store transformation parameters for coordinate mapping
       const scaleX = imgWidth / vbW;
       const scaleY = imgHeight / vbH;
-
       console.log(`📐 SVG Transformation:`, {
         viewBox: { x: vbX, y: vbY, w: vbW, h: vbH },
         pdfPosition: { x: imgX, y: imgY, w: imgWidth, h: imgHeight },
         scale: { x: scaleX, y: scaleY }
       });
-
       // Render SVG to PDF using svg2pdf.js
       try {
         await svg2pdf(svgClone, pdf, {
@@ -719,9 +693,7 @@ export class PdfExportService {
           width: imgWidth,
           height: imgHeight
         });
-
         console.log(`✅ SVG rendered to PDF at position (${imgX}, ${imgY}) with size ${imgWidth}x${imgHeight}mm`);
-
         // Add clickable links and labels overlay
         // IMPORTANT: Use svgClone (not rootSvg) because that's what was rendered
         this.addClickableLinksVector(
@@ -732,7 +704,6 @@ export class PdfExportService {
           svgClone,  // Use the cloned/cropped SVG, not the original
           params
         );
-
       } catch (error) {
         console.error('Error rendering SVG to PDF:', error);
         pdf.setFontSize(14);
@@ -740,11 +711,9 @@ export class PdfExportService {
         pdf.text('Error rendering floorplan', 20, imgY + 20);
       }
     }
-
     pdf.setPage(pdf.getNumberOfPages());
     return pdf;
   }
-
   /**
    * Smart auto-crop SVG to focus on rooms with videos
    * Calculates bounding box from room elements and applies padding
@@ -757,11 +726,9 @@ export class PdfExportService {
     try {
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       let foundRooms = 0;
-
       // Calculate bounds from ALL rooms with videos (not just filtered)
       // This ensures clickable boxes don't get clipped on the right side
       const roomsToInclude = params.filteredRooms.filter(r => r.video && r.video.trim() !== '');
-
       roomsToInclude.forEach(room => {
         const el = params.findRoomElementInline(svgElement, room) as SVGGraphicsElement;
         if (el && el.tagName.toLowerCase() !== 'text' && el.tagName.toLowerCase() !== 'tspan') {
@@ -773,7 +740,6 @@ export class PdfExportService {
               maxX = Math.max(maxX, bbox.x + bbox.width);
               maxY = Math.max(maxY, bbox.y + bbox.height);
               foundRooms++;
-
               console.log(`📏 ${room.name}: bbox = (${bbox.x.toFixed(0)}, ${bbox.y.toFixed(0)}, ${bbox.width.toFixed(0)}x${bbox.height.toFixed(0)})`);
             }
           } catch (e) {
@@ -781,7 +747,6 @@ export class PdfExportService {
           }
         }
       });
-
       // If we found room bounds, use them; otherwise fall back to full SVG bbox
       if (foundRooms > 0 && isFinite(minX)) {
         const padding = 50; // Larger padding to ensure no clipping
@@ -808,7 +773,6 @@ export class PdfExportService {
       }
     }
   }
-
   /**
    * Add metadata labels to PDF (Outlet, Floor, Pax, Date, Suites)
    * Returns the final Y position after labels
@@ -822,7 +786,6 @@ export class PdfExportService {
     pageWidth: number
   ): number {
     let yPos = startY;
-
     // Outlet
     const selectedOffice = this.officeService.getOffices().find(office => office.id === params.filters.outlet);
     const outletDisplayName = params.filters.outlet !== 'Select Outlet' && selectedOffice
@@ -830,7 +793,6 @@ export class PdfExportService {
       : params.filters.outlet;
     pdf.text(`Outlet: ${outletDisplayName}`, 15, yPos);
     yPos += 6;
-
     // Floor
     let floorLabel = 'N/A';
     const visibleRooms = params.filteredRooms.filter(room => {
@@ -848,7 +810,6 @@ export class PdfExportService {
     }
     pdf.text(`Floor: ${floorLabel}`, 15, yPos);
     yPos += 6;
-
     // Pax
     const paxValue = (() => {
       if (params.selectedSuites.length > 0) {
@@ -865,7 +826,6 @@ export class PdfExportService {
     })();
     pdf.text(`Pax: ${paxValue}`, 15, yPos);
     yPos += 6;
-
     // Date
     if (params.selectedStartDate) {
       const formattedStartDate = this.formatDateToDDMMYYYY(params.selectedStartDate);
@@ -883,7 +843,6 @@ export class PdfExportService {
       pdf.text(`Date: ${formattedToday}`, 15, yPos);
     }
     yPos += 6;
-
     // Suites
     const suitesToShow = (() => {
       const pageRoomHasName = (name: string) => {
@@ -899,38 +858,30 @@ export class PdfExportService {
       return Array.from(new Set(roomsOnThisPage))
         .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     })();
-
     pdf.setFontSize(12);
     if (suitesToShow.length > 0) {
       const suitesLabel = 'Suite: ';
       const manySuites = suitesToShow.length > 6;
       const fontToUse = manySuites ? 9 : 11;
-
       pdf.setFontSize(fontToUse);
-
       // Render "Suite: " label
       pdf.text(suitesLabel, 15, yPos);
-
       // Calculate starting X position after "Suite: " label
       const labelWidth = pdf.getTextWidth(suitesLabel);
       let currentX = 15 + labelWidth;
       let currentY = yPos;
       const maxWidth = pageWidth - 100;
       const lineHeight = manySuites ? 5 : 5.5;
-
       // Render each suite with clickable link
       suitesToShow.forEach((suiteName, index) => {
         const room = params.rooms.find(r => r.name === suiteName);
-
         // Build suite text with pax
         const suiteText = (suitesToShow.length > 1 && room && room.capacity)
           ? `${suiteName} (Pax: ${room.capacity})`
           : suiteName;
-
         // Add comma separator if not the first item
         const displayText = index > 0 ? `, ${suiteText}` : suiteText;
         const textWidth = pdf.getTextWidth(displayText);
-
         // Check if we need to wrap to next line
         if (currentX + textWidth > maxWidth && index > 0) {
           currentY += lineHeight;
@@ -938,37 +889,29 @@ export class PdfExportService {
           // Remove leading comma and space for wrapped lines
           const wrappedText = suiteText;
           const wrappedWidth = pdf.getTextWidth(wrappedText);
-
           pdf.text(wrappedText, currentX, currentY);
-
           // Add clickable link if suite has video
           if (room && room.video && room.video.trim() !== '') {
             pdf.link(currentX, currentY - 3, wrappedWidth, 4, { url: room.video, target: '_blank' });
           }
-
           currentX += wrappedWidth;
         } else {
           pdf.text(displayText, currentX, currentY);
-
           // Add clickable link if suite has video
           if (room && room.video && room.video.trim() !== '') {
             pdf.link(currentX, currentY - 3, textWidth, 4, { url: room.video, target: '_blank' });
           }
-
           currentX += textWidth;
         }
       });
-
       yPos = currentY + lineHeight;
       pdf.setFontSize(12);
     } else {
       pdf.text('Suite: None', 15, yPos);
       yPos += 5;
     }
-
     return yPos;
   }
-
   /**
    * Add clickable links and labels for suites with video URLs
    * Uses the transformation parameters from svg2pdf rendering
@@ -982,7 +925,6 @@ export class PdfExportService {
     params: PdfExportParams
   ): void {
     const filteredRooms = params.filteredRooms;
-
     // Separate selected and non-selected rooms with video links
     const selectedRooms = filteredRooms.filter(room =>
       params.selectedSuites.includes(room.name) && room.video && room.video.trim() !== ''
@@ -990,9 +932,7 @@ export class PdfExportService {
     const nonSelectedRooms = filteredRooms.filter(room =>
       !params.selectedSuites.includes(room.name) && room.video && room.video.trim() !== ''
     );
-
     console.log(`🔗 Adding clickable links: ${selectedRooms.length} selected, ${nonSelectedRooms.length} non-selected`);
-
     // Add blue boxes for non-selected suites
     nonSelectedRooms.forEach(room => {
       const coords = this.getRoomPdfCoordinatesVector(
@@ -1001,30 +941,23 @@ export class PdfExportService {
         params
       );
       if (!coords) return;
-
       const { pdfX, pdfY, pdfW, pdfH } = coords;
-
       // Make box smaller (60% of original size) and center it
       const smallerW = pdfW * 0.6;
       const smallerH = pdfH * 0.6;
       const boxX = pdfX + (pdfW - smallerW) / 2;
       const boxY = pdfY + (pdfH - smallerH) / 2;
-
       // Blue border and label
       pdf.setDrawColor(0, 0, 255);
       pdf.setLineWidth(0.4);
       pdf.rect(boxX, boxY, smallerW, smallerH, 'S');
-
       pdf.setFontSize(6);
       pdf.setTextColor(0, 0, 255);
       pdf.text(room.name, boxX + smallerW / 2, boxY + smallerH / 2, { align: 'center', baseline: 'middle' });
-
       // Add clickable link
       pdf.link(boxX, boxY, smallerW, smallerH, { url: room.video, target: '_blank' });
-
       console.log(`🔵 ${room.name}: Blue box at (${boxX.toFixed(1)}, ${boxY.toFixed(1)})`);
     });
-
     // Add orange boxes for selected suites
     selectedRooms.forEach(room => {
       const coords = this.getRoomPdfCoordinatesVector(
@@ -1033,31 +966,24 @@ export class PdfExportService {
         params
       );
       if (!coords) return;
-
       const { pdfX, pdfY, pdfW, pdfH } = coords;
-
       // Make box smaller (60% of original size) and center it
       const smallerW = pdfW * 0.6;
       const smallerH = pdfH * 0.6;
       const boxX = pdfX + (pdfW - smallerW) / 2;
       const boxY = pdfY + (pdfH - smallerH) / 2;
-
       // Orange border and label
       pdf.setDrawColor(255, 102, 0);
       pdf.setLineWidth(0.8);
       pdf.rect(boxX, boxY, smallerW, smallerH, 'S');
-
       pdf.setFontSize(6);
       pdf.setTextColor(255, 102, 0);
       pdf.text(room.name, boxX + smallerW / 2, boxY + smallerH / 2, { align: 'center', baseline: 'middle' });
-
       // Add clickable link
       pdf.link(boxX, boxY, smallerW, smallerH, { url: room.video!, target: '_blank' });
-
       console.log(`🟠 ${room.name}: Orange box at (${boxX.toFixed(1)}, ${boxY.toFixed(1)})`);
     });
   }
-
   /**
    * Calculate PDF coordinates for a room element using svg2pdf transformation
    *
@@ -1084,34 +1010,28 @@ export class PdfExportService {
   ): { pdfX: number; pdfY: number; pdfW: number; pdfH: number } | null {
     // Find room element (automatically prefers shapes over text)
     const roomElement = params.findRoomElementInline(svgElement, room) as SVGGraphicsElement;
-
     if (!roomElement) {
       console.warn(`⚠️ ${room.name}: Element not found in SVG`);
       return null;
     }
-
     // Verify we got a shape element, not text
     const elementType = roomElement.tagName.toLowerCase();
     if (elementType === 'text' || elementType === 'tspan') {
       console.warn(`❌ ${room.name}: Only text element found, no shape. Skipping.`);
       return null;
     }
-
     // Get bounding box in SVG coordinates
     const bbox = roomElement.getBBox();
-
     if (bbox.width <= 0 || bbox.height <= 0) {
       console.warn(`⚠️ ${room.name}: Invalid bbox dimensions (${bbox.width}x${bbox.height})`);
       return null;
     }
-
     // COORDINATE MAPPING FORMULA:
     // Convert SVG coordinates → PDF coordinates using the transformation parameters
     const pdfX = imgX + (bbox.x - vbX) * scaleX;
     const pdfY = imgY + (bbox.y - vbY) * scaleY;
     const pdfW = bbox.width * scaleX;
     const pdfH = bbox.height * scaleY;
-
     console.log(`📍 ${room.name}: Vector coordinate mapping`, {
       elementType,
       svgCoords: { x: bbox.x.toFixed(1), y: bbox.y.toFixed(1), w: bbox.width.toFixed(1), h: bbox.height.toFixed(1) },
@@ -1119,10 +1039,8 @@ export class PdfExportService {
       scale: { x: scaleX.toFixed(3), y: scaleY.toFixed(3) },
       pdfCoords: { x: pdfX.toFixed(2), y: pdfY.toFixed(2), w: pdfW.toFixed(2), h: pdfH.toFixed(2) }
     });
-
     return { pdfX, pdfY, pdfW, pdfH };
   }
-
   savePdfSmart(pdf: jsPDF, fileName: string): void {
     const blob = pdf.output('blob');
     const url = URL.createObjectURL(blob);

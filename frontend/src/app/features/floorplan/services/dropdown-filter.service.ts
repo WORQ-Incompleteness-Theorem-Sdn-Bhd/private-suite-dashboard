@@ -43,7 +43,8 @@ export class DropdownFilterService {
     selectedSuites: string[],
     suiteSearchTerm: string,
     availabilityByRoomId: Map<string, 'free' | 'occupied'>,
-    selectedStartDate: string
+    selectedStartDate: string,
+    useFloorplanFilter: boolean = true // New parameter to control filtering
   ): {
     outletOptions: { label: string; value: string }[];
     statusOptions: string[];
@@ -73,6 +74,7 @@ export class DropdownFilterService {
     );
 
     // Outlet options: from office service
+    // Get current offices from the service (which may be filtered for dashboard)
     const outletOptions = this.officeService.getOffices().map(office => ({
       label: office.displayName,
       value: office.id

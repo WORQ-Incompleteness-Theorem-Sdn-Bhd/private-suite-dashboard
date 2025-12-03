@@ -201,5 +201,92 @@ export class SvgColorService {
       filteredRoomsCount: filteredRooms.length
     });
   }
+
+  /**
+   * Apply colors to SVG for PDF export using attributes (not CSS)
+   * This ensures colors persist through cloneNode() for svg2pdf
+   */
+  applySvgColorsForPdfExport(
+    rootSvg: SVGSVGElement,
+    rooms: Room[],
+    filteredRooms: Room[],
+    selectedStartDate: string,
+    availabilityByRoomId: Map<string, 'free' | 'occupied'>,
+    filtersStatus: string,
+    toStatusUnion: (status: string) => 'Available' | 'Occupied',
+    getPaxColor: (capacity: number) => string,
+    findRoomElementInline: (rootSvg: SVGSVGElement, room: Room) => Element | null
+  ): void {
+    console.log('🎨 applySvgColorsForPdfExport called:', {
+      roomsCount: rooms.length,
+      filteredRoomsCount: filteredRooms.length,
+      hasDate: !!selectedStartDate,
+      statusFilter: filtersStatus
+    });
+
+    let elementsFound = 0;
+    let elementsColored = 0;
+
+    rooms.forEach(room => {
+      const el = findRoomElementInline(rootSvg, room);
+      if (!el) return;
+
+      const containerTag = (el.closest('defs,clipPath,mask') as Element | null)?.tagName?.toLowerCase();
+      if (containerTag) return;
+
+      elementsFound++;
+
+      const isSelected = filteredRooms.includes(room);
+      let color = '#d1d5db'; // Gray for unselected
+
+      if (isSelected) {
+        const avail = selectedStartDate ? availabilityByRoomId.get(room.id) : undefined;
+        let effectiveStatus: 'Occupied' | 'Available';
+
+        if (avail !== undefined) {
+          effectiveStatus = (avail === 'free') ? 'Available' : 'Occupied';
+        } else {
+          effectiveStatus = toStatusUnion(room.status);
+        }
+
+        if (effectiveStatus === 'Occupied') {
+          color = '#ef4444'; // Red
+        } else if (filtersStatus === 'Available') {
+          color = getPaxColor(room.capacity); // Pax colors
+          elementsColored++;
+        } else {
+          color = '#22c55e'; // Green
+          elementsColored++;
+        }
+      }
+
+      const tag = el.tagName.toLowerCase();
+
+      // Use setAttribute instead of style.setProperty
+      el.setAttribute('fill', color);
+      el.setAttribute('opacity', isSelected ? '0.7' : '0.35');
+
+      if (tag === 'line' || tag === 'polyline') {
+        el.setAttribute('stroke', color);
+        if (color !== 'none') el.setAttribute('stroke-width', '2');
+      }
+
+      if (tag === 'use') {
+        const href = (el as any).getAttribute('href') || (el as any).getAttribute('xlink:href');
+        if (href && href.startsWith('#')) {
+          const ref = rootSvg.querySelector(href) as HTMLElement | null;
+          if (ref) {
+            ref.setAttribute('fill', color);
+          }
+        }
+      }
+    });
+
+    console.log('✅ applySvgColorsForPdfExport complete:', {
+      elementsFound,
+      elementsColored,
+      filteredRoomsCount: filteredRooms.length
+    });
+  }
 }
 

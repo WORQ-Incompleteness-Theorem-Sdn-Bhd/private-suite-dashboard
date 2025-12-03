@@ -101,8 +101,8 @@
         <!-- Outlet dropdown -->
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Outlet</label>
-          <select formControlName="officeId" 
-                  (ngModelChange)="onUploadOutletSelected()"
+          <select formControlName="officeId"
+                  (change)="onUploadOutletSelected()"
                   class="w-full p-2 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500">
             <option value="" disabled selected>Select Outlet</option>
             <option *ngFor="let outlet of locations" [value]="outlet.value">{{ outlet.label }}</option>
@@ -120,8 +120,8 @@
                 Optional
               </span>
             </div>
-            <select formControlName="floorId" 
-                    (ngModelChange)="onUploadFloorSelected()"
+            <select formControlName="floorId"
+                    (change)="onUploadFloorSelected()"
                     class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-colors">
               <option value="" disabled selected>
                 {{ filteredFloors.length === 0 ? 'No floors available for this outlet' : 'Select Floor (if multiple floors)' }}
@@ -231,13 +231,13 @@
       </div>
     </div>
 
-    <!-- Floor Selection -->
+    <!-- Outlet Selection -->
     <div class="mb-4 space-y-3">
       <div class="flex flex-col space-y-2">
         <label class="text-sm font-medium text-gray-700">Outlet</label>
-        <select 
-          class="p-2 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500" 
-          [(ngModel)]="selectedOffice" 
+        <select
+          class="p-2 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500"
+          [(ngModel)]="selectedOffice"
           (ngModelChange)="onOutletSelected()">
           <option value="">-- Select Outlet --</option>
           <option *ngFor="let outlet of locations" [value]="outlet.value">
@@ -245,7 +245,6 @@
           </option>
         </select>
       </div>
-      
     </div>
 
     <!-- Loading state -->
@@ -291,7 +290,7 @@
 
     <!-- Floorplan Display - Multiple SVGs (inline) - preferred method -->
     <div *ngIf="currentFloorplan && svgHtmlMap.get(normalizeUrlKey(currentFloorplan)) && !loading && !error" class="bg-white border rounded-xl overflow-hidden">
-      <div class="p-3 bg-orange-100 border-b border-orange-200">
+      <div class="p-3 bg-orange-100 border-b border-orange-200 flex items-center justify-between">
         <span class="text-sm font-semibold text-orange-800">
           🏢 {{ getSelectedOfficeLabel() }}
           <span *ngIf="selectedFloor" class="ml-2 text-gray-600">
@@ -301,6 +300,17 @@
             ({{ currentFloorplanIndex + 1 }}/{{ totalFloorplans }})
           </span>
         </span>
+
+        <!-- Delete Button -->
+        <button
+          (click)="deleteCurrentFloorplan()"
+          class="px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors flex items-center gap-1.5"
+          title="Delete this floorplan">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+          </svg>
+          Delete
+        </button>
       </div>
       <div class="p-4">
         <div [innerHTML]="currentFloorplan ? svgHtmlMap.get(normalizeUrlKey(currentFloorplan)) : null" class="w-full h-auto"></div>
@@ -348,10 +358,50 @@
     </div>
 
     <!-- Empty state -->
-    <div *ngIf="!safeSvgUrl && !svgHtml && !(currentFloorplan && svgHtmlMap.get(normalizeUrlKey(currentFloorplan))) && !loading && !error && (!currentFloorplan || displayedSvgs.length === 0)" 
+    <div *ngIf="!safeSvgUrl && !svgHtml && !(currentFloorplan && svgHtmlMap.get(normalizeUrlKey(currentFloorplan))) && !loading && !error && (!currentFloorplan || displayedSvgs.length === 0)"
          class="p-8 text-center text-gray-600 bg-gray-50 rounded-xl">
       <div class="text-4xl mb-4">🏢</div>
       <div>Select an outlet to view its floorplan</div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div *ngIf="showDeleteModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+  <div class="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+    <h3 class="text-lg font-semibold text-gray-900 mb-4">Confirm Deletion</h3>
+
+    <p class="text-gray-600 mb-6">
+      Are you sure you want to delete the floorplan for
+      <strong class="text-red-600">{{ deleteTarget?.label }}</strong>?
+    </p>
+
+    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+      <div class="flex items-start">
+        <svg class="w-5 h-5 text-yellow-600 mr-2 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+        </svg>
+        <div class="text-sm text-yellow-800">
+          <p class="font-semibold">This action is irreversible</p>
+          <p class="mt-1">All floorplan files at this location will be permanently deleted.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex space-x-3">
+      <button
+        (click)="cancelDelete()"
+        [disabled]="isDeleting"
+        class="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed">
+        Cancel
+      </button>
+      <button
+        (click)="executeDelete()"
+        [disabled]="isDeleting"
+        class="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed">
+        <span *ngIf="!isDeleting">Delete</span>
+        <span *ngIf="isDeleting">Deleting...</span>
+      </button>
     </div>
   </div>
 </div>

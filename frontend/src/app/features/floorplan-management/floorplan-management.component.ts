@@ -11,12 +11,13 @@ import {
   FormGroup,
   FormsModule,
 } from '@angular/forms';
-import { HttpClientModule } from '@angular/common/http'; 
+import { HttpClientModule } from '@angular/common/http';
 import { HttpClient } from '@angular/common/http';
 import { DomSanitizer, SafeResourceUrl, SafeHtml } from '@angular/platform-browser';
 import { OfficeService } from '../../core/services/office.service';
 import { FloorService } from '../../core/services/floor.service';
 import { BQService, UploadResponse } from './bq.service';
+import { FloorplanDeleteService } from './floorplan-delete.service';
 import { getStorage, ref, getDownloadURL } from 'firebase/storage';
 import { Router, RouterLink } from '@angular/router';
 import { catchError } from 'rxjs/operators';
@@ -67,11 +68,16 @@ export class FloorplanManagementComponent implements OnInit {
   // Tab management
   activeTab: 'overview' | 'upload' = 'overview';
 
-    sidebarCollapsed = true;  // start hidden
+  sidebarCollapsed = true;  // start hidden
+
+  // Delete confirmation modal state
+  showDeleteModal = false;
+  deleteTarget: { officeId: string; floorId: string; label: string } | null = null;
+  isDeleting = false;
 
   toggleSidebar() {
-  this.sidebarCollapsed = !this.sidebarCollapsed;
-}
+    this.sidebarCollapsed = !this.sidebarCollapsed;
+  }
 
   constructor(
     private fb: FormBuilder,
@@ -80,8 +86,8 @@ export class FloorplanManagementComponent implements OnInit {
     private officeService: OfficeService,
     private floorService: FloorService,
     private http: HttpClient,
-    private router: Router
-    
+    private router: Router,
+    private deleteService: FloorplanDeleteService
   ) {
     this.form = this.fb.group({
       officeId: ['', Validators.required],
@@ -823,15 +829,27 @@ export class FloorplanManagementComponent implements OnInit {
 
   onUploadOutletSelected() {
     const selectedOfficeId = this.form.get('officeId')?.value;
-     console.log('🏢 Upload outlet selected - Outlet ID:', selectedOfficeId);
-    
+    console.log('🏢 [UPLOAD] Outlet dropdown changed - Outlet ID:', selectedOfficeId);
+    console.log('🏢 [UPLOAD] Form value before clear:', this.form.value);
+
+    // Show available outlets for reference
+    console.log('🏢 [UPLOAD] Available outlets in dropdown:', this.locations);
+
+    // Find the selected outlet object
+    const selectedOutlet = this.locations.find(loc => loc.value === selectedOfficeId);
+    console.log('🏢 [UPLOAD] Selected outlet object:', selectedOutlet);
+
     // Clear selected floor when outlet changes
     this.form.patchValue({ floorId: '' });
-    
+    console.log('🏢 [UPLOAD] Cleared floor selection');
+
     // Filter floors based on selected outlet for upload form
     if (selectedOfficeId) {
+      console.log('🏢 [UPLOAD] Calling filterFloorsByOutlet with:', selectedOfficeId);
+      console.log('🏢 [UPLOAD] Type of selectedOfficeId:', typeof selectedOfficeId);
       this.filterFloorsByOutlet(selectedOfficeId);
     } else {
+      console.log('⚠️ [UPLOAD] No outlet selected, clearing filtered floors');
       this.filteredFloors = [];
     }
   }
@@ -850,19 +868,89 @@ export class FloorplanManagementComponent implements OnInit {
       this.filteredFloors = [];
       return;
     }
-    console.log('🔍 Filtering floors for outlet:', officeId);
-    
+    console.log('🔍 [FLOOR FILTER] Starting floor filtering for outlet:', officeId);
+    console.log('🔍 [FLOOR FILTER] Selected outlet type:', typeof officeId);
+    console.log('🔍 [FLOOR FILTER] Selected outlet value:', JSON.stringify(officeId));
+
+    // Get the full outlet object to see what we're working with
+    const selectedOutlet = this.locations.find(loc => loc.value === officeId);
+    console.log('🏢 [FLOOR FILTER] Selected outlet object:', selectedOutlet);
+
     // Get floors for this specific outlet
     this.floorService.getFloors().subscribe({
       next: (floors) => {
-        console.log('🏢 All floors:', floors);
+        console.log('🏢 [FLOOR FILTER] Total floors received from API:', floors.length);
+
+        // Log ALL unique location_ids to see what we're comparing against
+        const uniqueLocationIds = [...new Set(floors.map(f => f.location_id))].filter(Boolean);
+        console.log('🏢 [FLOOR FILTER] ALL unique location_ids in floor data:', uniqueLocationIds);
+        console.log('🏢 [FLOOR FILTER] Comparison table:');
+        console.table({
+          'Selected Outlet ID': officeId,
+          'Outlet ID Type': typeof officeId,
+          'Available Location IDs': uniqueLocationIds.join(', '),
+          'Match Found': uniqueLocationIds.includes(officeId) ? 'YES ✅' : 'NO ❌'
+        });
+
+        // Log first 5 floors to see structure with more detail
+        if (floors.length > 0) {
+          console.log('🏢 [FLOOR FILTER] First 5 floors with ALL fields:');
+          floors.slice(0, 5).forEach((f, idx) => {
+            console.log(`  Floor ${idx + 1}:`, {
+              floor_id: f.floor_id,
+              floor_no: f.floor_no,
+              floor_name: f.floor_name,
+              location_id: f.location_id,
+              location_id_type: typeof f.location_id,
+              matches_outlet: f.location_id === officeId ? '✅ YES' : '❌ NO',
+              extraction_date: (f as any).extraction_date
+            });
+          });
+        }
+
         // Filter floors by location_id
-        const filteredFloors = floors.filter(floor => floor.location_id === officeId);
-        console.log('🏢 Floors for outlet:', filteredFloors);
-        
+        const filteredFloors = floors.filter(floor => {
+          const matches = floor.location_id === officeId;
+          if (matches) {
+            console.log(`✅ [FLOOR FILTER] MATCH: Floor "${floor.floor_no}" (${floor.floor_id}) has location_id="${floor.location_id}" matching outlet="${officeId}"`);
+          }
+          return matches;
+        });
+
+        console.log(`🎯 [FLOOR FILTER] Filtering result: ${filteredFloors.length} floors match outlet "${officeId}"`);
+
         if (filteredFloors.length === 0) {
-          console.log('⚠️ No floors found for outlet, showing all floors as fallback');
+          console.warn('⚠️ [FLOOR FILTER] No floors found for outlet!');
+          console.warn('⚠️ [FLOOR FILTER] POSSIBLE CAUSES:');
+          console.warn('  1. location_id field uses different ID format (name vs MongoDB ID)');
+          console.warn('  2. location_id field is null/undefined in floor data');
+          console.warn('  3. Outlet ID format mismatch between locations dropdown and floor data');
+          console.warn('⚠️ [FLOOR FILTER] Selected outlet ID:', officeId);
+          console.warn('⚠️ [FLOOR FILTER] Available location_ids:', uniqueLocationIds);
+
+          // Check if we should try matching by outlet name instead of ID
+          if (selectedOutlet && uniqueLocationIds.length > 0) {
+            console.log('💡 [FLOOR FILTER] Attempting to match by outlet name instead...');
+            const nameMatchedFloors = floors.filter(floor => {
+              // Try matching with outlet label/name
+              const outletName = selectedOutlet.label;
+              return floor.location_id === outletName ||
+                     (floor as any).location_name === outletName;
+            });
+
+            if (nameMatchedFloors.length > 0) {
+              console.log('✅ [FLOOR FILTER] Found matches by outlet NAME:', nameMatchedFloors.length);
+              this.filteredFloors = nameMatchedFloors.map(floor => ({
+                label: floor.floor_no,
+                value: floor.floor_id
+              }));
+              console.log('📋 [FLOOR FILTER] Final filtered floors (by name):', this.filteredFloors);
+              return;
+            }
+          }
+
           // Fallback: show all floors if no specific floors found
+          console.warn('⚠️ [FLOOR FILTER] Using fallback: showing ALL floors');
           this.filteredFloors = floors.map(floor => ({
             label: floor.floor_no,
             value: floor.floor_id
@@ -873,10 +961,10 @@ export class FloorplanManagementComponent implements OnInit {
             value: floor.floor_id
           }));
         }
-        console.log('📋 Filtered floors:', this.filteredFloors);
+        console.log('📋 [FLOOR FILTER] Final filtered floors for dropdown:', this.filteredFloors);
       },
       error: (err) => {
-        console.error('Error loading floors for outlet:', err);
+        console.error('❌ [FLOOR FILTER] Error loading floors for outlet:', err);
         this.filteredFloors = [];
       }
     });
@@ -886,6 +974,98 @@ export class FloorplanManagementComponent implements OnInit {
     if (!this.selectedFloor) return '';
     const floor = this.floors.find(f => f.value === this.selectedFloor);
     return floor?.label || 'Selected Floor';
+  }
+
+  // Delete confirmation modal methods
+  confirmDelete(officeId: string, floorId: string, label: string) {
+    this.deleteTarget = { officeId, floorId, label };
+    this.showDeleteModal = true;
+  }
+
+  cancelDelete() {
+    this.showDeleteModal = false;
+    this.deleteTarget = null;
+  }
+
+  executeDelete() {
+    if (!this.deleteTarget) return;
+
+    this.isDeleting = true;
+    const { officeId, floorId, label } = this.deleteTarget;
+
+    this.deleteService.deleteFloorplan(officeId, floorId).subscribe({
+      next: (response) => {
+        console.log('✅ Floorplan deleted successfully:', response);
+        alert(`Successfully deleted floorplan: ${label}\n\nDeleted files:\n${response.deletedFiles.join('\n')}`);
+
+        // Refresh data
+        this.refreshData();
+
+        // Close modal
+        this.showDeleteModal = false;
+        this.deleteTarget = null;
+        this.isDeleting = false;
+      },
+      error: (err) => {
+        console.error('❌ Delete failed:', err);
+        const errorMsg = err.error?.message || err.error?.error || 'Failed to delete floorplan';
+        alert(`Error: ${errorMsg}`);
+        this.isDeleting = false;
+      }
+    });
+  }
+
+  // Delete current floorplan (extracts floorId from current floorplan URL)
+  deleteCurrentFloorplan() {
+    if (!this.currentFloorplan || !this.selectedOffice) {
+      console.error('Cannot delete: no floorplan or office selected');
+      return;
+    }
+
+    const floorId = this.extractFloorIdFromUrl(this.currentFloorplan);
+    if (!floorId) {
+      console.error('Cannot extract floorId from URL:', this.currentFloorplan);
+      alert('Error: Unable to determine floor ID from floorplan');
+      return;
+    }
+
+    const label = `${this.getSelectedOfficeLabel()} - Floor ${floorId}`;
+    this.confirmDelete(this.selectedOffice, floorId, label);
+  }
+
+  // Extract floorId from floorplan URL path
+  // Example: "67ad665a.../634.../floorplan.svg" -> "634..."
+  extractFloorIdFromUrl(url: string): string | null {
+    try {
+      // Handle both full URLs and paths
+      let path = url;
+
+      // If it's a full URL, extract the path
+      if (url.includes('://')) {
+        const urlObj = new URL(url);
+        path = urlObj.pathname;
+      }
+
+      // Remove query parameters
+      path = path.split('?')[0];
+
+      // Split by / and filter empty strings
+      const parts = path.split('/').filter(p => p.trim() !== '');
+
+      // Expected format: [..., officeId, floorId, filename.svg]
+      // Find the floorId (should be second-to-last or third-to-last part before filename)
+      if (parts.length >= 2) {
+        // Get the second-to-last part (before filename)
+        const floorId = parts[parts.length - 2];
+        console.log('Extracted floorId:', floorId, 'from URL:', url);
+        return floorId;
+      }
+
+      return null;
+    } catch (err) {
+      console.error('Error extracting floorId from URL:', url, err);
+      return null;
+    }
   }
 
 }

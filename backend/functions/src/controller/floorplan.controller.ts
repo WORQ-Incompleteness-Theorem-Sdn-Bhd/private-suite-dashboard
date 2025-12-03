@@ -535,6 +535,134 @@ export async function getAllFloorplans(req: Request, res: Response) {
     });
   }
 }
+
+/** DELETE /api/floorplans/:officeId/:floorId - Delete floorplan with audit logging */
+export async function deleteFloorplan(req: Request, res: Response): Promise<void> {
+  try {
+    const officeId = (req.params.officeId || "").trim();
+    const floorId = (req.params.floorId || "").trim();
+
+    console.log("🗑️ deleteFloorplan: Request received", { officeId, floorId });
+
+    if (!officeId || !floorId) {
+      res.status(400).json({ error: "Both officeId and floorId are required" });
+      return;
+    }
+
+    // Build prefix to find SVG file(s) at this location
+    const prefix = ROOT_PREFIX ? `${ROOT_PREFIX}/${officeId}/${floorId}/` : `${officeId}/${floorId}/`;
+    console.log("🗑️ deleteFloorplan: Searching for files at prefix:", prefix);
+
+    // Find all SVG files at this location
+    const files = await fetchAllSvgs(bucket, prefix);
+
+    if (files.length === 0) {
+      console.log("🗑️ deleteFloorplan: No floorplan found at", prefix);
+      res.status(404).json({
+        error: "Floorplan not found",
+        officeId,
+        floorId,
+        prefix
+      });
+      return;
+    }
+
+    // Get user info for audit log (from auth middleware if available)
+    const userId = (req as any).user?.uid || (req as any).user?.id || "unknown";
+    const userEmail = (req as any).user?.email || "unknown";
+
+    console.log(`🗑️ deleteFloorplan: Found ${files.length} file(s) to delete`);
+
+    // Delete all SVG files at this location
+    const deletePromises = files.map(async (file) => {
+      console.log("🗑️ deleteFloorplan: Deleting file:", file.name);
+      const [metadata] = await file.getMetadata();
+
+      // Store metadata for audit log before deletion
+      const auditData = {
+        path: file.name,
+        size: Number(metadata.size || 0),
+        contentType: metadata.contentType || "image/svg+xml",
+        updated: metadata.updated,
+        metadata: metadata.metadata || {},
+      };
+
+      // Delete the file
+      await file.delete();
+
+      return auditData;
+    });
+
+    const deletedFiles = await Promise.all(deletePromises);
+
+    // Log audit event to Firestore
+    try {
+      await logDeletionAudit({
+        officeId,
+        floorId,
+        deletedFiles,
+        deletedBy: userId,
+        deletedByEmail: userEmail,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (auditErr: any) {
+      console.error("🗑️ deleteFloorplan: Audit log failed (non-fatal):", auditErr?.message);
+      // Continue even if audit logging fails
+    }
+
+    console.log("✅ deleteFloorplan: Successfully deleted", deletedFiles.length, "file(s)");
+
+    res.status(200).json({
+      success: true,
+      message: `Successfully deleted ${deletedFiles.length} floorplan file(s)`,
+      deletedFiles: deletedFiles.map(f => f.path),
+      officeId,
+      floorId,
+    });
+  } catch (err: any) {
+    console.error("❌ deleteFloorplan error:", err?.message || err);
+    console.error("❌ deleteFloorplan stack:", err?.stack);
+
+    // Check if it's a permission error
+    if (err?.code === 403 || err?.message?.includes("permission")) {
+      res.status(403).json({
+        error: "Permission denied",
+        message: "You do not have permission to delete this floorplan"
+      });
+      return;
+    }
+
+    res.status(500).json({
+      error: "Failed to delete floorplan",
+      message: err?.message || "Internal error",
+    });
+  }
+}
+
+/** Helper: Log deletion to Firestore audit collection */
+async function logDeletionAudit(data: {
+  officeId: string;
+  floorId: string;
+  deletedFiles: any[];
+  deletedBy: string;
+  deletedByEmail: string;
+  timestamp: string;
+}): Promise<void> {
+  try {
+    const admin = await import("firebase-admin");
+    const db = admin.firestore();
+
+    await db.collection("floorplan_audit_log").add({
+      action: "delete",
+      ...data,
+    });
+
+    console.log("📝 Audit log saved:", data.officeId, data.floorId);
+  } catch (err: any) {
+    console.error("❌ Failed to save audit log:", err?.message);
+    throw err;
+  }
+}
 //helper
 async function listPrefixes(bucket: Bucket, prefix: string): Promise<string[]> {
   try {

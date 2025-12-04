@@ -976,6 +976,16 @@ export class FloorplanManagementComponent implements OnInit {
     return floor?.label || 'Selected Floor';
   }
 
+  /**
+   * Get floor label by floor ID
+   * @param floorId - The floor ID to look up
+   * @returns Floor label or the floorId itself if not found
+   */
+  getFloorLabelById(floorId: string): string {
+    const floor = this.floors.find(f => f.value === floorId);
+    return floor?.label || floorId;
+  }
+
   // Delete confirmation modal methods
   confirmDelete(officeId: string, floorId: string, label: string) {
     this.deleteTarget = { officeId, floorId, label };
@@ -987,83 +997,173 @@ export class FloorplanManagementComponent implements OnInit {
     this.deleteTarget = null;
   }
 
+  /**
+   * Execute the delete operation
+   * Handles both office-level and floor-level deletions
+   */
   executeDelete() {
     if (!this.deleteTarget) return;
 
     this.isDeleting = true;
     const { officeId, floorId, label } = this.deleteTarget;
 
-    this.deleteService.deleteFloorplan(officeId, floorId).subscribe({
+    console.log('🗑️ executeDelete: Starting deletion', {
+      officeId,
+      floorId: floorId || 'office-level',
+      label
+    });
+
+    // Call delete service with optional floorId
+    // Empty string means office-level, so pass null instead
+    const floorIdParam = floorId ? floorId : null;
+
+    this.deleteService.deleteFloorplan(officeId, floorIdParam).subscribe({
       next: (response) => {
         console.log('✅ Floorplan deleted successfully:', response);
-        alert(`Successfully deleted floorplan: ${label}\n\nDeleted files:\n${response.deletedFiles.join('\n')}`);
 
-        // Refresh data
+        // Show success message with deleted files
+        const filesDeleted = response.deletedFiles?.length || 0;
+        const message = `Successfully deleted floorplan: ${label}\n\n` +
+          `Files deleted: ${filesDeleted}\n\n` +
+          (response.deletedFiles?.length ? response.deletedFiles.join('\n') : 'No files listed');
+
+        alert(message);
+
+        // Refresh data to update UI
         this.refreshData();
 
-        // Close modal
+        // Close modal and reset state
         this.showDeleteModal = false;
         this.deleteTarget = null;
         this.isDeleting = false;
       },
       error: (err) => {
         console.error('❌ Delete failed:', err);
-        const errorMsg = err.error?.message || err.error?.error || 'Failed to delete floorplan';
+        console.error('❌ Error details:', {
+          status: err.status,
+          statusText: err.statusText,
+          error: err.error,
+          message: err.message
+        });
+
+        // Build user-friendly error message
+        let errorMsg = 'Failed to delete floorplan';
+
+        if (err.status === 404) {
+          errorMsg = 'Floorplan not found. It may have already been deleted.';
+        } else if (err.status === 403) {
+          errorMsg = 'Permission denied. You do not have permission to delete this floorplan.';
+        } else if (err.status === 401) {
+          errorMsg = 'Authentication failed. Please refresh the page and try again.';
+        } else if (err.error?.message) {
+          errorMsg = err.error.message;
+        } else if (err.error?.error) {
+          errorMsg = err.error.error;
+        }
+
         alert(`Error: ${errorMsg}`);
         this.isDeleting = false;
+        // Keep modal open so user can try again or cancel
       }
     });
   }
 
-  // Delete current floorplan (extracts floorId from current floorplan URL)
+  /**
+   * Delete current floorplan (extracts floorId from current floorplan URL)
+   * Handles both office-level and floor-level floorplans
+   */
   deleteCurrentFloorplan() {
     if (!this.currentFloorplan || !this.selectedOffice) {
-      console.error('Cannot delete: no floorplan or office selected');
+      console.error('❌ Cannot delete: no floorplan or office selected');
+      alert('Error: No floorplan selected');
       return;
     }
 
+    console.log('🗑️ deleteCurrentFloorplan: Starting deletion process');
+    console.log('🗑️ Selected office:', this.selectedOffice);
+    console.log('🗑️ Current floorplan URL:', this.currentFloorplan);
+
+    // Extract floorId from URL (returns null for office-level)
     const floorId = this.extractFloorIdFromUrl(this.currentFloorplan);
-    if (!floorId) {
-      console.error('Cannot extract floorId from URL:', this.currentFloorplan);
-      alert('Error: Unable to determine floor ID from floorplan');
-      return;
-    }
 
-    const label = `${this.getSelectedOfficeLabel()} - Floor ${floorId}`;
-    this.confirmDelete(this.selectedOffice, floorId, label);
+    console.log('🗑️ Extracted floorId:', floorId || 'office-level');
+
+    // Build label for confirmation dialog
+    const label = floorId
+      ? `${this.getSelectedOfficeLabel()} - Floor ${this.getFloorLabelById(floorId)}`
+      : `${this.getSelectedOfficeLabel()} (Office Level)`;
+
+    // Show confirmation modal
+    this.deleteTarget = {
+      officeId: this.selectedOffice,
+      floorId: floorId || '', // Empty string for office-level
+      label
+    };
+    this.showDeleteModal = true;
   }
 
-  // Extract floorId from floorplan URL path
-  // Example: "67ad665a.../634.../floorplan.svg" -> "634..."
+  /**
+   * Extract floorId from floorplan URL path
+   *
+   * Storage Path Formats:
+   * - Floor-level:  {officeId}/{floorId}/floorplan.svg    -> Returns floorId
+   * - Office-level: {officeId}/floorplan.svg               -> Returns null
+   *
+   * Examples:
+   * - "67ad665a.../634.../floorplan.svg" -> "634..."       (floor-level)
+   * - "67ad665a.../floorplan.svg"        -> null           (office-level)
+   *
+   * @param url - The full URL or path to the floorplan SVG
+   * @returns floorId if floor-level, null if office-level
+   */
   extractFloorIdFromUrl(url: string): string | null {
     try {
-      // Handle both full URLs and paths
       let path = url;
 
-      // If it's a full URL, extract the path
+      // If it's a full URL, extract the pathname
       if (url.includes('://')) {
         const urlObj = new URL(url);
         path = urlObj.pathname;
       }
 
-      // Remove query parameters
-      path = path.split('?')[0];
+      // Remove query parameters and fragments
+      path = path.split('?')[0].split('#')[0];
 
       // Split by / and filter empty strings
-      const parts = path.split('/').filter(p => p.trim() !== '');
+      const parts = path.split('/').filter(p => p.trim() !== '' && p !== 'v0' && p !== 'b');
 
-      // Expected format: [..., officeId, floorId, filename.svg]
-      // Find the floorId (should be second-to-last or third-to-last part before filename)
-      if (parts.length >= 2) {
-        // Get the second-to-last part (before filename)
-        const floorId = parts[parts.length - 2];
-        console.log('Extracted floorId:', floorId, 'from URL:', url);
-        return floorId;
+      console.log('🔍 extractFloorIdFromUrl - URL parts:', parts);
+      console.log('🔍 extractFloorIdFromUrl - Full URL:', url);
+
+      // Detect format based on number of parts
+      // Expected formats:
+      // Floor-level:  [..., officeId, floorId, filename.svg]  (3+ parts)
+      // Office-level: [..., officeId, filename.svg]           (2 parts)
+
+      if (parts.length >= 3) {
+        // Floor-level: Get second-to-last part (before filename)
+        const potentialFloorId = parts[parts.length - 2];
+        const filename = parts[parts.length - 1];
+
+        // Validate that the last part is actually a filename (.svg)
+        if (filename.endsWith('.svg') || filename.endsWith('.png')) {
+          console.log('✅ Floor-level floorplan detected - floorId:', potentialFloorId);
+          return potentialFloorId;
+        }
+      } else if (parts.length === 2) {
+        // Office-level: Only officeId and filename
+        const filename = parts[parts.length - 1];
+
+        if (filename.endsWith('.svg') || filename.endsWith('.png')) {
+          console.log('✅ Office-level floorplan detected - no floorId');
+          return null; // Office-level has no floorId
+        }
       }
 
+      console.warn('⚠️ Could not determine floorplan type from URL:', url);
       return null;
     } catch (err) {
-      console.error('Error extracting floorId from URL:', url, err);
+      console.error('❌ Error extracting floorId from URL:', url, err);
       return null;
     }
   }

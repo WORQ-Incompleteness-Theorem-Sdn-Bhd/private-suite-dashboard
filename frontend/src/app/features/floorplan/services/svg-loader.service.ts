@@ -9,7 +9,7 @@ import { Floor } from '../../../core/models/floor.model';
 import { of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { getStorage, ref, getDownloadURL } from 'firebase/storage';
-import { environment } from '../../../environments/environment.prod';
+import { environment } from '../../../environments/environment.dev';
 
 @Injectable({
   providedIn: 'root'

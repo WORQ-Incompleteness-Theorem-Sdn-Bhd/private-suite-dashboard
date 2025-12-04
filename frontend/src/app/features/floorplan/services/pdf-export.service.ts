@@ -92,11 +92,11 @@ export class PdfExportService {
       return yPos;
     }
     // 1. Setup Legend Position (Right side of the header)
-    const legendWidth = 60;
+    const legendWidth = 40;
     const startX = pageWidth - legendWidth - 15; // 15mm from right edge
-    let currentY = 20; // Start at top aligned with header
+    let currentY = 20; // Start with 5mm gap below the note text (note at Y=10mm, box padding=5mm, so 10+5+5=20mm)
     // Calculate legend height dynamically
-    let legendHeight = 20; // Base height for title
+    let legendHeight = 15; // Base height for title
     if (showStatusColors) {
       legendHeight += 15; // Space for Available and Occupied indicators
     }

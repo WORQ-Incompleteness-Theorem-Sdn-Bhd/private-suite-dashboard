@@ -536,21 +536,26 @@ export async function getAllFloorplans(req: Request, res: Response) {
   }
 }
 
-/** DELETE /api/floorplans/:officeId/:floorId - Delete floorplan with audit logging */
+/** DELETE /api/floorplans/:officeId[/:floorId] - Delete floorplan with audit logging */
 export async function deleteFloorplan(req: Request, res: Response): Promise<void> {
   try {
     const officeId = (req.params.officeId || "").trim();
-    const floorId = (req.params.floorId || "").trim();
+    const floorId = (req.params.floorId || "").trim(); // Now optional
 
-    console.log("🗑️ deleteFloorplan: Request received", { officeId, floorId });
+    console.log("🗑️ deleteFloorplan: Request received", { officeId, floorId: floorId || "office-level" });
 
-    if (!officeId || !floorId) {
-      res.status(400).json({ error: "Both officeId and floorId are required" });
+    if (!officeId) {
+      res.status(400).json({ error: "officeId is required" });
       return;
     }
 
-    // Build prefix to find SVG file(s) at this location
-    const prefix = ROOT_PREFIX ? `${ROOT_PREFIX}/${officeId}/${floorId}/` : `${officeId}/${floorId}/`;
+    // Build prefix based on whether floorId is provided
+    // Floor-level: {officeId}/{floorId}/
+    // Office-level: {officeId}/
+    const prefix = floorId
+      ? (ROOT_PREFIX ? `${ROOT_PREFIX}/${officeId}/${floorId}/` : `${officeId}/${floorId}/`)
+      : (ROOT_PREFIX ? `${ROOT_PREFIX}/${officeId}/` : `${officeId}/`);
+
     console.log("🗑️ deleteFloorplan: Searching for files at prefix:", prefix);
 
     // Find all SVG files at this location
@@ -561,8 +566,9 @@ export async function deleteFloorplan(req: Request, res: Response): Promise<void
       res.status(404).json({
         error: "Floorplan not found",
         officeId,
-        floorId,
-        prefix
+        floorId: floorId || "office-level",
+        prefix,
+        message: `No floorplan files found at ${prefix}`
       });
       return;
     }

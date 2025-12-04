@@ -75,14 +75,6 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
     return result;
   }
   get currentFloorplan(): string | null {
-   /* console.log('🔍 currentFloorplan getter called:', { 
-      displayedSvgs: this.displayedSvgs, 
-      displayedSvgsLength: this.displayedSvgs?.length,
-      currentFloorplanIndex: this.currentFloorplanIndex,
-      selectedOutletSvgs: this.selectedOutletSvgs,
-      selectedOutletSvgsLength: this.selectedOutletSvgs?.length
-    });*/ //used this after svg can load
-    
     if (!this.displayedSvgs || this.displayedSvgs.length === 0) {;
       return null;
     }
@@ -184,6 +176,7 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   selectedRoom: any;
   showPopup = false;
   showDownloadMenu = false;
+  isInstructionsClosed = false;
   popupX = 0;
   popupY = 0;
 
@@ -290,7 +283,6 @@ ngOnInit() {
     // 🛑 STOP! We wait for the Auth Service to give the green light.
     // 'ensureAuthReady()' waits until the token is refreshed and valid.
     this.auth.ensureAuthReady().subscribe(() => {
-      console.log('✅ Auth is ready. Now loading floorplans...');
       
       // 🟢 GO! Now it is safe to load data.
       this.loadOffices();
@@ -316,7 +308,6 @@ ngOnInit() {
 
     // ✅ FIX: If a date was selected, refetch availability with new rooms
     if (this.selectedStartDate) {
-      console.log('🔄 Rooms updated with date selected. Refetching availability...');
       this.fetchAvailabilityForCurrentSelection();
     } else {
       // No date selected → use current room status
@@ -343,7 +334,6 @@ ngOnInit() {
   // Load offices on app start
   loadOffices() {
     this.isLoadingOffices = true;
-    console.log('🏢 [DASHBOARD] Loading offices with floorplans...');
 
     // Use the new method that loads and filters in one step
     // This ensures the BehaviorSubject is only updated with filtered offices
@@ -358,7 +348,6 @@ ngOnInit() {
       })
     ).subscribe((result) => {
       if (result.success) {
-        console.log('✅ [DASHBOARD] Filtered offices count:', result.count);
 
         if (result.count > 0) {
           this.toastService.success('Outlets loaded successfully');
@@ -433,7 +422,6 @@ ngOnInit() {
       
       // 2. If date was already chosen, NOW it is safe to check availability
       if (this.selectedStartDate) {
-        console.log('✅ Rooms loaded. Fetching availability...');
         this.fetchAvailabilityForCurrentSelection();
       }
     });
@@ -654,7 +642,6 @@ ngOnInit() {
   }
 
   buildOptions() {
-    console.log('🔨 [buildOptions] Building dropdown options. Current offices count:', this.officeService.getOffices().length);
 
     const result = this.dropdownFilterService.buildOptions(
       this.rooms,
@@ -670,7 +657,6 @@ ngOnInit() {
     this.paxOptions = result.paxOptions;
     this.suiteOptions = result.suiteOptions;
 
-    console.log('🔨 [buildOptions] Outlet options built:', this.outletOptions.length, 'outlets');
 
     // Keep filtersConfig in sync
     this.filtersConfig.find((f) => f.key === 'outlet')!.options =
@@ -684,7 +670,6 @@ ngOnInit() {
     const key = type as keyof typeof this.filters;
     this.filters[key] = value;
     if (key === 'outlet'){
-      //console.log('🧭 Outlet filter change:', { rawValue: value });
       this.onOutletChange(value);
       this.updateSelectedOutletSvgs();
       // Rendering will be triggered after URLs are fetched in subscriptions
@@ -709,12 +694,6 @@ ngOnInit() {
       // Only auto-zoom if filtering yields exactly one room
       if (this.filteredRooms.length === 1) {
         const onlyRoom = this.filteredRooms[0];
-       /* console.log('[Floorplan] zoom due to filters yielding one room', {
-          id: onlyRoom.id,
-          name: onlyRoom.name,
-          key,
-          value: this.filters[key],
-        });*/
         setTimeout(() => this.openPopupFromRoom(onlyRoom), 60);
       } else {
         this.closePopup();
@@ -804,18 +783,7 @@ ngOnInit() {
 
       this.availabilityByRoomId = availabilityMap;
 
-      // 🔍 DEBUG: Log availability data details
-      console.log('📊 Availability fetch complete:', {
-        officeId,
-        dateRange: { start, end },
-        totalRooms: this.rooms.length,
-        availabilityMapSize: this.availabilityByRoomId.size,
-        roomIds: this.rooms.slice(0, 5).map(r => r.id),
-        availabilityKeys: Array.from(this.availabilityByRoomId.keys()).slice(0, 5),
-        sampleAvailability: Array.from(this.availabilityByRoomId.entries()).slice(0, 5)
-      });
-
-      // // ✅ FIX: Validate availability data BEFORE applying filters
+      // ✅ FIX: Validate availability data BEFORE applying filters
       // if (this.availabilityByRoomId.size === 0) {
       //   console.warn('⚠️ Availability fetch returned no data for any rooms');
       //   this.toastService.error('No availability data found for selected date(s)');
@@ -835,7 +803,6 @@ ngOnInit() {
       this.ngZone.run(() => {
         requestAnimationFrame(() => {
           this.updateSvgColors();
-          console.log('✅ SVG colors updated after availability fetch');
         });
       });
 
@@ -878,30 +845,18 @@ ngOnInit() {
 
   private updateDisplayedSvgs() {
     const outletId = this.filters.outlet;
-    /*console.log('🔄 updateDisplayedSvgs called:', { 
-      outletId, 
-      selectedFloorSvg: this.selectedFloorSvg, 
-      selectedOutletSvgs: this.selectedOutletSvgs,
-      selectedOutletSvgsCount: this.selectedOutletSvgs.length,
-      floorplansLoaded: this.floorplansLoaded,
-      source: currentSource.toUpperCase()
-    });*/
-    //console.log('🧭 Rendering floorplans:', { count: this.selectedOutletSvgs.length, urls: this.selectedOutletSvgs });
     
     if (!outletId || outletId === 'Select Outlet') {
       this.displayedSvgs = [];
       this.currentFloorplanIndex = 0; // Reset pagination
-      //console.log('❌ No outlet selected, clearing displayedSvgs');
       return;
     }
 
     // Wait for floorplans to be loaded before displaying
     if (!this.floorplansLoaded) {
-      //console.log('⏳ Floorplans not loaded yet, waiting...');
       // Retry after a short delay
       setTimeout(() => {
         if (this.floorplansLoaded) {
-          //console.log('✅ Floorplans loaded, retrying updateDisplayedSvgs');
           this.updateDisplayedSvgs();
         } else {
           //console.warn('⚠️ Floorplans still not loaded after wait, proceeding anyway');
@@ -917,10 +872,8 @@ ngOnInit() {
     // This ensures all floorplans for the outlet are shown without filtering by floor_id
     this.displayedSvgs = this.selectedOutletSvgs || [];
     this.currentFloorplanIndex = 0; // Reset pagination
-    //console.log('🖼️ Displaying all outlet SVGs:', { count: this.displayedSvgs.length, total: this.selectedOutletSvgs.length });
     
     if (this.displayedSvgs.length > 0) {
-      //console.log('📥 Loading inline SVGs for display:', this.displayedSvgs.length, 'SVGs');
       this.loadInlineSvgs(this.displayedSvgs);   // ✅ Load all SVGs
     } else {
       //console.warn('⚠️ No SVGs to display, selectedOutletSvgs is empty');
@@ -931,19 +884,6 @@ ngOnInit() {
   }
 
   applyFilters(shouldAutoSwitch: boolean = true) {
-    console.log('🚀 [applyFilters] STARTED:', {
-      totalRooms: this.rooms.length,
-      currentStatusFilter: this.filters.status,
-      hasDate: !!this.selectedStartDate,
-      timestamp: new Date().toISOString()
-    });
-
-    console.log('🔍 [applyFilters] BEFORE filtering:', {
-      totalRooms: this.rooms.length,
-      selectedSuites: this.selectedSuites,
-      selectedSuitesCount: this.selectedSuites.length
-    });
-
     this.filteredRooms = this.dropdownFilterService.applyFilters(
       this.rooms,
       this.filters,
@@ -952,22 +892,9 @@ ngOnInit() {
       this.selectedStartDate
     );
 
-    console.log('✅ [applyFilters] AFTER filtering:', {
-      filteredRoomsCount: this.filteredRooms.length,
-      selectedSuites: this.selectedSuites,
-      statusFilter: this.filters.status,
-      filteredRoomNames: this.filteredRooms.map(r => r.name)
-    });
-
     // Debug: Log filtered rooms when no date is selected
     if (!this.selectedStartDate) {
-      console.log('🔍 [DEBUG] No date selected - using today\'s availability:', {
-        totalRooms: this.rooms.length,
-        filteredRoomsCount: this.filteredRooms.length,
-        statusFilter: this.filters.status,
-        sampleRoomStatuses: this.rooms.slice(0, 5).map(r => ({ id: r.id, name: r.name, status: r.status })),
-        availabilityMapSize: this.availabilityByRoomId.size
-      });
+      // Filtering applied without date selection
     }
 
     // Metrics reflect effective availability
@@ -976,35 +903,17 @@ const getEffectiveStatus = (room: Room): 'Available' | 'Occupied' => {
     // Date is selected - use availability data from API
     const avail = this.availabilityByRoomId.get(room.id);
 
-    // 🔍 DEBUG: Log evaluation for first 3 rooms
-    const roomIndex = this.filteredRooms.indexOf(room);
-    if (roomIndex >= 0 && roomIndex < 3) {
-      console.log(`🎯 Evaluating room ${room.id} (${room.name}):`, {
-        availabilityData: avail,
-        hasData: avail !== undefined,
-        originalStatus: room.status,
-        originalStatusType: room.originalStatus
-      });
-    }
-
     // If availability data exists, use it
     if (avail !== undefined) {
       // Only respect PERMANENT unavailability
       const isPermanentlyUnavailable = room.originalStatus?.toLowerCase() === 'unavailable';
 
       if (isPermanentlyUnavailable) {
-        console.log(`🔒 Room ${room.id} is permanently unavailable`);
         return 'Occupied';
       }
 
       // For all other rooms, trust the availability data
-      const result = avail === 'free' ? 'Available' : 'Occupied';
-
-      if (roomIndex >= 0 && roomIndex < 3) {
-        console.log(`✅ Room ${room.id} final decision: ${result}`);
-      }
-
-      return result;
+      return avail === 'free' ? 'Available' : 'Occupied';
     }
 
     // No availability data yet - use room's base status as temporary fallback
@@ -1175,16 +1084,8 @@ const getEffectiveStatus = (room: Room): 'Available' | 'Occupied' => {
 
     if (index > -1) {
       this.selectedSuites.splice(index, 1);
-      console.log(`➖ [Toggle] Removed "${suiteName}"`, {
-        before: beforeState,
-        after: this.selectedSuites
-      });
     } else {
       this.selectedSuites.push(suiteName);
-      console.log(`➕ [Toggle] Added "${suiteName}"`, {
-        before: beforeState,
-        after: this.selectedSuites
-      });
     }
     this.applyFilters(); // This will auto-switch to relevant floorplan
   }
@@ -1202,9 +1103,6 @@ const getEffectiveStatus = (room: Room): 'Available' | 'Occupied' => {
   onSuiteDoubleClick(room: Room) {
     if (!room || !room.name) return;
 
-    // Close popup if open
-    this.closePopup();
-
     // Toggle suite selection
     this.toggleSuiteSelection(room.name);
 
@@ -1215,13 +1113,6 @@ const getEffectiveStatus = (room: Room): 'Available' | 'Occupied' => {
       ? `Suite "${room.name}" selected (${totalSelected} total)`
       : `Suite "${room.name}" deselected (${totalSelected} remaining)`;
     this.toastService.success(message);
-
-    console.log('🎯 [Suite Selection]', {
-      action: isSelected ? 'SELECTED' : 'DESELECTED',
-      suite: room.name,
-      totalSelected: totalSelected,
-      allSelected: this.selectedSuites
-    });
   }
 
   // Handle suite search input changes
@@ -1248,6 +1139,10 @@ const getEffectiveStatus = (room: Room): 'Available' | 'Occupied' => {
 
   private findRoomElementInDoc(doc: Document, room: Room): Element | null {
     return FloorplanUtils.findRoomElementInDoc(doc, room);
+  }
+
+  private findRoomElementInline(rootSvg: SVGSVGElement, room: Room): Element | null {
+    return FloorplanUtils.findRoomElementInline(rootSvg, room);
   }
 
   private getSvgViewBox(
@@ -1308,18 +1203,15 @@ async downloadFloorplanWithDetails(format: 'svg' | 'png' = 'svg') {
     if (this.popupX + popupWidth > vw) this.popupX = vw - popupWidth - 8;
     if (this.popupY + popupHeight > vh) this.popupY = vh - popupHeight - 8;
 
-    /*console.log('[Floorplan] popup opened (click)', {
-      OutletID: room.outlet,
-      ID: room.id,
-      room: room.name,
-      x: this.popupX,
-      y: this.popupY,
-    });*/
   }
 
   closePopup() {
     this.showPopup = false;
     this.selectedRoom = null;
+  }
+
+  closeInstructions() {
+    this.isInstructionsClosed = true;
   }
 
   // Handle floorplan container clicks
@@ -1630,32 +1522,19 @@ async downloadFloorplanWithDetails(format: 'svg' | 'png' = 'svg') {
   }
 
   private attachAndColorAllInline() {
-    /*console.log('🔗 attachAndColorAllInline called, svgHosts count:', this.svgHosts?.length || 0);
-    console.log('🎯 Current floorplan for display:', this.currentFloorplan);
-    console.log('🔑 Normalized key:', currentKey);
-    console.log('📊 SVG HTML Map size:', this.svgHtmlMap.size);*/
-    // console.log('📋 SVG HTML Map keys:', Array.from(this.svgHtmlMap.keys()));
-    // console.log('🔍 Has current key?', currentKey ? this.svgHtmlMap.has(currentKey) : false);*/
-    
     if (!this.svgHosts) {
-      //console.log('❌ No svgHosts found');
       return;
     }
 
     // For each inlined SVG root, run listeners + color
     this.svgHosts.forEach((hostRef) => {
       const host = hostRef.nativeElement;
-      // console.log(`🔗 Processing host ${index}:`, host);
-      // console.log(`🔗 Host innerHTML length:`, host.innerHTML?.length || 0);
-      
+
       const rootSvg = host.querySelector('svg') as SVGSVGElement | null;
       if (!rootSvg) {
-        // console.log(`❌ No SVG found in host ${index}`);
         return;
       }
 
-      // Check if SVG has room elements
-      
       // Attach click handlers on this inline SVG
       this.attachRoomListenersInline(rootSvg);
 
@@ -1678,10 +1557,6 @@ async downloadFloorplanWithDetails(format: 'svg' | 'png' = 'svg') {
     );
   }
 
-  private findRoomElementInline(rootSvg: SVGSVGElement, room: Room): Element | null {
-    return FloorplanUtils.findRoomElementInline(rootSvg, room);
-  }
-
   private updateSvgColorsInline(rootSvg: SVGSVGElement) {
     this.svgColorService.updateSvgColorsInline(
       rootSvg,
@@ -1695,5 +1570,4 @@ async downloadFloorplanWithDetails(format: 'svg' | 'png' = 'svg') {
       (rootSvg: SVGSVGElement, room: Room) => this.findRoomElementInline(rootSvg, room)
     );
   }
-
 }

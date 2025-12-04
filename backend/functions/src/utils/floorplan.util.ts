@@ -53,7 +53,7 @@ export function parseMultipartFromRawBody( // parse the multipart from the raw b
 
     bb.on("field", (name, value) => { // field event = triggers whenever Busboy sees a text field in the form.
       fields[name] = value;
-      console.log(`🧾 Field: ${name} = ${value}`); //It stores the value in a fields object.
+      // console.log(`🧾 Field: ${name} = ${value}`); //It stores the value in a fields object.
     });
 
     bb.on("file", (_name, stream, info) => {

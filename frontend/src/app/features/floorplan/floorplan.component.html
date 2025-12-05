@@ -233,10 +233,10 @@
         </button>
       </div>
     </div>
-    <!-- Office and Floor Label -->
+    <!-- Floor Label -->
     <div *ngIf="filters.outlet !== 'Select Outlet' && currentFloorplan" class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
       <div class="flex items-center space-x-2 text-sm">
-        <span class="font-medium text-blue-700">🏢{{ getFloorLabel(currentFloorplan) }}</span>
+        <span class="font-bold text-lg text-blue-700">🏢{{ getFloorLabel(currentFloorplan) }}</span>
       </div>
     </div>
 
@@ -260,7 +260,7 @@
     </div>
 
     <!-- Availability Status Legend - Always visible when outlet is selected and not filtering by specific status -->
-    <div *ngIf="filters.outlet !== 'Select Outlet' && (filters.status === 'Select Status' || filters.status === 'Occupied')" class="mb-2 p-3 border bg-gray-50 rounded-xl">
+    <div *ngIf="filters.outlet !== 'Select Outlet' && (filters.status === 'Select Status' || filters.status === 'Occupied')" class="mb-2 p-3 border border-gray-200 rounded-md">
       <h3 class="mb-1 text-sm font-semibold text-gray-700">Status Indicator</h3>
       <div class="flex items-center gap-4">
         <div class="flex items-center space-x-2 text-xs">
@@ -275,10 +275,10 @@
     </div>
 
     <!-- Pax Color Legend - Right Panel (shown when filtering by Available, date selection is optional) -->
-    <div *ngIf="filters.outlet !== 'Select Outlet' && filters.status === 'Available' && filteredRooms.length > 0" class="mb-2 p-3 border bg-blue-50 rounded-xl">
-      <h3 class="mb-1 text-sm font-semibold text-blue-700">Pax Capacity Colors</h3>
-      <div class="grid grid-cols-2 gap-2">
-        <div *ngFor="let item of getDynamicPaxLegend()" class="flex items-center space-x-2 text-xs">
+    <div *ngIf="filters.outlet !== 'Select Outlet' && filters.status === 'Available' && filteredRooms.length > 0" class="mb-2 p-3 border border-gray-200 rounded-md">
+      <h3 class="mb-1 text-sm font-semibold text-gray-700">Pax Capacity Colors</h3>
+      <div class="flex flex-wrap items-center gap-3">
+        <div *ngFor="let item of getDynamicPaxLegend()" class="flex items-center space-x-1.5 text-xs">
           <div class="w-3 h-3 rounded" [style.background-color]="item.color"></div>
           <span class="text-gray-600">{{ item.label }}</span>
         </div>

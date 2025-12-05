@@ -179,3 +179,93 @@ export function downloadBlob(fileName: string, blob: Blob): void {
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Extract floor_id from a floorplan URL
+ * URLs can be in formats like:
+ * - Firebase Storage: https://firebasestorage.googleapis.com/v0/b/bucket/o/officeId%2FfloorId%2Ffilename.svg?alt=media&token=...
+ * - Backend API: /api/floorplans/officeId/floorId?raw=1
+ * - Signed URLs with encoded paths
+ *
+ * @param url The URL to extract floor_id from
+ * @param rooms Optional array of rooms to match URL against room SVG paths (fallback method)
+ * @returns The extracted floor_id or null if not found
+ */
+export function extractFloorIdFromUrl(url: string, rooms?: any[]): string | null {
+  if (!url) return null;
+
+  try {
+    // Decode URL-encoded paths
+    let decodedUrl = url;
+    try {
+      decodedUrl = decodeURIComponent(url);
+    } catch (e) {
+      // If decoding fails, use original URL
+    }
+
+    // Try to extract from URL path structure: officeId/floorId/filename
+    // Check for backend API format: /api/floorplans/officeId/floorId
+    const apiMatch = decodedUrl.match(/\/api\/floorplans\/[^\/]+\/([0-9a-f]{24})(?:\/|\?|$)/i);
+    if (apiMatch && apiMatch[1]) {
+      return apiMatch[1];
+    }
+
+    // Check for Firebase Storage URL format with encoded path
+    // Format: /o/officeId%2FfloorId%2Ffilename.svg or /o/officeId/floorId/filename.svg
+    const firebaseEncodedMatch = decodedUrl.match(/\/o\/([^\/\?]+)/);
+    if (firebaseEncodedMatch && firebaseEncodedMatch[1]) {
+      const path = firebaseEncodedMatch[1];
+      const parts = path.split(/[\/%2F]/).filter(p => p.length > 0);
+      if (parts.length >= 2) {
+        // parts[0] = officeId, parts[1] = floorId
+        // Check if parts[1] looks like a floor_id (MongoDB ObjectId format)
+        const potentialFloorId = parts[1];
+        if (/^[0-9a-f]{24}$/i.test(potentialFloorId)) {
+          return potentialFloorId;
+        }
+      }
+    }
+
+    // Check for direct path format (if URL contains the path directly)
+    // Pattern: /officeId/floorId/ or officeId/floorId/
+    const pathMatch = decodedUrl.match(/\/([0-9a-f]{24})\/([0-9a-f]{24})(?:\/|\?|$)/i);
+    if (pathMatch && pathMatch[2]) {
+      return pathMatch[2];
+    }
+
+    // Try to match floor_id from rooms that have this URL in their SVG
+    // This is a fallback if URL structure doesn't contain floor_id directly
+    if (rooms && rooms.length > 0) {
+      // Normalize URLs for comparison (remove query params, decode)
+      const normalizeForComparison = (u: string) => {
+        try {
+          return decodeURIComponent(u.split('?')[0].toLowerCase());
+        } catch {
+          return u.split('?')[0].toLowerCase();
+        }
+      };
+
+      const normalizedUrl = normalizeForComparison(url);
+
+      // Check if any room's SVG matches this URL
+      for (const room of rooms) {
+        if (room.svg && room.floor_id) {
+          const svgArray = Array.isArray(room.svg) ? room.svg : [room.svg];
+          for (const svg of svgArray) {
+            const normalizedSvg = normalizeForComparison(svg);
+            // Check if URLs match (either exact or one contains the other)
+            if (normalizedUrl === normalizedSvg ||
+                normalizedUrl.includes(normalizedSvg) ||
+                normalizedSvg.includes(normalizedUrl)) {
+              return room.floor_id;
+            }
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('Error extracting floor_id from URL:', url, error);
+  }
+
+  return null;
+}
+

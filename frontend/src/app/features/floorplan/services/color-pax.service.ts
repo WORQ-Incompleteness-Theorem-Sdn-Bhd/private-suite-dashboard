@@ -12,12 +12,12 @@ export interface PaxBucket {
 })
 export class ColorPaxService {
   readonly paxPalette = [
-    'rgb(255, 235, 205)', // Smallest
-    'rgb(255, 204, 153)',
-    'rgb(255, 165, 79)',
-    'rgb(255, 128, 0)',   // Brand Orange
-    'rgb(210, 85, 0)',
-    'rgb(139, 50, 0)'     // Largest
+    'rgb(220, 252, 231)', // Smallest (2-4 pax) - very light green #dcfce7
+    'rgb(187, 247, 208)', // 5-6 pax - light green #bbf7d0
+    'rgb(134, 239, 172)', // 7-8 pax - medium-light green #86efac
+    'rgb(74, 222, 128)',  // 9-12 pax - medium green #4ade80
+    'rgb(34, 197, 94)',   // 13-20 pax - vibrant green (Available color) #22c55e
+    'rgb(22, 163, 74)'    // Largest (21+ pax) - saturated dark green #16a34a
   ] as const;
   readonly paxBuckets: PaxBucket[] = [
     { max: 5, label: '2-4' },

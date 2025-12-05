@@ -23,7 +23,6 @@ import { AuthService } from '../../shared/services/auth.service';
 import { Observable, of, forkJoin, combineLatest, timer } from 'rxjs';
 import { catchError, finalize, tap } from 'rxjs/operators';
 import { ToastComponent } from '../../shared/components/toast.component';
-import { HttpClient } from '@angular/common/http';
 // Services
 import { DropdownFilterService, FilterConfig, Filters } from './services/dropdown-filter.service';
 import { ColorPaxService } from './services/color-pax.service';
@@ -273,18 +272,11 @@ onMainContentClick() {
 
   trackBySvgUrl = (_: number, url: string) => url;
 
-  // Helper method to get toStatusUnion for passing to services
-  private toStatusUnion(status: string): 'Available' | 'Occupied' {
-    return this.availabilityService.toStatusUnion(status);
-  }
-
-
 ngOnInit() {
-    // 🛑 STOP! We wait for the Auth Service to give the green light.
     // 'ensureAuthReady()' waits until the token is refreshed and valid.
     this.auth.ensureAuthReady().subscribe(() => {
       
-      // 🟢 GO! Now it is safe to load data.
+      // safe to load data.
       this.loadOffices();
       this.loadFloors();
     });
@@ -897,39 +889,12 @@ ngOnInit() {
       // Filtering applied without date selection
     }
 
-    // Metrics reflect effective availability
-const getEffectiveStatus = (room: Room): 'Available' | 'Occupied' => {
-  if (this.selectedStartDate) {
-    // Date is selected - use availability data from API
-    const avail = this.availabilityByRoomId.get(room.id);
-
-    // If availability data exists, use it
-    if (avail !== undefined) {
-      // Only respect PERMANENT unavailability
-      const isPermanentlyUnavailable = room.originalStatus?.toLowerCase() === 'unavailable';
-
-      if (isPermanentlyUnavailable) {
-        return 'Occupied';
-      }
-
-      // For all other rooms, trust the availability data
-      return avail === 'free' ? 'Available' : 'Occupied';
-    }
-
-    // No availability data yet - use room's base status as temporary fallback
-    // This will be updated once availability API returns data
-    return this.toStatusUnion(room.status);
-  }
-
-  // No date selected - use room's base status
-  return this.toStatusUnion(room.status);
-};
-
+    // Metrics reflect effective availability using service method
     this.Occupied = this.filteredRooms.filter(
-      (r) => getEffectiveStatus(r) === 'Occupied'
+      (r) => this.availabilityService.getEffectiveStatus(r, this.selectedStartDate, this.availabilityByRoomId) === 'Occupied'
     ).length;
     this.Available = this.filteredRooms.filter(
-      (r) => getEffectiveStatus(r) === 'Available'
+      (r) => this.availabilityService.getEffectiveStatus(r, this.selectedStartDate, this.availabilityByRoomId) === 'Available'
     ).length;
     
     // Auto-switch to the floorplan that contains the filtered rooms (only when filters change, not during manual navigation)
@@ -965,62 +930,15 @@ const getEffectiveStatus = (room: Room): 'Available' | 'Occupied' => {
     }, 0);
   }
 
-  // /**
-  //  * Automatically switch to the floorplan that contains the most filtered rooms
-  //  * This helps users see the relevant floorplan when they apply filters
-  //  */
   private autoSwitchToRelevantFloorplan() {
-    if (!this.filteredRooms || this.filteredRooms.length === 0) {
-      return;
-    }
+    const bestIndex = this.floorplanNavigationService.calculateBestFloorplanIndex(
+      this.filteredRooms,
+      this.displayedSvgs,
+      this.currentFloorplanIndex,
+      (url) => this.extractFloorIdFromUrl(url)
+    );
 
-    if (!this.displayedSvgs || this.displayedSvgs.length === 0) {
-      return;
-    }
-
-    // Group filtered rooms by floor_id
-    const roomsByFloorId = new Map<string, Room[]>();
-    this.filteredRooms.forEach(room => {
-      if (room.floor_id) {
-        if (!roomsByFloorId.has(room.floor_id)) {
-          roomsByFloorId.set(room.floor_id, []);
-        }
-        roomsByFloorId.get(room.floor_id)!.push(room);
-      }
-    });
-
-    if (roomsByFloorId.size === 0) {
-      return;
-    }
-
-    // Find which floorplan URL corresponds to each floor_id
-    const floorplanScores = new Map<number, number>(); // index -> room count
-    
-    this.displayedSvgs.forEach((url, index) => {
-      const floorId = this.extractFloorIdFromUrl(url);
-      if (floorId && roomsByFloorId.has(floorId)) {
-        const roomCount = roomsByFloorId.get(floorId)!.length;
-        floorplanScores.set(index, roomCount);
-      }
-    });
-
-    if (floorplanScores.size === 0) {
-      return;
-    }
-
-    // Find the floorplan with the most filtered rooms
-    let bestIndex = -1;
-    let maxRooms = 0;
-    
-    floorplanScores.forEach((roomCount, index) => {
-      if (roomCount > maxRooms) {
-        maxRooms = roomCount;
-        bestIndex = index;
-      }
-    });
-
-    // Switch to the best floorplan if it's different from current
-    if (bestIndex >= 0 && bestIndex !== this.currentFloorplanIndex) {
+    if (bestIndex !== null) {
       this.goToFloorplan(bestIndex);
       // After auto-switching, ensure colors are applied with a longer delay to allow SVG to load
       setTimeout(() => {
@@ -1047,7 +965,7 @@ const getEffectiveStatus = (room: Room): 'Available' | 'Occupied' => {
         this.selectedStartDate,
         this.availabilityByRoomId,
         this.filters.status,
-        (status: string) => this.toStatusUnion(status),
+        (status: string) => this.availabilityService.toStatusUnion(status),
         (capacity: number) => this.getPaxColor(capacity)
       );
     };
@@ -1072,9 +990,9 @@ const getEffectiveStatus = (room: Room): 'Available' | 'Occupied' => {
 
   // Get color based on pax capacity (dynamic based on outlet's rooms)
   getPaxColor(capacity: number): string {
-    // Use filtered rooms to build dynamic buckets for current outlet
-    const roomsForBuckets = this.filteredRooms.length > 0 ? this.filteredRooms : this.rooms;
-    return this.colorPaxService.getPaxColor(capacity, roomsForBuckets);
+    // Always use all outlet rooms for consistent colors regardless of filters
+    // This ensures a suite always has the same color, matching the legend
+    return this.colorPaxService.getPaxColor(capacity, this.rooms);
   }
 
   // Multi-select suite functionality
@@ -1325,10 +1243,10 @@ async downloadFloorplanWithDetails(format: 'svg' | 'png' = 'svg') {
         paxPalette: this.paxPalette,
         paxBuckets: dynamicBuckets, // Use dynamic buckets based on outlet's pax groups
         paxBucketColorMap: paxBucketColorMap, // Color mapping for dynamic buckets
-        toStatusUnion: (status: string) => this.toStatusUnion(status),
+        toStatusUnion: (status: string) => this.availabilityService.toStatusUnion(status),
         getFloorLabel: (path: string) => this.getFloorLabel(path),
         findRoomElementInline: (rootSvg: SVGSVGElement, room: Room) => this.findRoomElementInline(rootSvg, room),
-        hexToRgb: (hex: string) => this.hexToRgb(hex),
+        hexToRgb: (hex: string) => this.colorPaxService.hexToRgb(hex),
         floorIdToFloorMap: this.floorIdToFloorMap,
         pdfQuality: this.pdfQuality
       });
@@ -1379,11 +1297,6 @@ async downloadFloorplanWithDetails(format: 'svg' | 'png' = 'svg') {
     return this.compactMode;
   }
 
-  // Convert hex color to RGB for jsPDF
-  private hexToRgb(hex: string): { r: number, g: number, b: number } | null {
-    return this.colorPaxService.hexToRgb(hex);
-  }
-
   getFloorLabel(path: string): string {
     // First, try to extract floor_id from URL and use floor_no from floors API
     const floorId = this.extractFloorIdFromUrl(path);
@@ -1406,90 +1319,8 @@ async downloadFloorplanWithDetails(format: 'svg' | 'png' = 'svg') {
   return FloorplanUtils.getFloorLabel(path, this.filters.outlet, this.floorLabelOverrides);
   }
 
-  /**
-   * Extract floor_id from a floorplan URL
-   * URLs can be in formats like:
-   * - Firebase Storage: https://firebasestorage.googleapis.com/v0/b/bucket/o/officeId%2FfloorId%2Ffilename.svg?alt=media&token=...
-   * - Backend API: /api/floorplans/officeId/floorId?raw=1
-   * - Signed URLs with encoded paths
-   */
   private extractFloorIdFromUrl(url: string): string | null {
-    if (!url) return null;
-
-    try {
-      // Decode URL-encoded paths
-      let decodedUrl = url;
-      try {
-        decodedUrl = decodeURIComponent(url);
-      } catch (e) {
-        // If decoding fails, use original URL
-      }
-
-      // Try to extract from URL path structure: officeId/floorId/filename
-      // Check for backend API format: /api/floorplans/officeId/floorId
-      const apiMatch = decodedUrl.match(/\/api\/floorplans\/[^\/]+\/([0-9a-f]{24})(?:\/|\?|$)/i);
-      if (apiMatch && apiMatch[1]) {
-        return apiMatch[1];
-      }
-
-      // Check for Firebase Storage URL format with encoded path
-      // Format: /o/officeId%2FfloorId%2Ffilename.svg or /o/officeId/floorId/filename.svg
-      const firebaseEncodedMatch = decodedUrl.match(/\/o\/([^\/\?]+)/);
-      if (firebaseEncodedMatch && firebaseEncodedMatch[1]) {
-        const path = firebaseEncodedMatch[1];
-        const parts = path.split(/[\/%2F]/).filter(p => p.length > 0);
-        if (parts.length >= 2) {
-          // parts[0] = officeId, parts[1] = floorId
-          // Check if parts[1] looks like a floor_id (MongoDB ObjectId format)
-          const potentialFloorId = parts[1];
-          if (/^[0-9a-f]{24}$/i.test(potentialFloorId)) {
-            return potentialFloorId;
-          }
-        }
-      }
-
-      // Check for direct path format (if URL contains the path directly)
-      // Pattern: /officeId/floorId/ or officeId/floorId/
-      const pathMatch = decodedUrl.match(/\/([0-9a-f]{24})\/([0-9a-f]{24})(?:\/|\?|$)/i);
-      if (pathMatch && pathMatch[2]) {
-        return pathMatch[2];
-      }
-
-      // Try to match floor_id from rooms that have this URL in their SVG
-      // This is a fallback if URL structure doesn't contain floor_id directly
-      if (this.rooms && this.rooms.length > 0) {
-        // Normalize URLs for comparison (remove query params, decode)
-        const normalizeForComparison = (u: string) => {
-          try {
-            return decodeURIComponent(u.split('?')[0].toLowerCase());
-          } catch {
-            return u.split('?')[0].toLowerCase();
-          }
-        };
-        
-        const normalizedUrl = normalizeForComparison(url);
-        
-        // Check if any room's SVG matches this URL
-        for (const room of this.rooms) {
-          if (room.svg && room.floor_id) {
-            const svgArray = Array.isArray(room.svg) ? room.svg : [room.svg];
-            for (const svg of svgArray) {
-              const normalizedSvg = normalizeForComparison(svg);
-              // Check if URLs match (either exact or one contains the other)
-              if (normalizedUrl === normalizedSvg || 
-                  normalizedUrl.includes(normalizedSvg) || 
-                  normalizedSvg.includes(normalizedUrl)) {
-                return room.floor_id;
-              }
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.warn('Error extracting floor_id from URL:', url, error);
-    }
-
-    return null;
+    return FloorplanUtils.extractFloorIdFromUrl(url, this.rooms);
   }
 
 
@@ -1565,7 +1396,7 @@ async downloadFloorplanWithDetails(format: 'svg' | 'png' = 'svg') {
       this.selectedStartDate,
       this.availabilityByRoomId,
       this.filters.status,
-      (status: string) => this.toStatusUnion(status),
+      (status: string) => this.availabilityService.toStatusUnion(status),
       (capacity: number) => this.getPaxColor(capacity),
       (rootSvg: SVGSVGElement, room: Room) => this.findRoomElementInline(rootSvg, room)
     );

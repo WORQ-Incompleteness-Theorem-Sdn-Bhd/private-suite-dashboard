@@ -11,13 +11,16 @@ export interface PaxBucket {
   providedIn: 'root'
 })
 export class ColorPaxService {
+  // Pax capacity color palette - Gradient from light to vibrant Available green
+  // Largest pax uses full Available green (#22c55e), smaller pax use lighter opacity versions
+  // Creates clear visual differentiation: larger capacity = more vibrant/saturated green
   readonly paxPalette = [
-    'rgb(220, 252, 231)', // Smallest (2-4 pax) - very light green #dcfce7
-    'rgb(187, 247, 208)', // 5-6 pax - light green #bbf7d0
-    'rgb(134, 239, 172)', // 7-8 pax - medium-light green #86efac
-    'rgb(74, 222, 128)',  // 9-12 pax - medium green #4ade80
-    'rgb(34, 197, 94)',   // 13-20 pax - vibrant green (Available color) #22c55e
-    'rgb(22, 163, 74)'    // Largest (21+ pax) - saturated dark green #16a34a
+    'rgba(34, 197, 94, 0.3)',  // Smallest (2-4 pax) - 30% opacity: very light green
+    'rgba(34, 197, 94, 0.45)', // 5-6 pax - 45% opacity: light green
+    'rgba(34, 197, 94, 0.60)', // 7-8 pax - 60% opacity: medium-light green
+    'rgba(34, 197, 94, 0.75)', // 9-12 pax - 75% opacity: medium green
+    'rgba(34, 197, 94, 0.90)', // 13-20 pax - 90% opacity: strong green
+    'rgba(34, 197, 94, 1.0)'   // Largest (21+ pax) - 100% opacity: full Available green #22c55e
   ] as const;
   readonly paxBuckets: PaxBucket[] = [
     { max: 5, label: '2-4' },

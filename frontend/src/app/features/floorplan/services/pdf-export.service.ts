@@ -91,65 +91,65 @@ export class PdfExportService {
     if (!showStatusColors) {
       return yPos;
     }
-    // 1. Setup Legend Position (Right side of the header)
-    const legendWidth = 40;
-    const startX = pageWidth - legendWidth - 15; // 15mm from right edge
-    let currentY = 20; // Start with 5mm gap below the note text (note at Y=10mm, box padding=5mm, so 10+5+5=20mm)
-    // Calculate legend height dynamically
-    let legendHeight = 15; // Base height for title
+    // 1. Setup Legend Position (Right side, aligned with metadata labels)
+    const legendWidth = 32; // Compact width
+    const startX = pageWidth - legendWidth - 35; // 25mm from right edge (moved 10mm to the left)
+    let currentY = 20; // Start at same Y position as metadata labels
+    // Calculate legend height dynamically based on content
+    const titleHeight = 4.5; // Title line height
+    const sectionTitleHeight = 3.5; // "Status Colors:" height
+    const itemHeight = 3.5; // Each status item (Available, Occupied)
+    const topPadding = 3; // Top padding inside box
+    const bottomPadding = 1.5; // Bottom padding inside box (reduced)
+
+    let legendHeight = titleHeight + topPadding; // Start with title + top padding
     if (showStatusColors) {
-      legendHeight += 15; // Space for Available and Occupied indicators
+      legendHeight += sectionTitleHeight + (2 * itemHeight) + bottomPadding; // Section title + 2 items + bottom padding
     }
+
     // Draw Legend Box (Optional background)
     pdf.setFillColor(250, 250, 250); // Very light gray
     pdf.setDrawColor(200, 200, 200);
-    pdf.rect(startX - 5, currentY - 5, legendWidth, legendHeight, 'FD');
-    // Title
-    pdf.setFontSize(10);
+    pdf.setLineWidth(0.3);
+    pdf.rect(startX - 2, currentY - 2, legendWidth, legendHeight, 'FD');
+
+    // Calculate vertical center offset to center content in box
+    const boxStartY = currentY - 2; // Box top position
+    const contentHeight = titleHeight + (showStatusColors ? sectionTitleHeight + (2 * itemHeight) : 0);
+    const verticalOffset = (legendHeight - contentHeight) / 2;
+
+    // Title (centered vertically in box)
+    currentY = boxStartY + verticalOffset + 2; // Start from box top + offset + baseline adjustment
+    pdf.setFontSize(8);
     pdf.setTextColor(0, 0, 0);
     pdf.setFont('helvetica', 'bold');
     pdf.text('Legend', startX, currentY);
-    currentY += 6;
-    pdf.setFontSize(8);
+    currentY += 4.5;
+    pdf.setFontSize(7);
     pdf.setFont('helvetica', 'normal');
     // Show STATUS COLORS (Available = Green, Occupied = Red)
     if (showStatusColors) {
       pdf.setFont('helvetica', 'bold');
       pdf.text('Status Colors:', startX, currentY);
-      currentY += 5;
+      currentY += 3.5;
       pdf.setFont('helvetica', 'normal');
       // Available (Green)
       pdf.setFillColor(34, 197, 94); // Light green
       pdf.setDrawColor(100, 100, 100);
-      pdf.rect(startX, currentY - 3, 4, 4, 'FD');
+      pdf.rect(startX, currentY - 2.5, 3, 3, 'FD');
       pdf.setTextColor(0, 0, 0);
-      pdf.text('Available', startX + 6, currentY);
-      currentY += 5;
+      pdf.text('Available', startX + 4.5, currentY);
+      currentY += 3.5;
       // Occupied (Red)
       pdf.setFillColor(239, 68, 68); // Light red/pink
       pdf.setDrawColor(100, 100, 100);
-      pdf.rect(startX, currentY - 3, 4, 4, 'FD');
+      pdf.rect(startX, currentY - 2.5, 3, 3, 'FD');
       pdf.setTextColor(0, 0, 0);
-      pdf.text('Occupied', startX + 6, currentY);
-      currentY += 5;
+      pdf.text('Occupied', startX + 4.5, currentY);
+      currentY += 3.5;
     }
     return yPos; // Return original yPos so main layout isn't affected
   }
-  // HELPER: Determines the box color based on room capacity
-  // private getRoomColorForPdf(room: Room, params: PdfExportParams): string {
-  //   const capacity = room.capacity || 1;
-  //   for (let i = 0; i < params.paxBuckets.length; i++) {
-  //     const bucket = params.paxBuckets[i];
-  //     const prevMax = i === 0 ? 0 : params.paxBuckets[i - 1].max;
-  //     if (capacity > prevMax && capacity <= bucket.max) {
-  //       if (params.paxBucketColorMap && params.paxBucketColorMap.has(bucket.max)) {
-  //         return params.paxBucketColorMap.get(bucket.max)!;
-  //       }
-  //       return params.paxPalette[i] || '#cccccc';
-  //     }
-  //   }
-  //   return params.paxPalette[params.paxPalette.length - 1] || '#cccccc';
-  // }
   async exportFloorplanAsPdf(params: PdfExportParams): Promise<jsPDF> {
     const pdf = new jsPDF('landscape', 'mm', 'a4');
     pdf.setProperties({
@@ -419,23 +419,24 @@ export class PdfExportService {
       const smallerH = pdfH * 0.6;
       const boxX = pdfX + (pdfW - smallerW) / 2;
       const boxY = pdfY + (pdfH - smallerH) / 2;
-      // Add suite label (no border)
+      // Draw YouTube icon at top of box
+      const iconSize = Math.min(smallerW, smallerH) * 0.25;
+      const iconY = boxY + iconSize * 0.8;
+      this.drawYouTubeIcon(pdf, boxX + smallerW / 2, iconY, iconSize);
+      // Add suite label directly below icon (tight spacing)
       pdf.setFontSize(6);
-      pdf.setTextColor(0, 0, 0);  // Black color
+      pdf.setTextColor(0, 0, 0);
       pdf.setFont('helvetica', 'bold');
-      // Show pax if multiple suites selected
       const totalSelectedWithVideo = selectedRooms.length + nonSelectedRooms.length;
       const labelText = totalSelectedWithVideo > 1 && room.capacity
         ? `${room.name}`
         : room.name;
-      // Suite name above center
-      pdf.text(labelText, boxX + smallerW / 2, boxY + smallerH / 2 - 2, { align: 'center', baseline: 'middle' });
-      // "WATCH" on first line
+      const suiteNameY = iconY + iconSize * 0.7 + 1; // Tight spacing below icon
+      pdf.text(labelText, boxX + smallerW / 2, suiteNameY, { align: 'center', baseline: 'middle' });
+      // "WATCH TOUR" text directly below suite name (tight spacing)
       pdf.setFontSize(4);
-      pdf.text('WATCH', boxX + smallerW / 2, boxY + smallerH / 2 + 0.5, { align: 'center', baseline: 'middle' });
-      // "TOUR" on second line (tight spacing)
-      pdf.setFontSize(4);
-      pdf.text('TOUR', boxX + smallerW / 2, boxY + smallerH / 2 + 2, { align: 'center', baseline: 'middle' });
+      const watchTourY = suiteNameY + 1.5; // Tight spacing below suite name
+      pdf.text('WATCH TOUR', boxX + smallerW / 2, watchTourY, { align: 'center', baseline: 'middle' });
       // Add clickable area
       pdf.link(boxX, boxY, smallerW, smallerH, {
         url: room.video,
@@ -468,28 +469,62 @@ export class PdfExportService {
       const smallerH = pdfH * 0.6;
       const boxX = pdfX + (pdfW - smallerW) / 2;
       const boxY = pdfY + (pdfH - smallerH) / 2;
-      // Add suite label for selected rooms (no border)
+      // Draw YouTube icon at top of box
+      const iconSize = Math.min(smallerW, smallerH) * 0.25;
+      const iconY = boxY + iconSize * 0.8;
+      this.drawYouTubeIcon(pdf, boxX + smallerW / 2, iconY, iconSize);
+      // Add suite label for selected rooms directly below icon (tight spacing)
       pdf.setFontSize(5);
-      pdf.setTextColor(0, 0, 0);  // Black color
+      pdf.setTextColor(0, 0, 0);
       pdf.setFont('helvetica', 'bold');
-      // Show pax if multiple suites selected
       const totalSelectedWithVideo = selectedRooms.length + nonSelectedRooms.length;
       const labelText = totalSelectedWithVideo > 1 && room.capacity
         ? `${room.name}`
         : room.name;
-      // Suite name above center
-      pdf.text(labelText, boxX + smallerW / 2, boxY + smallerH / 2 - 2, { align: 'center', baseline: 'middle' });
-      // "WATCH" on first line
+      const suiteNameY = iconY + iconSize * 0.7 + 1; // Tight spacing below icon
+      pdf.text(labelText, boxX + smallerW / 2, suiteNameY, { align: 'center', baseline: 'middle' });
+      // "WATCH TOUR" text directly below suite name (tight spacing)
       pdf.setFontSize(4);
-      pdf.text('WATCH', boxX + smallerW / 2, boxY + smallerH / 2 + 0.5, { align: 'center', baseline: 'middle' });
-      // "TOUR" on second line (tight spacing)
-      pdf.setFontSize(4);
-      pdf.text('TOUR', boxX + smallerW / 2, boxY + smallerH / 2 + 2, { align: 'center', baseline: 'middle' });
+      const watchTourY = suiteNameY + 1.5; // Tight spacing below suite name
+      pdf.text('WATCH TOUR', boxX + smallerW / 2, watchTourY, { align: 'center', baseline: 'middle' });
       // Add clickable area
       pdf.link(boxX, boxY, smallerW, smallerH, {
         url: room.video!,
         target: '_blank'
       });
+    });
+    // Add "Suite" labels for rooms WITHOUT videos (selected and non-selected)
+    const roomsWithoutVideo = filteredRooms.filter(room => !room.video || room.video.trim() === '');
+    roomsWithoutVideo.forEach(room => {
+      const coords = this.getRoomPdfCoordinates(
+        room, svgElement,
+        vbX, vbY, vbW, vbH,
+        imgX, imgY, imgWidth, imgHeight,
+        params
+      );
+      if (!coords) return;
+      const { pdfX, pdfY, pdfW, pdfH } = coords;
+      // Validation
+      const isOutsideLeft = pdfX + pdfW < imgX;
+      const isOutsideRight = pdfX > imgX + imgWidth;
+      const isOutsideTop = pdfY + pdfH < imgY;
+      const isOutsideBottom = pdfY > imgY + imgHeight;
+      const isTooFarLeft = pdfX < imgX - 10;
+      const isTooFarUp = pdfY < imgY - 10;
+      if (isOutsideLeft || isOutsideRight || isOutsideTop || isOutsideBottom ||
+          isTooFarLeft || isTooFarUp) {
+        return;
+      }
+      // Make box smaller and center it
+      const smallerW = pdfW * 0.6;
+      const smallerH = pdfH * 0.6;
+      const boxX = pdfX + (pdfW - smallerW) / 2;
+      const boxY = pdfY + (pdfH - smallerH) / 2;
+      // Add suite name in center (gray color for non-video suites)
+      pdf.setFontSize(6);
+      pdf.setTextColor(0, 0, 0);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(room.name, boxX + smallerW / 2, boxY + smallerH / 2, { align: 'center', baseline: 'middle' });
     });
   }
   /**
@@ -875,31 +910,60 @@ export class PdfExportService {
       // Render each suite with clickable link
       suitesToShow.forEach((suiteName, index) => {
         const room = params.rooms.find(r => r.name === suiteName);
-        // Build suite text with pax
+        const hasVideo = room && room.video && room.video.trim() !== '';
+        // Build suite text with pax (no icon)
         const suiteText = (suitesToShow.length > 1 && room && room.capacity)
           ? `${suiteName} (Pax: ${room.capacity})`
           : suiteName;
-        // Add comma separator if not the first item
-        const displayText = index > 0 ? `, ${suiteText}` : suiteText;
-        const textWidth = pdf.getTextWidth(displayText);
+        const iconSize = fontToUse * 0.35; // Icon size based on font size
+        const iconSpacing = hasVideo ? iconSize + 1 : 0; // Space for icon + gap
         // Check if we need to wrap to next line
-        if (currentX + textWidth > maxWidth && index > 0) {
-          currentY += lineHeight;
-          currentX = 15 + 8; // Indent wrapped lines (8 spaces)
-          // Remove leading comma and space for wrapped lines
-          const wrappedText = suiteText;
-          const wrappedWidth = pdf.getTextWidth(wrappedText);
-          pdf.text(wrappedText, currentX, currentY);
-          // Add clickable link if suite has video
-          if (room && room.video && room.video.trim() !== '') {
-            pdf.link(currentX, currentY - 3, wrappedWidth, 4, { url: room.video, target: '_blank' });
+        if (index > 0) {
+          const commaText = ', ';
+          const commaWidth = pdf.getTextWidth(commaText);
+          const wrappedWidth = pdf.getTextWidth(suiteText);
+          if (currentX + commaWidth + iconSpacing + wrappedWidth > maxWidth) {
+            // Wrap to next line
+            currentY += lineHeight;
+            currentX = 15 + 8; // Indent wrapped lines
+            // Draw YouTube icon if has video
+            if (hasVideo) {
+              this.drawYouTubeIcon(pdf, currentX + iconSize / 2, currentY - iconSize * 0.4, iconSize);
+              currentX += iconSize + 1; // Move past icon
+            }
+            pdf.text(suiteText, currentX, currentY);
+            // Add clickable link if suite has video
+            if (hasVideo) {
+              pdf.link(currentX - iconSize - 1, currentY - 3, wrappedWidth + iconSize + 1, 4, { url: room.video, target: '_blank' });
+            }
+            currentX += wrappedWidth;
+          } else {
+            // Same line - add comma, then icon, then text
+            pdf.text(commaText, currentX, currentY);
+            currentX += commaWidth;
+            // Draw YouTube icon after comma if has video
+            if (hasVideo) {
+              this.drawYouTubeIcon(pdf, currentX + iconSize / 2, currentY - iconSize * 0.4, iconSize);
+              currentX += iconSize + 1; // Move past icon
+            }
+            pdf.text(suiteText, currentX, currentY);
+            // Add clickable link if suite has video (only over icon + text, not comma)
+            if (hasVideo) {
+              pdf.link(currentX - iconSpacing, currentY - 3, wrappedWidth + iconSpacing, 4, { url: room.video, target: '_blank' });
+            }
+            currentX += wrappedWidth;
           }
-          currentX += wrappedWidth;
         } else {
-          pdf.text(displayText, currentX, currentY);
+          // First item - draw icon before text if has video
+          if (hasVideo) {
+            this.drawYouTubeIcon(pdf, currentX + iconSize / 2, currentY - iconSize * 0.4, iconSize);
+            currentX += iconSize + 1; // Move past icon
+          }
+          pdf.text(suiteText, currentX, currentY);
+          const textWidth = pdf.getTextWidth(suiteText);
           // Add clickable link if suite has video
-          if (room && room.video && room.video.trim() !== '') {
-            pdf.link(currentX, currentY - 3, textWidth, 4, { url: room.video, target: '_blank' });
+          if (hasVideo) {
+            pdf.link(currentX - iconSpacing, currentY - 3, textWidth + iconSpacing, 4, { url: room.video, target: '_blank' });
           }
           currentX += textWidth;
         }
@@ -947,13 +1011,19 @@ export class PdfExportService {
       const smallerH = pdfH * 0.6;
       const boxX = pdfX + (pdfW - smallerW) / 2;
       const boxY = pdfY + (pdfH - smallerH) / 2;
-      // Blue border and label
+      // Blue border
       pdf.setDrawColor(0, 0, 255);
       pdf.setLineWidth(0.4);
       pdf.rect(boxX, boxY, smallerW, smallerH, 'S');
-      pdf.setFontSize(6);
+      // Draw YouTube icon at top
+      const iconSize = Math.min(smallerW, smallerH) * 0.3;
+      const iconY = boxY + iconSize * 0.7;
+      this.drawYouTubeIcon(pdf, boxX + smallerW / 2, iconY, iconSize);
+      // Add suite label directly below icon (tight spacing)
+      pdf.setFontSize(5);
       pdf.setTextColor(0, 0, 255);
-      pdf.text(room.name, boxX + smallerW / 2, boxY + smallerH / 2, { align: 'center', baseline: 'middle' });
+      const suiteNameY = iconY + iconSize * 0.7 + 0.8; // Tight spacing
+      pdf.text(room.name, boxX + smallerW / 2, suiteNameY, { align: 'center', baseline: 'middle' });
       // Add clickable link
       pdf.link(boxX, boxY, smallerW, smallerH, { url: room.video, target: '_blank' });
       console.log(`🔵 ${room.name}: Blue box at (${boxX.toFixed(1)}, ${boxY.toFixed(1)})`);
@@ -972,34 +1042,84 @@ export class PdfExportService {
       const smallerH = pdfH * 0.6;
       const boxX = pdfX + (pdfW - smallerW) / 2;
       const boxY = pdfY + (pdfH - smallerH) / 2;
-      // Orange border and label
+      // Orange border
       pdf.setDrawColor(255, 102, 0);
       pdf.setLineWidth(0.8);
       pdf.rect(boxX, boxY, smallerW, smallerH, 'S');
-      pdf.setFontSize(6);
+      // Draw YouTube icon at top
+      const iconSize = Math.min(smallerW, smallerH) * 0.3;
+      const iconY = boxY + iconSize * 0.7;
+      this.drawYouTubeIcon(pdf, boxX + smallerW / 2, iconY, iconSize);
+      // Add suite label directly below icon (tight spacing)
+      pdf.setFontSize(5);
       pdf.setTextColor(255, 102, 0);
-      pdf.text(room.name, boxX + smallerW / 2, boxY + smallerH / 2, { align: 'center', baseline: 'middle' });
+      const suiteNameY = iconY + iconSize * 0.7 + 0.8; // Tight spacing
+      pdf.text(room.name, boxX + smallerW / 2, suiteNameY, { align: 'center', baseline: 'middle' });
       // Add clickable link
       pdf.link(boxX, boxY, smallerW, smallerH, { url: room.video!, target: '_blank' });
       console.log(`🟠 ${room.name}: Orange box at (${boxX.toFixed(1)}, ${boxY.toFixed(1)})`);
     });
+    // Add "Suite" labels for rooms WITHOUT videos (gray labels)
+    const roomsWithoutVideo = filteredRooms.filter(room => !room.video || room.video.trim() === '');
+    roomsWithoutVideo.forEach(room => {
+      const coords = this.getRoomPdfCoordinatesVector(
+        room, rootSvg,
+        imgX, imgY, vbX, vbY, scaleX, scaleY,
+        params
+      );
+      if (!coords) return;
+      const { pdfX, pdfY, pdfW, pdfH } = coords;
+      // Make box smaller and center it
+      const smallerW = pdfW * 0.6;
+      const smallerH = pdfH * 0.6;
+      const boxX = pdfX + (pdfW - smallerW) / 2;
+      const boxY = pdfY + (pdfH - smallerH) / 2;
+      // Add suite name in center (gray color for non-video suites)
+      pdf.setFontSize(6);
+      pdf.setTextColor(100, 100, 100);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(room.name, boxX + smallerW / 2, boxY + smallerH / 2, { align: 'center', baseline: 'middle' });
+      console.log(`⚫ ${room.name}: Gray label at (${boxX.toFixed(1)}, ${boxY.toFixed(1)})`);
+    });
   }
   /**
-   * Calculate PDF coordinates for a room element using svg2pdf transformation
-   *
-   * KEY COORDINATE MAPPING FORMULA:
-   * 1. Get element's bounding box in SVG coordinates: bbox = element.getBBox()
-   * 2. Convert to PDF coordinates:
-   *    pdfX = imgX + (bbox.x - vbX) * scaleX
-   *    pdfY = imgY + (bbox.y - vbY) * scaleY
-   *    pdfW = bbox.width * scaleX
-   *    pdfH = bbox.height * scaleY
-   *
-   * Where:
-   * - imgX, imgY: PDF position where SVG starts (top-left corner)
-   * - vbX, vbY: ViewBox offset (from viewBox="vbX vbY vbW vbH")
-   * - scaleX, scaleY: Scaling factors (pdfWidth/viewBoxWidth, pdfHeight/viewBoxHeight)
+   * Draw YouTube icon in PDF
+   * @param pdf - jsPDF instance
+   * @param x - X coordinate (center)
+   * @param y - Y coordinate (center)
+   * @param size - Icon size (width/height in mm)
    */
+  private drawYouTubeIcon(pdf: jsPDF, x: number, y: number, size: number): void {
+    const halfSize = size / 2;
+    const cornerRadius = size * 0.15;
+
+    // Save current state
+    pdf.saveGraphicsState();
+
+    // Draw rounded rectangle (YouTube background)
+    pdf.setFillColor(255, 0, 0); // YouTube red
+    pdf.roundedRect(x - halfSize, y - halfSize, size, size, cornerRadius, cornerRadius, 'F');
+
+    // Draw play triangle (white)
+    pdf.setFillColor(255, 255, 255);
+    const triangleSize = size * 0.35;
+    const triangleX = x - triangleSize * 0.15; // Slightly offset to right
+    const triangleY = y;
+
+    // Create triangle path
+    const x1 = triangleX - triangleSize / 2;
+    const y1 = triangleY - triangleSize / 2;
+    const x2 = triangleX - triangleSize / 2;
+    const y2 = triangleY + triangleSize / 2;
+    const x3 = triangleX + triangleSize / 2;
+    const y3 = triangleY;
+
+    pdf.triangle(x1, y1, x2, y2, x3, y3, 'F');
+
+    // Restore state
+    pdf.restoreGraphicsState();
+  }
+
   private getRoomPdfCoordinatesVector(
     room: Room,
     svgElement: SVGSVGElement,

@@ -122,14 +122,17 @@ export class OfficeService {
           })
           .map((office: any) => {
             //console.log('Mapping valid BigQuery office:', office);
-            
+
             // Find matching static office for SVG fallback
             const staticOffice = this.staticOffices.find(so => so.id === office.location_id);
-            
+
+            // Prefer static displayName if available, otherwise sanitize API location_name
+            const displayName = staticOffice?.displayName  /*this.sanitizeLocationName(office.location_name)*/ ;
+
             return {
               id: office.location_id,
               name: office.location_name,
-              displayName: office.location_name,
+              displayName: displayName,
               svg: staticOffice?.svg || []
             } as Office;
           });
@@ -206,10 +209,13 @@ export class OfficeService {
           .map((office: any) => {
             const staticOffice = this.staticOffices.find(so => so.id === office.location_id);
 
+            // Prefer static displayName if available, otherwise sanitize API location_name
+            const displayName = staticOffice?.displayName;
+
             return {
               id: office.location_id,
               name: office.location_name,
-              displayName: office.location_name,
+              displayName: displayName,
               svg: staticOffice?.svg || []
             } as Office;
           });

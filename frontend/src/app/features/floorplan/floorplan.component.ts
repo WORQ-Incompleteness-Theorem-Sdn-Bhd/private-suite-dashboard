@@ -810,21 +810,32 @@ ngOnInit() {
     }
   }
 
-  // Floor selection handler (kept for compatibility, but now always shows all SVGs)
+  // Floor selection handler - filters floorplans by selected floor
   onFloorChange(event: Event) {
     const select = event.target as HTMLSelectElement;
-    const raw = select.value; // e.g. "9|63f5decf5de9f10007e115a6" or "all"
-    // store as-is for reference (display still shows all SVGs)
+    const raw = select.value; // e.g. "Level 1|63f5decf5de9f10007e115a6" or "all"
     this.selectedFloorSvg = raw;
-    
+
     // Close any open popup when changing floors
     this.closePopup();
-    
-    // Always display all outlet SVGs regardless of floor selection
-    // Floor selector is now informational only - all floorplans are shown
-    this.displayedSvgs = this.selectedOutletSvgs || [];
+
+    // Filter displayed SVGs based on floor selection
+    if (raw === 'all') {
+      // Show all outlet SVGs
+      this.displayedSvgs = this.selectedOutletSvgs || [];
+    } else {
+      // Extract floor_id from selection (format: "Label|FloorId")
+      const selectedFloorId = raw.split('|')[1];
+
+      // Filter SVGs that match the selected floor_id
+      this.displayedSvgs = (this.selectedOutletSvgs || []).filter(svgUrl => {
+        const floorId = this.extractFloorIdFromUrl(svgUrl);
+        return floorId === selectedFloorId;
+      });
+    }
+
     this.currentFloorplanIndex = 0;
-    
+
     if (this.displayedSvgs.length > 0) {
       this.svgLoading = true;
       this.svgFailed = false;
@@ -837,7 +848,7 @@ ngOnInit() {
 
   private updateDisplayedSvgs() {
     const outletId = this.filters.outlet;
-    
+
     if (!outletId || outletId === 'Select Outlet') {
       this.displayedSvgs = [];
       this.currentFloorplanIndex = 0; // Reset pagination
@@ -860,13 +871,28 @@ ngOnInit() {
       return;
     }
 
-    // Always display ALL outlet SVGs, regardless of floor selection
-    // This ensures all floorplans for the outlet are shown without filtering by floor_id
-    this.displayedSvgs = this.selectedOutletSvgs || [];
+    // Filter SVGs based on floor selection
+    if (this.selectedFloorSvg === 'all') {
+      // Display all outlet SVGs
+      this.displayedSvgs = this.selectedOutletSvgs || [];
+    } else if (this.selectedFloorSvg) {
+      // Extract floor_id from selection (format: "Label|FloorId")
+      const selectedFloorId = this.selectedFloorSvg.split('|')[1];
+
+      // Filter SVGs that match the selected floor_id
+      this.displayedSvgs = (this.selectedOutletSvgs || []).filter(svgUrl => {
+        const floorId = this.extractFloorIdFromUrl(svgUrl);
+        return floorId === selectedFloorId;
+      });
+    } else {
+      // No floor selected yet, show all
+      this.displayedSvgs = this.selectedOutletSvgs || [];
+    }
+
     this.currentFloorplanIndex = 0; // Reset pagination
-    
+
     if (this.displayedSvgs.length > 0) {
-      this.loadInlineSvgs(this.displayedSvgs);   // ✅ Load all SVGs
+      this.loadInlineSvgs(this.displayedSvgs);
     } else {
       //console.warn('⚠️ No SVGs to display, selectedOutletSvgs is empty');
       this.svgLoading = false;
@@ -1252,14 +1278,23 @@ async downloadFloorplanWithDetails(format: 'svg' | 'png' = 'svg') {
       });
 
       // Get outlet display name instead of ID for filename
+      // displayName is already sanitized by OfficeService
       let outletName = 'all';
       if (this.filters.outlet && this.filters.outlet !== 'Select Outlet') {
         const selectedOffice = this.officeService.getOffices().find(office => office.id === this.filters.outlet);
         outletName = selectedOffice ? selectedOffice.displayName : this.filters.outlet;
       }
 
-      let fileName = `floorplan-${outletName}.pdf`;
-      this.pdfExportService.savePdfSmart(pdf, fileName);
+      let fileName = `floorplan_${outletName}.pdf`;
+
+      // Use direct download link to force exact filename
+      const blob = pdf.output('blob');
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      link.click();
+      URL.revokeObjectURL(url);
 
       this.showMessage(`Floorplan PDF exported successfully! 🎉`);
     } catch (error) {

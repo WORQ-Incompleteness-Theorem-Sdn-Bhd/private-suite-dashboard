@@ -66,34 +66,20 @@
 // Navigation arrows styling
 .nav-arrow {
   backdrop-filter: blur(8px);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  
+  transition: box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
   &:hover:not(:disabled) {
-    transform: scale(1.05);
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
   }
-  
-  &:active:not(:disabled) {
-    transform: scale(0.95);
-  }
-  
+
   &:disabled {
     opacity: 0.3;
     cursor: not-allowed;
-    transform: none;
   }
-  
-  // Arrow icon animation
+
+  // Arrow icon - only color transition, no transform
   svg {
-    transition: all 0.2s ease-in-out;
-  }
-  
-  &:hover:not(:disabled) svg {
-    transform: translateX(-2px);
-  }
-  
-  &:hover:not(:disabled) svg:last-child {
-    transform: translateX(2px);
+    transition: color 0.2s ease-in-out;
   }
 }
 

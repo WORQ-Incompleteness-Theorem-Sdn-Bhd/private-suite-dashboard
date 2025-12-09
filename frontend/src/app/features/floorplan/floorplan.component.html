@@ -84,8 +84,6 @@
     <!-- Backdrop (mobile) -->
     <div class="fixed inset-0 z-30 bg-black/40 lg:hidden" *ngIf="mobileOpen" (click)="closeMobile()"></div>
 
-    
-
 <!-- Mobile open button (hamburger) – show only when sidebar is closed on mobile 
 <button
   class="fixed top-4 left-4 z-40 p-3 bg-yellow-300 rounded-full shadow-lg hover:bg-yellow-400 transition-colors lg:hidden"
@@ -96,7 +94,6 @@
     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
   </svg>
 </button>-->
-
 
   <!-- Main Content Area -->
   <main class="flex-1 overflow-auto p-4">
@@ -163,7 +160,7 @@
           </label>
         </div>
       </div>
-      <!--- still select floor dulu, this is optional filter to view specific floor -->
+
       <!-- Floor selector: visible only when the outlet has more than 1 floor SVG -->
       <div *ngIf="floorOptions.length > 1" class="pt-2 border-t">
         <!-- Fixed: now checks floorOptions.length instead of floors.length -->
@@ -335,21 +332,23 @@
               </div>
             </div>
           <!-- Previous arrow -->
-          <button 
+          <button
             *ngIf="totalFloorplans > 1"
-            (click)="previousFloorplan()" 
+            (click)="previousFloorplan(); $event.stopPropagation()"
             [disabled]="!hasPreviousFloorplan"
-            class="nav-arrow absolute left-2 top-1/2 -translate-y-1/2 z-30 p-3 bg-white/95 hover:bg-white border border-gray-200 rounded-full shadow-xl group">
+            type="button"
+            class="nav-arrow absolute left-4 top-1/2 -translate-y-1/2 z-30 w-10 h-10 flex items-center justify-center bg-white/95 hover:bg-white border border-gray-200 rounded-full shadow-xl group disabled:opacity-50 disabled:cursor-not-allowed">
             <svg class="w-5 h-5 text-gray-600 group-hover:text-orange-600 transition-colors duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"></path>
             </svg>
           </button>
           <!-- Next arrow -->
-          <button 
+          <button
             *ngIf="totalFloorplans > 1"
-            (click)="nextFloorplan()" 
+            (click)="nextFloorplan(); $event.stopPropagation()"
             [disabled]="!hasNextFloorplan"
-            class="nav-arrow absolute right-2 top-1/2 -translate-y-1/2 z-30 p-3 bg-white/95 hover:bg-white border border-gray-200 rounded-full shadow-xl group">
+            type="button"
+            class="nav-arrow absolute right-4 top-1/2 -translate-y-1/2 z-30 w-10 h-10 flex items-center justify-center bg-white/95 hover:bg-white border border-gray-200 rounded-full shadow-xl group disabled:opacity-50 disabled:cursor-not-allowed">
             <svg class="w-5 h-5 text-gray-600 group-hover:text-orange-600 transition-colors duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"></path>
             </svg>

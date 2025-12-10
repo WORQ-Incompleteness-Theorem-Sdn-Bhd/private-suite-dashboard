@@ -180,10 +180,23 @@ export class AvailabilityService {
             const normalizeId = (id: string) => id?.toLowerCase().trim();
             const room = rooms.find(room => normalizeId(room.id) === normalizeId(r.resource_id));
 
-            // 🔍 DEBUG: Log when room isn't found
-            if (!room && index < 5) {
+            // 🔍 DEBUG: Enhanced logging for UBP3A debugging
+            if (!room) {
               console.warn(`⚠️ No room found for resource_id: ${r.resource_id}`, {
-                availableRoomIds: rooms.slice(0, 3).map(r => r.id)
+                normalizedResourceId: normalizeId(r.resource_id),
+                totalRoomsInMemory: rooms.length,
+                availableRoomIds: rooms.slice(0, 5).map(rm => ({
+                  id: rm.id,
+                  name: rm.name,
+                  normalized: normalizeId(rm.id)
+                }))
+              });
+            } else if (index < 3) {
+              console.log(`✅ Room FOUND for resource_id: ${r.resource_id}`, {
+                roomName: room.name,
+                roomStatus: room.status,
+                isAvailable,
+                willSetAs: isAvailable ? 'free' : 'occupied'
               });
             }
 

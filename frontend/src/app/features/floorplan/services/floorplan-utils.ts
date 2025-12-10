@@ -105,7 +105,7 @@ export function findRoomElementInline(rootSvg: SVGSVGElement, room: Room): Eleme
   const findShapeElement = (selector: string): Element | null => {
     const elements = rootSvg.querySelectorAll(selector);
 
-    console.log(`🔍 findRoomElementInline: ${room.name} with selector "${selector}" found ${elements.length} elements`);
+  // console.log(`🔍 findRoomElementInline: ${room.name} with selector "${selector}" found ${elements.length} elements`);
 
     // Log all elements found for debugging
     for (let i = 0; i < elements.length; i++) {
@@ -132,9 +132,6 @@ export function findRoomElementInline(rootSvg: SVGSVGElement, room: Room): Eleme
         return elements[i];
       }
     }
-
-    // Second pass: if no visible shape found, return null
-    console.log(`  ❌ No shape element found outside <defs> for ${room.name}, returning null`);
     return null;
   };
 

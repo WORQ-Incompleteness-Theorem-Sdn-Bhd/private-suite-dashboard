@@ -133,8 +133,15 @@ export class DropdownFilterService {
     availabilityByRoomId: Map<string, 'free' | 'occupied'>,
     selectedStartDate: string
   ): Room[] {
-    return rooms
-      .filter((r) => {
+    console.log('🔍 [FILTER] applyFilters called:', {
+      totalRooms: rooms.length,
+      filters,
+      selectedSuites,
+      selectedStartDate
+    });
+
+    const filtered = rooms
+      .filter((r, index) => {
         const outletMatch = (() => {
           if (filters.outlet === 'Select Outlet') return true;
           const selectedOffice = this.officeService.getOffices().find(o => o.id === filters.outlet);
@@ -150,13 +157,34 @@ export class DropdownFilterService {
 
         const suiteOk = selectedSuites.length === 0 || selectedSuites.includes(r.name);
 
-        return outletMatch && statusOk && paxOk && suiteOk;
+        const passes = outletMatch && statusOk && paxOk && suiteOk;
+
+        // 🔍 DEBUG: Log first 5 rooms or failed rooms
+        if (index < 5 || !passes) {
+          console.log(`🔍 [FILTER] Room ${r.name} (${r.id}):`, {
+            outletMatch,
+            effectiveStatus,
+            statusOk,
+            paxOk,
+            suiteOk,
+            passes: passes ? '✅ PASS' : '❌ FAIL',
+            roomOutlet: r.outlet,
+            roomCapacity: r.capacity,
+            availInMap: availabilityByRoomId.has(r.id)
+          });
+        }
+
+        return passes;
       })
       .sort((a, b) => {
         if (filters.pax !== 'Select Pax') return a.capacity - b.capacity;
         if (selectedSuites.length > 0) return a.name.localeCompare(b.name, undefined, { numeric: true });
         return 0;
       });
+
+    console.log(`🔍 [FILTER] Result: ${filtered.length} rooms passed filters (out of ${rooms.length})`);
+
+    return filtered;
   }
 
   getOfficeIdFromOutletName(outletName: string): string | undefined {

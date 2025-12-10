@@ -113,10 +113,8 @@ export class SvgColorService {
     rooms.forEach(room => {
       const el = findRoomElementInline(rootSvg, room);
       if (!el) {
-        // 🔍 DEBUG: Log first few missing elements
-        if (elementsFound < 3) {
-          console.warn(`⚠️ SVG element not found for room ${room.id} (${room.name})`);
-        }
+        // 🔍 DEBUG: Log ALL missing elements for UBP3A debugging
+        console.warn(`⚠️ SVG element not found for room ${room.id} (${room.name})`);
         return;
       }
       elementsFound++;
@@ -126,6 +124,12 @@ export class SvgColorService {
 
       const isSelected = filteredRooms.includes(room);
       let color = '#FFFFFF'; // Light gray for unselected rooms (instead of 'none')
+
+      // 🔍 DEBUG: Log filtering status
+      if (!isSelected && elementsFound <= 5) {
+        console.log(`⚪ Room ${room.name} (${room.id}) NOT in filteredRooms - will be white/gray`);
+      }
+
       if (isSelected) {
         const avail = selectedStartDate ? availabilityByRoomId.get(room.id) : undefined;
         let effectiveStatus: 'Occupied' | 'Available';
@@ -138,31 +142,30 @@ export class SvgColorService {
           effectiveStatus = toStatusUnion(room.status);
         }
 
-        // 🔍 DEBUG: Log color decision for first few rooms
-        const debugThis = elementsFound <= 5;
-        if (debugThis) {
-          console.log(`🎨 [Inline SVG] Room ${room.name}:`, {
-            roomStatus: room.status,
-            effectiveStatus,
-            filtersStatus,
-            hasDate: !!selectedStartDate,
-            avail,
-            capacity: room.capacity
-          });
-        }
+        // 🔍 DEBUG: Enhanced logging for UBP3A
+        console.log(`🎨 [Inline SVG] Room ${room.name} (${room.id}):`, {
+          roomStatus: room.status,
+          effectiveStatus,
+          filtersStatus,
+          hasDate: !!selectedStartDate,
+          avail,
+          availInMap: availabilityByRoomId.has(room.id),
+          capacity: room.capacity,
+          isSelected: true
+        });
 
         if (effectiveStatus === 'Occupied') {
           color = '#ef4444';
-          if (debugThis) console.log(`  → RED (Occupied)`);
+          console.log(`  → RED (Occupied)`);
         } else if (filtersStatus === 'Available') {
           // ✅ Apply pax colors when status filter is "Available" (works with OR without date)
           color = getPaxColor(room.capacity);
           elementsColored++;
-          if (debugThis) console.log(`  → PAX COLOR: ${color} (capacity: ${room.capacity})`);
+          console.log(`  → PAX COLOR: ${color} (capacity: ${room.capacity})`);
         } else {
           color = '#22c55e';
           elementsColored++;
-          if (debugThis) console.log(`  → GREEN (Available, filter not set to Available)`);
+          console.log(`  → GREEN (Available, filter not set to Available)`);
         }
       }
 

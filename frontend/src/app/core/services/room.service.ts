@@ -101,7 +101,7 @@ export class RoomService {
             id: item.resource_id,
             name: item.resource_name,
             status: normalizedStatus,
-            outlet: (office?.name || office?.displayName || ''),
+            outlet: (office?.displayName || office?.name || ''),  // ✅ FIX: Use displayName first to match UBP3A
             svg: Array.isArray(svgPath) ? svgPath : (svgPath ? [svgPath] : []),
             capacity: item.pax_size,
             type: item.resource_type,

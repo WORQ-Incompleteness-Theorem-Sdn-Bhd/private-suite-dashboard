@@ -1,10 +1,11 @@
 <!-- Toast notifications -->
 <app-toast></app-toast>
   <div
-    class="h-screen bg-gray-100 overflow-y-auto overflow-x-hidden transition-[padding] duration-300"
+    class="h-screen bg-white overflow-y-auto overflow-x-hidden transition-[padding] duration-300"
     [ngClass]="{ 'pl-0': sidebarCollapsed, 'pl-64': !sidebarCollapsed }"
-    (click)="onMainContentClick()" 
+    (click)="onMainContentClick()"
   >
+  
 <!-- Sidebar -->
     <aside
       class="fixed inset-y-0 left-0 z-40 flex flex-col bg-white shadow-lg transition-transform duration-300"
@@ -17,8 +18,8 @@
     >
       <!-- Header (logo) -->
       <div class="flex items-center justify-between px-4 py-4 border-b border-gray-200">
-        <img src="assets/Worq-logo.png" alt="WORQ" class="h-10 w-auto" *ngIf="!sidebarCollapsed" />
-        <img src="assets/Worq-logo.png" alt="WORQ" class="h-7 w-7" *ngIf="sidebarCollapsed" />
+        <img src="assets\Logo\Worq-logo.png" alt="WORQ" class="h-16 w-auto object-contain max-w-full" *ngIf="!sidebarCollapsed" />
+        <img src="assets\Logo\Worq-logo.png" alt="WORQ" class="h-10 w-10 object-contain" *ngIf="sidebarCollapsed" />
       </div>
 
       <!-- Navigation -->
@@ -52,6 +53,16 @@
             <span class="font-medium" *ngIf="!sidebarCollapsed">Management</span>
           </a>
 
+          <!-- Guidelines Button -->
+          <button
+            (click)="toggleGuidelinesModal()"
+            class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
+            title="View Guidelines"
+          >
+            <img src="assets/Icon/info.png" alt="Info" class="w-5 h-5 shrink-0" />
+            <span class="font-medium" *ngIf="!sidebarCollapsed">Guidelines</span>
+          </button>
+
       </nav>
       <!-- Sidebar footer -->
       <div class="mt-auto p-4 border-t border-gray-200">
@@ -78,7 +89,7 @@
               rounded-full shadow-md bg-white hover:bg-gray-100 transition-transform hover:scale-105"
         aria-label="Toggle sidebar"
       >
-        <img src="assets/app.png" alt="Menu Icon" class="h-6 w-6 object-contain" />
+        <img src="assets/Icon/app.png" alt="Menu Icon" class="h-6 w-6 object-contain" />
       </button>
 
     <!-- Backdrop (mobile) -->
@@ -288,7 +299,6 @@
       <ng-container *ngIf="filters.outlet !== 'Select Outlet'; else askToPick">
         <!-- Auto-adjusting container for floorplan -->
         <div class="floorplan-container" (click)="onFloorplanContainerClick($event)">
-          <!-- Info banner: how many Firebase SVGs were found for this outlet -->
           <!-- Loading overlay -->
           <div *ngIf="isLoading" class="absolute inset-0 z-30 grid place-items-center backdrop-blur-sm">
             <div class="text-center">
@@ -435,3 +445,104 @@
       </div>
     </div>
   </div>
+
+<!-- Guidelines Modal -->
+<div *ngIf="showGuidelinesModal"
+     class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4"
+     (click)="closeGuidelinesModal()">
+  <div class="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col"
+       (click)="$event.stopPropagation()">
+    <!-- Modal Header -->
+    <div class="flex items-center justify-between p-6 border-b border-gray-200">
+      <div class="flex items-center gap-3">
+        <img src="assets/Icon/info.png" alt="Info" class="w-8 h-8" />
+        <h2 class="text-2xl font-bold text-gray-900">Floorplan Guidelines</h2>
+      </div>
+      <button
+        (click)="closeGuidelinesModal()"
+        class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Modal Content -->
+    <div class="flex-1 overflow-y-auto p-6">
+      <div class="space-y-6">
+        <!-- Introduction -->
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <h3 class="text-lg font-semibold text-blue-900 mb-2">📋 Important Guidelines</h3>
+          <p class="text-sm text-blue-800">
+            Please follow these guidelines when creating or uploading floorplan SVG files to ensure proper display and functionality.
+          </p>
+        </div>
+
+        <!-- Download PDF Buttons -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <a
+            href="assets/Guidelines/Floorplan Dashboard – Figma Drawing Guideline.pdf"
+            download="Floorplan Dashboard - Figma Drawing Guideline.pdf"
+            class="flex items-center gap-3 p-4 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors">
+            <svg class="w-10 h-10 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            <div class="flex-1 text-left">
+              <div class="font-semibold text-gray-900">Figma Drawing Guideline</div>
+              <div class="text-xs text-gray-600">Step-by-step drawing instructions</div>
+            </div>
+          </a>
+
+          <a
+            href="assets/Guidelines/Floorplan Dashboard.pdf"
+            download="Floorplan Dashboard.pdf"
+            class="flex items-center gap-3 p-4 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors">
+            <svg class="w-10 h-10 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            <div class="flex-1 text-left">
+              <div class="font-semibold text-gray-900">Dashboard Overview</div>
+              <div class="text-xs text-gray-600">General dashboard guidelines</div>
+            </div>
+          </a>
+        </div>
+
+        <!-- Quick Tips -->
+        <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+          <h3 class="text-lg font-semibold text-gray-900 mb-3">💡 Quick Tips</h3>
+          <ul class="space-y-2 text-sm text-gray-700">
+            <li class="flex items-start gap-2">
+              <span class="text-orange-600 mt-0.5">•</span>
+              <span>Each room/suite must have a unique <code class="px-1 py-0.5 bg-gray-200 rounded text-xs">id</code> attribute in the SVG</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-orange-600 mt-0.5">•</span>
+              <span>Use consistent naming conventions for room IDs (e.g., "room-101", "suite-202")</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-orange-600 mt-0.5">•</span>
+              <span>Export SVGs with optimized settings to reduce file size</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-orange-600 mt-0.5">•</span>
+              <span>Test your floorplan after uploading to ensure all rooms are clickable</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-orange-600 mt-0.5">•</span>
+              <span>Use the drag-and-drop feature to reorder floorplans as needed</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Footer -->
+    <div class="flex items-center justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
+      <button
+        (click)="closeGuidelinesModal()"
+        class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+        Close
+      </button>
+    </div>
+  </div>
+</div>

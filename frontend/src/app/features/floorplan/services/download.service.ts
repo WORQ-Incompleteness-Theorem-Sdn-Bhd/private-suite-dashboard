@@ -144,7 +144,7 @@ export class DownloadService {
 
   downloadFloorplan(selectedOutletSvgs: string[], sanitizer: any): void {
     if (!selectedOutletSvgs || selectedOutletSvgs.length === 0) {
-      console.warn('No floorplan to download.');
+
       return;
     }
 
@@ -155,7 +155,7 @@ export class DownloadService {
     );
 
     if (!sanitizedUrl) {
-      console.error('SVG URL could not be sanitized.');
+
       return;
     }
 

@@ -36,7 +36,6 @@ export class AuthService implements OnDestroy {
     // 2. Listen for Firebase User
     onAuthStateChanged(this.auth, async (user) => {
       if (user) {
-        console.log('🔄 Session restored. Refreshing backend token...');
         // Wait for the token refresh to complete BEFORE letting the app proceed
         await this.refreshBackendToken(user.uid);
         this.startAutoRefresh(user.uid);
@@ -80,7 +79,7 @@ export class AuthService implements OnDestroy {
         this.handleInternalUser(user, user.uid);
       }
     } catch (error: any) {
-      console.error('Sign-in error:', error);
+
       // ... (Your error handling logic remains here)
       this.toastService.error('Sign-in failed');
     }
@@ -108,7 +107,7 @@ export class AuthService implements OnDestroy {
       this.toastService.success(`Welcome to WORQ Floorplan Dashboard ${userName}!`, 5000);
       await this.router.navigate(['/floorplan']);
     } catch (error: any) {
-      console.error('Error in handleInternalUser:', error);
+
       this.toastService.error('Login failed.');
     }
   }
@@ -118,10 +117,9 @@ export class AuthService implements OnDestroy {
       const tokenResponse = await firstValueFrom(this.getUserToken(uid));
       if (tokenResponse?.token) {
         sessionStorage.setItem('userAccessToken', tokenResponse.token);
-        // console.log('✅ Backend token refreshed');
       }
     } catch (error) {
-      console.error('❌ Failed to refresh backend token:', error);
+
     }
   }
 
@@ -129,7 +127,6 @@ export class AuthService implements OnDestroy {
     this.stopAutoRefresh(); 
     const refreshInterval = 50 * 60 * 1000; // 50 mins
     this.refreshSubscription = interval(refreshInterval).subscribe(() => {
-      console.log('⏰ Auto-refreshing token...');
       this.refreshBackendToken(uid);
     });
   }

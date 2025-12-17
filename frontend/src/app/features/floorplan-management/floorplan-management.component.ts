@@ -19,9 +19,10 @@ import { FloorService } from '../../core/services/floor.service';
 import { BQService, UploadResponse } from './bq.service';
 import { FloorplanDeleteService } from './floorplan-delete.service';
 import { getStorage, ref, getDownloadURL } from 'firebase/storage';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { catchError } from 'rxjs/operators';
-import { of } from 'rxjs'; 
+import { of } from 'rxjs';
+import { AuthService } from '../../shared/services/auth.service'; 
 
 
 type Option = { label: string; value: string };
@@ -69,14 +70,39 @@ export class FloorplanManagementComponent implements OnInit {
   activeTab: 'overview' | 'upload' = 'overview';
 
   sidebarCollapsed = true;  // start hidden
+  mobileOpen = false;
 
   // Delete confirmation modal state
   showDeleteModal = false;
   deleteTarget: { officeId: string; floorId: string; label: string } | null = null;
   isDeleting = false;
 
+  // Drag and drop state
+  draggedIndex: number | null = null;
+  showFloorplanList = false; // Collapse/expand state for floorplan list
+  hasUnsavedChanges = false; // Track if order has changed
+  isSavingOrder = false; // Track saving state
+
+  // Guidelines modal state
+  showGuidelinesModal = false;
+
   toggleSidebar() {
     this.sidebarCollapsed = !this.sidebarCollapsed;
+  }
+
+  closeMobile() {
+    this.mobileOpen = false;
+  }
+
+  openMobile() {
+    this.mobileOpen = true;
+  }
+
+  onMainContentClick() {
+    // Only close if the sidebar is open and the click was outside it
+    if (!this.sidebarCollapsed) {
+      this.sidebarCollapsed = true;
+    }
   }
 
   constructor(
@@ -87,7 +113,8 @@ export class FloorplanManagementComponent implements OnInit {
     private floorService: FloorService,
     private http: HttpClient,
     private router: Router,
-    private deleteService: FloorplanDeleteService
+    private deleteService: FloorplanDeleteService,
+    private auth: AuthService
   ) {
     this.form = this.fb.group({
       officeId: ['', Validators.required],
@@ -112,22 +139,17 @@ export class FloorplanManagementComponent implements OnInit {
     // Get total outlets from BigQuery and floorplans from Firebase
     this.officeService.loadOffices().subscribe({
       next: (officeResponse) => {
-        console.log('Office response:', officeResponse);
         const totalOutlets = officeResponse.success && officeResponse.data ? officeResponse.data.length : 0;
-        console.log('Total outlets from BigQuery:', totalOutlets);
         
         // Get all floorplans from Firebase
         this.uploader.getAllFloorplans().subscribe({
           next: (floorplans: any[]) => {
-            console.log('Floorplans data:', floorplans);
-            console.log('Number of outlets with floorplans:', floorplans.length);
             
             // Calculate statistics
             const outletsWithFloorplans = floorplans.length;
             let totalFloorplans = 0;
             
             floorplans.forEach(outlet => {
-              console.log('Outlet:', outlet.officeId, 'has officeSvg:', !!outlet.officeSvg, 'floors:', outlet.floors?.length || 0);
               // Count office-level SVG
               if (outlet.officeSvg) {
                 totalFloorplans++;
@@ -145,10 +167,9 @@ export class FloorplanManagementComponent implements OnInit {
               loading: false
             };
             
-            console.log('Final overview stats:', this.overviewStats);
           },
-          error: (err) => {
-            console.error('Error loading floorplans:', err);
+          error: () => {
+
             this.overviewStats = {
               totalOutlets,
               outletsWithFloorplans: 0,
@@ -158,23 +179,18 @@ export class FloorplanManagementComponent implements OnInit {
           }
         });
       },
-      error: (err) => {
-        console.error('Error loading offices:', err);
+      error: () => {
+
         this.overviewStats.loading = false;
       }
     });
   }
 
   loadDropdown() {
-    console.log('Loading dropdown data...');
     
     // Load offices using OfficeService
     this.officeService.loadOffices().subscribe({
       next: (response) => {
-        console.log('Office service response:', response);
-        console.log('Response success:', response.success);
-        console.log('Response data:', response.data);
-        console.log('Response data length:', response.data?.length);
         
         if (response.success && response.data && response.data.length > 0) {
           this.locations = response.data
@@ -182,56 +198,44 @@ export class FloorplanManagementComponent implements OnInit {
               // Only include offices that have both a valid name and ID
               const hasValidName = office.displayName || office.name;
               const hasValidId = office.id;
-              console.log('Office validation:', { 
-                office, 
-                hasValidName: !!hasValidName, 
-                hasValidId: !!hasValidId 
-              });
               return hasValidName && hasValidId;
             })
             .map(office => {
-              console.log('Mapping valid office:', office);
               return {
                 label: office.displayName || office.name,
                 value: office.id
               };
             });
-          console.log('Mapped locations:', this.locations);
         } else {
-          console.warn('No office data received or success=false');
-          console.warn('Response details:', { success: response.success, dataLength: response.data?.length });
+
+
           this.locations = [];
         }
       },
-      error: (err) => {
-        console.error('Error loading offices:', err);
-        console.error('Error details:', err.status, err.statusText, err.url);
+      error: () => {
+
+
         this.locations = [];
       }
     });
 
     // Load floors using FloorService
-    console.log('Calling floorService.getFloors()...');
     this.floorService.getFloors().subscribe({
       next: (floors) => {
-        console.log('Floor service response:', floors);
-        console.log('Floors array length:', floors?.length || 0);
-        console.log('First floor object:', floors?.[0]);
         
         if (floors && floors.length > 0) {
           this.floors = floors.map(floor => ({
             label: floor.floor_no,
             value: floor.floor_id
           }));
-          console.log('Mapped floors:', this.floors);
         } else {
-          console.warn('No floors data received or empty array');
+
           this.floors = [];
         }
       },
-      error: (err) => {
-        console.error('Error loading floors:', err);
-        console.error('Error details:', err.status, err.statusText, err.url);
+      error: () => {
+
+
         this.floors = [];
       }
     });
@@ -250,7 +254,7 @@ export class FloorplanManagementComponent implements OnInit {
       this.form.patchValue({ file: null });
       input.value = '';
       this.errorMsg.set('Only SVG files are allowed.');
-      console.warn('❌ Rejected non-SVG file:', file.name, file.type);
+
       return;
     }
 
@@ -261,7 +265,7 @@ export class FloorplanManagementComponent implements OnInit {
   submit() {
     if (this.form.invalid) {
       this.form.markAllAsTouched();
-      console.warn('⚠️ Form invalid:', this.form.value);
+
       return;
     }
 
@@ -277,16 +281,6 @@ export class FloorplanManagementComponent implements OnInit {
     this.progress.set(0);
     this.result.set(null);
     this.errorMsg.set(null);
-
-    console.log('🚀 Starting upload with params:', {
-      officeId,
-      floorId,
-      fileName: fileName || undefined,
-      overwrite: !!overwrite,
-      fileSize: file.size,
-      fileType: file.type,
-      originalFileName: file.name
-    });
 
     this.uploader
       .uploadFloorplan({
@@ -305,16 +299,8 @@ export class FloorplanManagementComponent implements OnInit {
           }
         },
         error: (err) => {
-          console.error('❌ Upload error:', err);
-          console.error('❌ Upload error details:', {
-            status: err.status,
-            statusText: err.statusText,
-            url: err.url,
-            error: err.error,
-            message: err.message,
-            name: err.name,
-            stack: err.stack
-          });
+
+
           this.uploading.set(false);
           this.errorMsg.set(
             err?.error?.error || err?.message || 'Upload failed.'
@@ -327,7 +313,6 @@ export class FloorplanManagementComponent implements OnInit {
 
   onSelected() {
     if (!this.selectedOffice) {
-      console.log('❌ No office selected, skipping floorplan load');
       return;
     }
     
@@ -335,7 +320,6 @@ export class FloorplanManagementComponent implements OnInit {
     this.error = '';
 
     const floor = this.selectedFloor || undefined;
-    console.log('🔍 Loading floorplan for office:', this.selectedOffice, 'floor:', floor);
     
     // Use the same pattern as floorplan.component.ts - try getAllSvgFilesForOutlet first
     if (!floor) {
@@ -344,7 +328,7 @@ export class FloorplanManagementComponent implements OnInit {
         catchError((error: any) => {
           // Only log as error if it's not a 404
           if (error?.status !== 404) {
-            console.error('❌ Error loading outlet SVGs:', error);
+
             this.error = 'Failed to load floorplan SVGs';
           }
           return of<string[]>([]);
@@ -353,8 +337,12 @@ export class FloorplanManagementComponent implements OnInit {
         if (svgs && svgs.length > 0) {
           this.selectedOutletSvgs = svgs;
           this.displayedSvgs = svgs.slice();
+
+          // Apply saved floorplan order from localStorage
+          this.applySavedFloorplanOrder();
+
           this.currentFloorplanIndex = 0;
-          this.loadInlineSvgs(svgs);
+          this.loadInlineSvgs(this.displayedSvgs);
           this.loading = false;
         } else {
           // Try fallback to office-level cloud SVGs
@@ -367,7 +355,7 @@ export class FloorplanManagementComponent implements OnInit {
         catchError((err: any) => {
           // 404 is expected for floors without SVGs
           if (err?.status !== 404) {
-            console.error('Error loading floor SVG:', err);
+
             this.error = 'Failed to load floor SVG';
           }
           this.loading = false;
@@ -376,9 +364,13 @@ export class FloorplanManagementComponent implements OnInit {
       ).subscribe((urls: string[]) => {
         if (urls && urls.length > 0) {
           this.selectedOutletSvgs = urls;
-          this.displayedSvgs = urls;
+          this.displayedSvgs = urls.slice();
+
+          // Apply saved floorplan order from localStorage
+          this.applySavedFloorplanOrder();
+
           this.currentFloorplanIndex = 0;
-          this.loadInlineSvgs(urls);
+          this.loadInlineSvgs(this.displayedSvgs);
         } else {
           this.error = 'No floorplan found for this floor.';
           this.displayedSvgs = [];
@@ -408,9 +400,13 @@ export class FloorplanManagementComponent implements OnInit {
     
     if (cloudSvgs.length > 0) {
       this.selectedOutletSvgs = cloudSvgs;
-      this.displayedSvgs = cloudSvgs;
+      this.displayedSvgs = cloudSvgs.slice();
+
+      // Apply saved floorplan order from localStorage
+      this.applySavedFloorplanOrder();
+
       this.currentFloorplanIndex = 0;
-      this.loadInlineSvgs(cloudSvgs);
+      this.loadInlineSvgs(this.displayedSvgs);
       this.loading = false;
     } else {
       this.error = 'No floorplan found for this outlet.';
@@ -421,49 +417,6 @@ export class FloorplanManagementComponent implements OnInit {
     }
   }
 
-  private loadInlineSvg(url: string) {
-    // Reset previous displays
-    this.safeSvgUrl = undefined;
-    this.svgHtml = undefined;
-    
-    // Add authentication token to request
-    const token = sessionStorage.getItem('userAccessToken') || '';
-    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
-    
-    this.http.get(url, { responseType: 'text', headers }).subscribe({
-      next: (svgText) => {
-        console.log('✅ Single SVG loaded successfully:', url);
-        // Basic responsive attributes
-        try {
-          const temp = document.createElement('div');
-          temp.innerHTML = svgText;
-          const svg = temp.querySelector('svg');
-          if (svg) {
-            svg.setAttribute('width', '100%');
-            svg.setAttribute('height', 'auto');
-            svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-            if (!svg.getAttribute('viewBox')) {
-              const w = svg.getAttribute('width') || '1000';
-              const h = svg.getAttribute('height') || '1000';
-              svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
-            }
-            this.svgHtml = this.sanitizer.bypassSecurityTrustHtml(temp.innerHTML);
-          } else {
-            // Fallback to direct URL if not valid SVG
-            this.safeSvgUrl = this.sanitizer.bypassSecurityTrustResourceUrl(url);
-          }
-        } catch {
-          this.safeSvgUrl = this.sanitizer.bypassSecurityTrustResourceUrl(url);
-        }
-        this.loading = false;
-      },
-      error: (e) => {
-        console.error('Inline SVG fetch failed, falling back to direct URL', e);
-        this.safeSvgUrl = this.sanitizer.bypassSecurityTrustResourceUrl(url);
-        this.loading = false;
-      }
-    });
-  }
 
   // Normalize URL key by removing query params for consistent lookup (public for template)
   normalizeUrlKey(url: string | null): string {
@@ -511,7 +464,7 @@ export class FloorplanManagementComponent implements OnInit {
           const normalizedUrl = await this.normalizeToDownloadUrl(url);
           return { originalUrl: url, normalizedUrl };
         } catch (err) {
-          console.warn('⚠️ Failed to normalize URL:', url, err);
+
           return { originalUrl: url, normalizedUrl: url }; // Fallback to original URL
         }
       })
@@ -519,41 +472,35 @@ export class FloorplanManagementComponent implements OnInit {
 
     // Now process all normalized URLs
     normalizedUrls.forEach(({ originalUrl, normalizedUrl }) => {
-      // Add authentication token to request
-      const token = sessionStorage.getItem('userAccessToken') || '';
-      const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
-      
-      this.http.get(normalizedUrl, { responseType: 'text', headers }).subscribe({
-        next: (svgText) => {
-          console.log('✅ SVG loaded successfully:', originalUrl);
+      // Use fetch API to handle CORS issues with Firebase Storage URLs
+      fetch(normalizedUrl)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          return response.text();
+        })
+        .then(svgText => {
           // Process SVG for compact display
           const processedSvgText = this.processSvgForCompactDisplay(svgText);
           const safe = this.sanitizer.bypassSecurityTrustHtml(processedSvgText);
           // Store using normalized key (without query params) for consistent lookup
           const key = this.normalizeUrlKey(originalUrl);
           this.svgHtmlMap.set(key, safe);
-          console.log('✅ SVG stored with key:', key, 'Map keys:', Array.from(this.svgHtmlMap.keys()));
 
           completedRequests++;
-          
+
           // Only hide loading when ALL SVGs are loaded
           if (completedRequests === totalRequests) {
             setTimeout(() => {
               this.loading = false;
               this.updateCurrentSvgDisplay();
-              console.log('✅ All SVGs loaded, updated display');
             }, 200);
           }
-        },
-        error: (err) => {
-          console.error('❌ Failed to fetch SVG:', originalUrl, err);
-          console.error('Error details:', {
-            status: err.status,
-            statusText: err.statusText,
-            url: err.url,
-            error: err.error
-          });
-          
+        })
+        .catch(err => {
+
+
           // Store fallback error SVG so UI doesn't look blank
           const key = this.normalizeUrlKey(originalUrl);
           const fallbackSvg = `<svg width="100%" height="200" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
@@ -576,21 +523,19 @@ export class FloorplanManagementComponent implements OnInit {
           }
           
           completedRequests++;
-          
+
           // Hide loading even if some requests fail
           if (completedRequests === totalRequests) {
             this.loading = false;
             this.updateCurrentSvgDisplay();
-            console.log('⚠️ Some SVGs failed to load, but updated display with available ones');
           }
-        }
-      });
+        });
     });
 
     // SVG loading timeout (5 seconds)
     setTimeout(() => {
       if (this.loading) {
-        console.warn('SVG loading timeout');
+
         this.loading = false;
         this.error = 'SVG loading timed out. Please try again.';
         this.updateCurrentSvgDisplay();
@@ -610,21 +555,12 @@ export class FloorplanManagementComponent implements OnInit {
       const currentUrl = this.currentFloorplan;
       const key = this.normalizeUrlKey(currentUrl);
       const cachedSvg = this.svgHtmlMap.get(key);
-      
-      console.log('🔍 updateCurrentSvgDisplay:', {
-        currentUrl,
-        key,
-        hasCachedSvg: !!cachedSvg,
-        mapKeys: Array.from(this.svgHtmlMap.keys())
-      });
-      
+
       if (cachedSvg) {
         // Use the cached SVG from map (preferred method for multiple SVGs)
         // Set svgHtml for template compatibility
         this.svgHtml = cachedSvg;
-        console.log('✅ Displaying cached SVG for:', currentUrl, 'key:', key);
       } else {
-        console.log('⚠️ No cached SVG found for:', currentUrl, 'key:', key);
         // Fallback to direct URL if not yet loaded
         this.safeSvgUrl = this.sanitizer.bypassSecurityTrustResourceUrl(currentUrl);
       }
@@ -632,10 +568,6 @@ export class FloorplanManagementComponent implements OnInit {
       // Only clear if we truly have nothing to display
       this.safeSvgUrl = undefined;
       this.svgHtml = undefined;
-      console.log('⚠️ No floorplan to display:', { 
-        displayedSvgsLength: this.displayedSvgs.length, 
-        currentFloorplan: this.currentFloorplan 
-      });
     }
   }
 
@@ -649,7 +581,7 @@ export class FloorplanManagementComponent implements OnInit {
 
     // Set responsive attributes for display
     svgElement.setAttribute('width', '100%');
-    svgElement.setAttribute('height', 'auto');
+    svgElement.setAttribute('height', '100%');
     svgElement.setAttribute('preserveAspectRatio', 'xMidYMid meet');
     svgElement.setAttribute('style', 'max-width: 100%; height: auto; display: block;');
     
@@ -691,7 +623,6 @@ export class FloorplanManagementComponent implements OnInit {
   nextFloorplan() {
     if (this.hasNextFloorplan) {
       this.currentFloorplanIndex++;
-      console.log('➡️ Next floorplan:', this.currentFloorplanIndex, 'of', this.totalFloorplans);
       this.updateCurrentSvgDisplay();
     }
   }
@@ -699,7 +630,6 @@ export class FloorplanManagementComponent implements OnInit {
   previousFloorplan() {
     if (this.hasPreviousFloorplan) {
       this.currentFloorplanIndex--;
-      console.log('⬅️ Previous floorplan:', this.currentFloorplanIndex, 'of', this.totalFloorplans);
       this.updateCurrentSvgDisplay();
     }
   }
@@ -707,14 +637,12 @@ export class FloorplanManagementComponent implements OnInit {
   goToFloorplan(index: number) {
     if (index >= 0 && index < this.totalFloorplans) {
       this.currentFloorplanIndex = index;
-      console.log('🎯 Go to floorplan:', index, 'of', this.totalFloorplans);
       this.updateCurrentSvgDisplay();
     }
   }
 
   // Refresh data
   refreshData() {
-    console.log('🔄 Refreshing page to default state');
     // Reset selections & viewer
     this.selectedOffice = '';
     this.selectedFloor = '';
@@ -753,25 +681,6 @@ export class FloorplanManagementComponent implements OnInit {
     const office = this.locations.find(l => l.value === this.selectedOffice);
     return office?.label || 'Selected Outlet';
   }
-
-
-  // Debug method to help troubleshoot SVG loading issues
-  debugSvgLoading() {
-    console.log('🔍 SVG Loading Debug Info:');
-    console.log('- Selected Office:', this.selectedOffice);
-    console.log('- Selected Floor:', this.selectedFloor);
-    console.log('- Loading State:', this.loading);
-    console.log('- Error State:', this.error);
-    console.log('- Selected Outlet SVGs:', this.selectedOutletSvgs);
-    console.log('- Displayed SVGs:', this.displayedSvgs);
-    console.log('- Current Floorplan Index:', this.currentFloorplanIndex);
-    console.log('- Current Floorplan URL:', this.currentFloorplan);
-    console.log('- SVG HTML Map Size:', this.svgHtmlMap.size);
-    console.log('- Safe SVG URL:', this.safeSvgUrl);
-    console.log('- SVG HTML:', this.svgHtml);
-    console.log('- User Token:', sessionStorage.getItem('userAccessToken') ? 'Present' : 'Missing');
-  }
-
   // Firebase URL normalization (same as floorplan.component.ts)
   private async normalizeToDownloadUrl(url: string): Promise<string> {
     try {
@@ -801,14 +710,12 @@ export class FloorplanManagementComponent implements OnInit {
       // Anything else: return as-is
       return url;
     } catch (err) {
-      console.warn('⚠️ normalizeToDownloadUrl failed:', url, err);
+
       return url; // Return original URL on error
     }
   }
 
   onOutletSelected() {
-    console.log('🏢 Outlet selected:', this.selectedOffice);
-    console.log('🏢 Selected office value:', this.selectedOffice);
     
     // Clear selected floor when outlet changes
     this.selectedFloor = '';
@@ -829,27 +736,18 @@ export class FloorplanManagementComponent implements OnInit {
 
   onUploadOutletSelected() {
     const selectedOfficeId = this.form.get('officeId')?.value;
-    console.log('🏢 [UPLOAD] Outlet dropdown changed - Outlet ID:', selectedOfficeId);
-    console.log('🏢 [UPLOAD] Form value before clear:', this.form.value);
 
     // Show available outlets for reference
-    console.log('🏢 [UPLOAD] Available outlets in dropdown:', this.locations);
 
     // Find the selected outlet object
-    const selectedOutlet = this.locations.find(loc => loc.value === selectedOfficeId);
-    console.log('🏢 [UPLOAD] Selected outlet object:', selectedOutlet);
 
     // Clear selected floor when outlet changes
     this.form.patchValue({ floorId: '' });
-    console.log('🏢 [UPLOAD] Cleared floor selection');
 
     // Filter floors based on selected outlet for upload form
     if (selectedOfficeId) {
-      console.log('🏢 [UPLOAD] Calling filterFloorsByOutlet with:', selectedOfficeId);
-      console.log('🏢 [UPLOAD] Type of selectedOfficeId:', typeof selectedOfficeId);
       this.filterFloorsByOutlet(selectedOfficeId);
     } else {
-      console.log('⚠️ [UPLOAD] No outlet selected, clearing filtered floors');
       this.filteredFloors = [];
     }
   }
@@ -857,9 +755,6 @@ export class FloorplanManagementComponent implements OnInit {
   onUploadFloorSelected() {
     // Use setTimeout to ensure the form value is updated
     setTimeout(() => {
-      const selectedOfficeId = this.form.get('officeId')?.value;
-      const selectedFloorId = this.form.get('floorId')?.value;
-      console.log('🏢 Upload floor selected - Outlet ID:', selectedOfficeId, 'Floor ID:', selectedFloorId);
     }, 0);
   }
 
@@ -868,89 +763,24 @@ export class FloorplanManagementComponent implements OnInit {
       this.filteredFloors = [];
       return;
     }
-    console.log('🔍 [FLOOR FILTER] Starting floor filtering for outlet:', officeId);
-    console.log('🔍 [FLOOR FILTER] Selected outlet type:', typeof officeId);
-    console.log('🔍 [FLOOR FILTER] Selected outlet value:', JSON.stringify(officeId));
 
     // Get the full outlet object to see what we're working with
-    const selectedOutlet = this.locations.find(loc => loc.value === officeId);
-    console.log('🏢 [FLOOR FILTER] Selected outlet object:', selectedOutlet);
 
     // Get floors for this specific outlet
     this.floorService.getFloors().subscribe({
       next: (floors) => {
-        console.log('🏢 [FLOOR FILTER] Total floors received from API:', floors.length);
 
-        // Log ALL unique location_ids to see what we're comparing against
-        const uniqueLocationIds = [...new Set(floors.map(f => f.location_id))].filter(Boolean);
-        console.log('🏢 [FLOOR FILTER] ALL unique location_ids in floor data:', uniqueLocationIds);
-        console.log('🏢 [FLOOR FILTER] Comparison table:');
-        console.table({
-          'Selected Outlet ID': officeId,
-          'Outlet ID Type': typeof officeId,
-          'Available Location IDs': uniqueLocationIds.join(', '),
-          'Match Found': uniqueLocationIds.includes(officeId) ? 'YES ✅' : 'NO ❌'
-        });
-
-        // Log first 5 floors to see structure with more detail
-        if (floors.length > 0) {
-          console.log('🏢 [FLOOR FILTER] First 5 floors with ALL fields:');
-          floors.slice(0, 5).forEach((f, idx) => {
-            console.log(`  Floor ${idx + 1}:`, {
-              floor_id: f.floor_id,
-              floor_no: f.floor_no,
-              floor_name: f.floor_name,
-              location_id: f.location_id,
-              location_id_type: typeof f.location_id,
-              matches_outlet: f.location_id === officeId ? '✅ YES' : '❌ NO',
-              extraction_date: (f as any).extraction_date
-            });
-          });
-        }
 
         // Filter floors by location_id
         const filteredFloors = floors.filter(floor => {
-          const matches = floor.location_id === officeId;
-          if (matches) {
-            console.log(`✅ [FLOOR FILTER] MATCH: Floor "${floor.floor_no}" (${floor.floor_id}) has location_id="${floor.location_id}" matching outlet="${officeId}"`);
-          }
-          return matches;
+          return floor.location_id === officeId;
         });
 
-        console.log(`🎯 [FLOOR FILTER] Filtering result: ${filteredFloors.length} floors match outlet "${officeId}"`);
 
         if (filteredFloors.length === 0) {
-          console.warn('⚠️ [FLOOR FILTER] No floors found for outlet!');
-          console.warn('⚠️ [FLOOR FILTER] POSSIBLE CAUSES:');
-          console.warn('  1. location_id field uses different ID format (name vs MongoDB ID)');
-          console.warn('  2. location_id field is null/undefined in floor data');
-          console.warn('  3. Outlet ID format mismatch between locations dropdown and floor data');
-          console.warn('⚠️ [FLOOR FILTER] Selected outlet ID:', officeId);
-          console.warn('⚠️ [FLOOR FILTER] Available location_ids:', uniqueLocationIds);
-
-          // Check if we should try matching by outlet name instead of ID
-          if (selectedOutlet && uniqueLocationIds.length > 0) {
-            console.log('💡 [FLOOR FILTER] Attempting to match by outlet name instead...');
-            const nameMatchedFloors = floors.filter(floor => {
-              // Try matching with outlet label/name
-              const outletName = selectedOutlet.label;
-              return floor.location_id === outletName ||
-                     (floor as any).location_name === outletName;
-            });
-
-            if (nameMatchedFloors.length > 0) {
-              console.log('✅ [FLOOR FILTER] Found matches by outlet NAME:', nameMatchedFloors.length);
-              this.filteredFloors = nameMatchedFloors.map(floor => ({
-                label: floor.floor_no,
-                value: floor.floor_id
-              }));
-              console.log('📋 [FLOOR FILTER] Final filtered floors (by name):', this.filteredFloors);
-              return;
-            }
-          }
 
           // Fallback: show all floors if no specific floors found
-          console.warn('⚠️ [FLOOR FILTER] Using fallback: showing ALL floors');
+
           this.filteredFloors = floors.map(floor => ({
             label: floor.floor_no,
             value: floor.floor_id
@@ -961,10 +791,9 @@ export class FloorplanManagementComponent implements OnInit {
             value: floor.floor_id
           }));
         }
-        console.log('📋 [FLOOR FILTER] Final filtered floors for dropdown:', this.filteredFloors);
       },
-      error: (err) => {
-        console.error('❌ [FLOOR FILTER] Error loading floors for outlet:', err);
+      error: () => {
+
         this.filteredFloors = [];
       }
     });
@@ -1007,24 +836,26 @@ export class FloorplanManagementComponent implements OnInit {
     this.isDeleting = true;
     const { officeId, floorId, label } = this.deleteTarget;
 
-    console.log('🗑️ executeDelete: Starting deletion', {
-      officeId,
-      floorId: floorId || 'office-level',
-      label
-    });
+    // Extract filename from current floorplan URL
+    const filename = this.currentFloorplan ? this.extractFilenameFromUrl(this.currentFloorplan) : null;
 
-    // Call delete service with optional floorId
+    console.log('[executeDelete] Current floorplan URL:', this.currentFloorplan);
+    console.log('[executeDelete] Extracted filename:', filename);
+    console.log('[executeDelete] officeId:', officeId);
+    console.log('[executeDelete] floorId:', floorId);
+
+    // Call delete service with optional floorId and filename
     // Empty string means office-level, so pass null instead
     const floorIdParam = floorId ? floorId : null;
 
-    this.deleteService.deleteFloorplan(officeId, floorIdParam).subscribe({
+    this.deleteService.deleteFloorplan(officeId, floorIdParam, filename).subscribe({
       next: (response) => {
-        console.log('✅ Floorplan deleted successfully:', response);
 
         // Show success message with deleted files
         const filesDeleted = response.deletedFiles?.length || 0;
+        const fileInfo = filename ? `File: ${filename}` : `Files deleted: ${filesDeleted}`;
         const message = `Successfully deleted floorplan: ${label}\n\n` +
-          `Files deleted: ${filesDeleted}\n\n` +
+          `${fileInfo}\n\n` +
           (response.deletedFiles?.length ? response.deletedFiles.join('\n') : 'No files listed');
 
         alert(message);
@@ -1038,13 +869,7 @@ export class FloorplanManagementComponent implements OnInit {
         this.isDeleting = false;
       },
       error: (err) => {
-        console.error('❌ Delete failed:', err);
-        console.error('❌ Error details:', {
-          status: err.status,
-          statusText: err.statusText,
-          error: err.error,
-          message: err.message
-        });
+
 
         // Build user-friendly error message
         let errorMsg = 'Failed to delete floorplan';
@@ -1069,29 +894,28 @@ export class FloorplanManagementComponent implements OnInit {
   }
 
   /**
-   * Delete current floorplan (extracts floorId from current floorplan URL)
+   * Delete current floorplan (extracts floorId and filename from current floorplan URL)
    * Handles both office-level and floor-level floorplans
    */
   deleteCurrentFloorplan() {
     if (!this.currentFloorplan || !this.selectedOffice) {
-      console.error('❌ Cannot delete: no floorplan or office selected');
+
       alert('Error: No floorplan selected');
       return;
     }
 
-    console.log('🗑️ deleteCurrentFloorplan: Starting deletion process');
-    console.log('🗑️ Selected office:', this.selectedOffice);
-    console.log('🗑️ Current floorplan URL:', this.currentFloorplan);
 
-    // Extract floorId from URL (returns null for office-level)
+    // Extract floorId and filename from URL
     const floorId = this.extractFloorIdFromUrl(this.currentFloorplan);
+    const filename = this.extractFilenameFromUrl(this.currentFloorplan);
 
-    console.log('🗑️ Extracted floorId:', floorId || 'office-level');
 
     // Build label for confirmation dialog
-    const label = floorId
+    const baseLabel = floorId
       ? `${this.getSelectedOfficeLabel()} - Floor ${this.getFloorLabelById(floorId)}`
       : `${this.getSelectedOfficeLabel()} (Office Level)`;
+
+    const label = filename ? `${baseLabel} - ${filename}` : baseLabel;
 
     // Show confirmation modal
     this.deleteTarget = {
@@ -1100,6 +924,62 @@ export class FloorplanManagementComponent implements OnInit {
       label
     };
     this.showDeleteModal = true;
+  }
+
+  /**
+   * Extract filename from floorplan URL path
+   *
+   * Examples:
+   * - "https://storage.googleapis.com/.../floorplan.svg" -> "floorplan.svg"
+   * - "https://storage.googleapis.com/.../custom-name.svg" -> "custom-name.svg"
+   *
+   * @param url - The full URL to the floorplan SVG
+   * @returns filename (e.g., "floorplan.svg")
+   */
+  extractFilenameFromUrl(url: string): string | null {
+    try {
+      console.log('[extractFilenameFromUrl] Input URL:', url);
+      let path = url;
+
+      // If it's a full URL, extract the pathname
+      if (url.includes('://')) {
+        const urlObj = new URL(url);
+        path = urlObj.pathname;
+        console.log('[extractFilenameFromUrl] Extracted pathname:', path);
+      }
+
+      // Remove query parameters and fragments
+      path = path.split('?')[0].split('#')[0];
+
+      // Split by / and filter empty strings
+      let parts = path.split('/').filter(p => p.trim() !== '' && p !== 'v0' && p !== 'b');
+      console.log('[extractFilenameFromUrl] Initial path parts:', parts);
+
+      // For Firebase Storage URLs (storage.googleapis.com), the first part is the bucket name
+      // which we need to skip. The actual path structure is: bucket/officeId/floorId/filename.svg
+      if (url.includes('storage.googleapis.com') && parts.length > 0) {
+        // Skip the bucket name (first part after domain)
+        if (parts[0].includes('firebasestorage.app') || parts[0].includes('appspot.com')) {
+          parts = parts.slice(1); // Remove bucket name
+          console.log('[extractFilenameFromUrl] Removed bucket name, new parts:', parts);
+        }
+      }
+
+      // Get the last part (filename)
+      if (parts.length > 0) {
+        const filename = parts[parts.length - 1];
+        // Decode URI component in case filename has encoded characters
+        const decodedFilename = decodeURIComponent(filename);
+        console.log('[extractFilenameFromUrl] Raw filename:', filename);
+        console.log('[extractFilenameFromUrl] Decoded filename:', decodedFilename);
+        return decodedFilename;
+      }
+
+      return null;
+    } catch (err) {
+      console.error('Failed to extract filename from URL:', url, err);
+      return null;
+    }
   }
 
   /**
@@ -1130,10 +1010,17 @@ export class FloorplanManagementComponent implements OnInit {
       path = path.split('?')[0].split('#')[0];
 
       // Split by / and filter empty strings
-      const parts = path.split('/').filter(p => p.trim() !== '' && p !== 'v0' && p !== 'b');
+      let parts = path.split('/').filter(p => p.trim() !== '' && p !== 'v0' && p !== 'b');
 
-      console.log('🔍 extractFloorIdFromUrl - URL parts:', parts);
-      console.log('🔍 extractFloorIdFromUrl - Full URL:', url);
+      // For Firebase Storage URLs (storage.googleapis.com), the first part is the bucket name
+      // which we need to skip. The actual path structure is: bucket/officeId/floorId/filename.svg
+      if (url.includes('storage.googleapis.com') && parts.length > 0) {
+        // Skip the bucket name (first part after domain)
+        if (parts[0].includes('firebasestorage.app') || parts[0].includes('appspot.com')) {
+          parts = parts.slice(1); // Remove bucket name
+        }
+      }
+
 
       // Detect format based on number of parts
       // Expected formats:
@@ -1147,7 +1034,6 @@ export class FloorplanManagementComponent implements OnInit {
 
         // Validate that the last part is actually a filename (.svg)
         if (filename.endsWith('.svg') || filename.endsWith('.png')) {
-          console.log('✅ Floor-level floorplan detected - floorId:', potentialFloorId);
           return potentialFloorId;
         }
       } else if (parts.length === 2) {
@@ -1155,17 +1041,261 @@ export class FloorplanManagementComponent implements OnInit {
         const filename = parts[parts.length - 1];
 
         if (filename.endsWith('.svg') || filename.endsWith('.png')) {
-          console.log('✅ Office-level floorplan detected - no floorId');
           return null; // Office-level has no floorId
         }
       }
 
-      console.warn('⚠️ Could not determine floorplan type from URL:', url);
       return null;
     } catch (err) {
-      console.error('❌ Error extracting floorId from URL:', url, err);
+
       return null;
     }
+  }
+
+  /**
+   * Drag and Drop methods for reordering floorplans
+   */
+  onDragStart(event: DragEvent, index: number): void {
+    this.draggedIndex = index;
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/html', index.toString());
+    }
+  }
+
+  onDragOver(event: DragEvent): void {
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move';
+    }
+  }
+
+  onDrop(event: DragEvent, dropIndex: number): void {
+    event.preventDefault();
+
+    if (this.draggedIndex === null || this.draggedIndex === dropIndex) {
+      return;
+    }
+
+    // Reorder the displayed SVGs array
+    const draggedItem = this.displayedSvgs[this.draggedIndex];
+    const newArray = [...this.displayedSvgs];
+
+    // Remove the dragged item
+    newArray.splice(this.draggedIndex, 1);
+
+    // Insert at the new position
+    newArray.splice(dropIndex, 0, draggedItem);
+
+    // Update the array
+    this.displayedSvgs = newArray;
+
+    // Also update selectedOutletSvgs to keep them in sync
+    this.selectedOutletSvgs = newArray;
+
+    // Update current index if needed
+    if (this.currentFloorplanIndex === this.draggedIndex) {
+      // If we're viewing the dragged item, update to its new position
+      this.currentFloorplanIndex = dropIndex;
+    } else if (this.draggedIndex < this.currentFloorplanIndex && dropIndex >= this.currentFloorplanIndex) {
+      // Dragged from before current to after current
+      this.currentFloorplanIndex--;
+    } else if (this.draggedIndex > this.currentFloorplanIndex && dropIndex <= this.currentFloorplanIndex) {
+      // Dragged from after current to before current
+      this.currentFloorplanIndex++;
+    }
+
+    // Mark as having unsaved changes
+    this.hasUnsavedChanges = true;
+
+    // Update the display
+    this.updateCurrentSvgDisplay();
+  }
+
+  onDragEnd(_event: DragEvent): void {
+    this.draggedIndex = null;
+  }
+
+  /**
+   * Toggle the floorplan list visibility
+   */
+  toggleFloorplanList(): void {
+    this.showFloorplanList = !this.showFloorplanList;
+  }
+
+  /**
+   * Get a descriptive name for a floorplan based on its URL
+   * @param url - The floorplan URL
+   * @param index - The index in the array (fallback)
+   * @returns A descriptive name like "Floor L21" or the filename
+   */
+  getFloorplanName(url: string, index: number): string {
+    try {
+      // Extract floorId and filename
+      const floorId = this.extractFloorIdFromUrl(url);
+      const filename = this.extractFilenameFromUrl(url);
+
+      // Try to get floor label from floorId
+      if (floorId) {
+        const floorLabel = this.getFloorLabelById(floorId);
+        if (floorLabel && floorLabel !== floorId) {
+          return `Floor ${floorLabel}`;
+        }
+      }
+
+      // Fallback to filename without extension
+      if (filename) {
+        const nameWithoutExt = filename.replace(/\.svg$/i, '');
+        return nameWithoutExt;
+      }
+
+      // Last resort: use index
+      return `Floorplan ${index + 1}`;
+    } catch (err) {
+      console.error('Failed to get floorplan name:', err);
+      return `Floorplan ${index + 1}`;
+    }
+  }
+
+  /**
+   * Save the current floorplan order to localStorage
+   * This persists the order across page refreshes and affects the dashboard
+   */
+  saveFloorplanOrder(): void {
+    if (!this.selectedOffice || this.displayedSvgs.length === 0) {
+      alert('No floorplans to save');
+      return;
+    }
+
+    this.isSavingOrder = true;
+
+    try {
+      // Get existing orders from localStorage
+      const existingOrders = localStorage.getItem('floorplanOrders');
+      const orders = existingOrders ? JSON.parse(existingOrders) : {};
+
+      // Normalize URLs before saving (remove query parameters)
+      const normalizedUrls = this.displayedSvgs.map(url => this.normalizeUrlKey(url));
+
+      // Save the normalized order for this office
+      orders[this.selectedOffice] = normalizedUrls;
+
+      // Save back to localStorage
+      localStorage.setItem('floorplanOrders', JSON.stringify(orders));
+
+      // Mark as saved
+      this.hasUnsavedChanges = false;
+
+      // Show success message
+      alert(`Successfully saved floorplan order for ${this.getSelectedOfficeLabel()}!\n\nThe new order will be reflected on the dashboard page.`);
+    } catch (err) {
+      console.error('Failed to save floorplan order:', err);
+      alert('Failed to save floorplan order. Please try again.');
+    } finally {
+      this.isSavingOrder = false;
+    }
+  }
+
+  /**
+   * Reset the floorplan order to the original/default order
+   */
+  resetFloorplanOrder(): void {
+    if (!this.selectedOffice) {
+      return;
+    }
+
+    const confirmed = confirm('Are you sure you want to reset the floorplan order to the default?\n\nThis will discard any saved custom order.');
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      // Remove from localStorage
+      const existingOrders = localStorage.getItem('floorplanOrders');
+      if (existingOrders) {
+        const orders = JSON.parse(existingOrders);
+        delete orders[this.selectedOffice];
+        localStorage.setItem('floorplanOrders', JSON.stringify(orders));
+      }
+
+      // Reset to original order
+      this.displayedSvgs = [...this.selectedOutletSvgs];
+      this.currentFloorplanIndex = 0;
+      this.hasUnsavedChanges = false;
+
+      this.updateCurrentSvgDisplay();
+
+      alert('Floorplan order has been reset to default.');
+    } catch (err) {
+      console.error('Failed to reset floorplan order:', err);
+      alert('Failed to reset floorplan order. Please try again.');
+    }
+  }
+
+  /**
+   * Apply saved floorplan order from localStorage for the current outlet
+   * This is called after SVGs are loaded to restore the user's custom order
+   */
+  private applySavedFloorplanOrder() {
+    const outletId = this.selectedOffice;
+    if (!outletId || this.displayedSvgs.length === 0) {
+      return;
+    }
+
+    try {
+      const existingOrders = localStorage.getItem('floorplanOrders');
+      if (!existingOrders) {
+        return;
+      }
+
+      const orders = JSON.parse(existingOrders);
+      const savedOrder = orders[outletId];
+
+      if (!savedOrder || !Array.isArray(savedOrder) || savedOrder.length === 0) {
+        return;
+      }
+
+      // Create a map of saved order for quick lookup (normalize URLs for comparison)
+      const orderMap = new Map<string, number>();
+      savedOrder.forEach((url: string, index: number) => {
+        const normalizedUrl = this.normalizeUrlKey(url);
+        orderMap.set(normalizedUrl, index);
+      });
+
+      // Sort displayedSvgs based on saved order
+      // SVGs in saved order come first, then any new SVGs that weren't in the saved order
+      this.displayedSvgs.sort((urlA, urlB) => {
+        const normalizedA = this.normalizeUrlKey(urlA);
+        const normalizedB = this.normalizeUrlKey(urlB);
+        const indexA = orderMap.has(normalizedA) ? orderMap.get(normalizedA)! : Number.MAX_SAFE_INTEGER;
+        const indexB = orderMap.has(normalizedB) ? orderMap.get(normalizedB)! : Number.MAX_SAFE_INTEGER;
+        return indexA - indexB;
+      });
+    } catch (error) {
+      console.error('Error loading saved floorplan order:', error);
+    }
+  }
+
+  /**
+   * Toggle the guidelines modal
+   */
+  toggleGuidelinesModal(): void {
+    this.showGuidelinesModal = !this.showGuidelinesModal;
+  }
+
+  /**
+   * Close the guidelines modal
+   */
+  closeGuidelinesModal(): void {
+    this.showGuidelinesModal = false;
+  }
+
+  /**
+   * Logout user and navigate to login page
+   */
+  logout(): void {
+    this.auth.logout();
   }
 
 }

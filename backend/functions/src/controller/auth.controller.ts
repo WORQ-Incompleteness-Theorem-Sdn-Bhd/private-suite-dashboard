@@ -11,7 +11,6 @@ export async function handleToken(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    console.log('Attempting to verify UID:', uid);
 
     // Add timeout to prevent hanging
     const timeoutPromise = new Promise((_, reject) =>
@@ -20,14 +19,12 @@ export async function handleToken(req: Request, res: Response): Promise<void> {
 
     try {
       // Verify user exists in Firebase
-      const userRecord = await Promise.race([
+      await Promise.race([
         admin.auth().getUser(uid),
         timeoutPromise
-      ]) as admin.auth.UserRecord;
+      ]);
 
-      console.log('User verified successfully:', userRecord.uid);
     } catch (error: any) {
-      console.error('Firebase getUser error:', error.message);
 
       if (error.code === 'auth/user-not-found') {
         res.status(404).json({ error: 'User not found' });
@@ -47,7 +44,7 @@ export async function handleToken(req: Request, res: Response): Promise<void> {
     });
 
   } catch (err: any) {
-    console.error('Unexpected error in handleToken:', err);
+
     res.status(500).json({ error: err.message || "Failed to generate token" });
   }
 }

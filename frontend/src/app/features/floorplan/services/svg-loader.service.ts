@@ -9,13 +9,14 @@ import { Floor } from '../../../core/models/floor.model';
 import { of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { getStorage, ref, getDownloadURL } from 'firebase/storage';
-import { environment } from '../../../environments/environment.prod';
+import { environment } from '../../../environments/environment.dev';
 
 @Injectable({
   providedIn: 'root'
 })
 export class SvgLoaderService {
   private safeUrlCache = new Map<string, SafeResourceUrl>();
+  private svgContentCache = new Map<string, string>(); // Cache raw SVG content to avoid duplicate HTTP requests
 
   constructor(
     private floorService: FloorService,
@@ -110,7 +111,7 @@ export class SvgLoaderService {
           const floorLabel = this.floorService.getFloorDisplayLabel(floorId, floors);
           return `${floorLabel}|${floorId}`;
         } else {
-          console.warn('⚠️ Floor ID not found in floorIdToFloorMap:', floorId);
+
           return `${floorId}|${floorId}`;
         }
       })
@@ -130,7 +131,7 @@ export class SvgLoaderService {
     return new Promise((resolve) => {
       this.floorService.getAllSvgFilesForOutlet(outletId).pipe(
         catchError(error => {
-          console.error('❌ Error loading outlet SVGs:', { error, outletId, message: error?.message, status: error?.status });
+
           this.toastService.error('Failed to load floorplan SVGs');
           return of([]);
         })
@@ -198,7 +199,7 @@ export class SvgLoaderService {
     const checkComplete = () => {
       if (completed + failed >= total) {
         if (failed > 0) {
-          console.warn(`⚠️ ${failed}/${total} SVGs failed to load`);
+
         }
         onComplete();
       }
@@ -210,28 +211,43 @@ export class SvgLoaderService {
           const normalizedUrl = await this.normalizeToDownloadUrl(url);
           return { originalUrl: url, normalizedUrl };
         } catch (err) {
-          console.warn('⚠️ Failed to normalize URL:', url, err);
+
           return { originalUrl: url, normalizedUrl: url };
         }
       })
     );
 
     normalizedUrls.forEach(({ originalUrl, normalizedUrl }) => {
+      const key = this.normalizeUrlKey(originalUrl);
+
+      // Check cache first to avoid duplicate HTTP requests
+      const cachedContent = this.svgContentCache.get(key);
+      if (cachedContent) {
+        const processedSvgText = this.processSvgForCompactDisplay(cachedContent);
+        const safe = this.sanitizer.bypassSecurityTrustHtml(processedSvgText);
+        svgHtmlMap.set(key, safe);
+        completed++;
+        checkComplete();
+        return;
+      }
+
+      // Fetch from server if not cached
       const token = sessionStorage.getItem('userAccessToken') || '';
       const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
-      
+
       this.http.get(normalizedUrl, { responseType: 'text', headers }).subscribe({
         next: (svgText) => {
+          // Cache the raw SVG content
+          this.svgContentCache.set(key, svgText);
+
           const processedSvgText = this.processSvgForCompactDisplay(svgText);
           const safe = this.sanitizer.bypassSecurityTrustHtml(processedSvgText);
-          const key = this.normalizeUrlKey(originalUrl);
           svgHtmlMap.set(key, safe);
           completed++;
           checkComplete();
         },
         error: (err) => {
-          console.error('❌ Failed to fetch SVG:', originalUrl, err);
-          const key = this.normalizeUrlKey(originalUrl);
+
           const fallbackSvg = `<svg width="100%" height="200" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
             <rect width="100%" height="100%" fill="#f3f4f6"/>
             <text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" font-family="Arial" font-size="14" fill="#6b7280">
@@ -253,11 +269,11 @@ export class SvgLoaderService {
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = svgText;
     const svgElement = tempDiv.querySelector('svg');
-    
+
     if (!svgElement) return svgText;
 
     svgElement.setAttribute('width', '100%');
-    svgElement.setAttribute('height', 'auto');
+    svgElement.removeAttribute('height');
     svgElement.setAttribute('preserveAspectRatio', 'xMidYMid meet');
 
     if (!svgElement.getAttribute('xmlns')) {
@@ -290,31 +306,70 @@ export class SvgLoaderService {
   private async normalizeToDownloadUrl(url: string): Promise<string> {
     try {
       if (!url) return url;
-      
-      if (url.includes('firebasestorage.googleapis.com/v0/b/')) return url;
-      
+
+      // If it's already a backend API URL, return as-is
+      if (url.includes(environment.apiBaseUrl) || url.includes('/api/floorplans')) {
+        return url;
+      }
+
+      // Convert Firebase Storage URLs (signed or unsigned) to backend proxy URLs to avoid CORS
+      // Signed URLs from storage.googleapis.com cause CORS errors when fetched directly from Angular
+      // Backend proxy at /api/floorplans/:officeId/:floorId?raw=1 streams SVG without CORS issues
+
+      // Match signed URLs: https://storage.googleapis.com/bucket/officeId%2FfloorId%2Ffile.svg?X-Goog-Algorithm=...
+      const signedUrlMatch = url.match(/https:\/\/storage\.googleapis\.com\/[^/]+\/([^?]+)(\?|$)/);
+      if (signedUrlMatch) {
+        const encodedPath = signedUrlMatch[1];
+        // Decode URL-encoded path (e.g., "officeId%2FfloorId%2Ffile.svg" -> "officeId/floorId/file.svg")
+        const decodedPath = decodeURIComponent(encodedPath);
+        const pathParts = decodedPath.split('/');
+
+        if (pathParts.length >= 2) {
+          const officeId = pathParts[0];
+          const floorId = pathParts[1];
+          // Use backend proxy to avoid CORS
+          const proxyUrl = `${environment.apiBaseUrl}/api/floorplans/${officeId}/${floorId}?raw=1`;
+          return proxyUrl;
+        }
+      }
+
+      // Match firebasestorage.googleapis.com URLs
+      if (url.includes('firebasestorage.googleapis.com/v0/b/')) {
+        const pathMatch = url.match(/\/o\/([^?]+)/);
+        if (pathMatch) {
+          const encodedPath = pathMatch[1];
+          const decodedPath = decodeURIComponent(encodedPath);
+          const pathParts = decodedPath.split('/');
+
+          if (pathParts.length >= 2) {
+            const officeId = pathParts[0];
+            const floorId = pathParts[1];
+            const proxyUrl = `${environment.apiBaseUrl}/api/floorplans/${officeId}/${floorId}?raw=1`;
+            return proxyUrl;
+          }
+        }
+        // If we can't parse the path, return original URL
+        return url;
+      }
+
+      // Handle gs:// URLs
       if (url.startsWith('gs://')) {
         const withoutScheme = url.slice(5);
         const firstSlash = withoutScheme.indexOf('/');
-        const bucket = withoutScheme.slice(0, firstSlash);
         const objectPath = withoutScheme.slice(firstSlash + 1);
-        const fixedPath = this.ensureFloorplansPrefix(objectPath);
-        
-        const storage = getStorage(undefined, `gs://${bucket}`);
-        return await getDownloadURL(ref(storage, fixedPath));
+        const pathParts = objectPath.split('/');
+
+        if (pathParts.length >= 2) {
+          const officeId = pathParts[0];
+          const floorId = pathParts[1];
+          const proxyUrl = `${environment.apiBaseUrl}/api/floorplans/${officeId}/${floorId}?raw=1`;
+          return proxyUrl;
+        }
       }
-      
-      const match = url.match(/^https:\/\/storage\.googleapis\.com\/([^/]+)\/(.+)$/);
-      if (match) {
-        const [, bucket, objectPath] = match;
-        const fixedPath = this.ensureFloorplansPrefix(objectPath);
-        const storage = getStorage(undefined, `gs://${bucket}`);
-        return await getDownloadURL(ref(storage, fixedPath));
-      }
-      
+
       return url;
     } catch (err) {
-      console.warn('⚠️ normalizeToDownloadUrl failed:', url, err);
+
       return url;
     }
   }
@@ -322,6 +377,21 @@ export class SvgLoaderService {
   private ensureFloorplansPrefix(path: string): string {
     if (path.startsWith('floorplans/')) return path;
     return path;
+  }
+
+  /**
+   * Clear SVG cache - useful when floorplans are uploaded/deleted
+   * @param url Optional specific URL to clear. If not provided, clears entire cache.
+   */
+  clearCache(url?: string): void {
+    if (url) {
+      const key = this.normalizeUrlKey(url);
+      this.svgContentCache.delete(key);
+      this.safeUrlCache.delete(url);
+    } else {
+      this.svgContentCache.clear();
+      this.safeUrlCache.clear();
+    }
   }
 }
 

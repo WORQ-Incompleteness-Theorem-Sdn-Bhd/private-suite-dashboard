@@ -3,31 +3,25 @@ import { Request } from "express";
 import { Storage, Bucket, File, GetFilesOptions } from "@google-cloud/storage"; // Import the Google Cloud Storage module
 import busboy from "busboy"; // Import the busboy module (multipart/form-data parsing)
 
-/** Prefer ADC, fall back to explicit credentials from env */
+/** Always use explicit credentials to ensure signed URLs work */
 export function initializeStorage(): Storage { // initialize the storage
-  try {
-    return new Storage();
-  } catch {
-    console.warn(
-      "Failed to use default credentials, trying explicit credentials"
-    ); // log the error
+  const email = process.env.F1REBASE_CLIENT_EMAIL ?? 'firebase-adminsdk-fbsvc@floorplan-dashboard-2a468.iam.gserviceaccount.com'; // email from environment variables
+  const key = process.env.F1REBASE_PRIVATE_KEY; // key from environment variables
+  const projectId = process.env.F1REBASE_PROJECT_ID; // project id from environment variables
 
-    const email = process.env.F1REBASE_CLIENT_EMAIL ?? 'firebase-adminsdk-fbsvc@floorplan-dashboard-2a468.iam.gserviceaccount.com'; // email from environment variables
-    const key = process.env.F1REBASE_PRIVATE_KEY; // key from environment variables
-    const projectId = process.env.F1REBASE_PROJECT_ID; // project id from environment variables
-
-    if (email && key) { // if the email and key are present
-      return new Storage({ // create a new storage instance
-        projectId, // project id
-        credentials: { // credentials (client email and private key)
-          client_email: email,
-          private_key: key.replace(/\\n/g, "\n"), // replace the new line characters with a new line
-        },
-      });
-    }
-
-    throw new Error("No Google Cloud credentials found"); // throw an error if the email and key are not present
+  if (email && key && projectId) { // if the email, key, and project ID are present
+    return new Storage({ // create a new storage instance
+      projectId, // project id
+      credentials: { // credentials (client email and private key)
+        client_email: email,
+        private_key: key.replace(/\\n/g, "\n"), // replace the new line characters with a new line
+      },
+    });
   }
+
+  // Fall back to ADC (won't support signed URLs)
+
+  return new Storage();
 }
 
 export function sanitizeBaseName(s: string) { // sanitize the base name (replace all non-alphanumeric characters with an underscore)
@@ -53,7 +47,6 @@ export function parseMultipartFromRawBody( // parse the multipart from the raw b
 
     bb.on("field", (name, value) => { // field event = triggers whenever Busboy sees a text field in the form.
       fields[name] = value;
-      // console.log(`🧾 Field: ${name} = ${value}`); //It stores the value in a fields object.
     });
 
     bb.on("file", (_name, stream, info) => {
@@ -71,7 +64,6 @@ export function parseMultipartFromRawBody( // parse the multipart from the raw b
           filename: info.filename,
           size,
         };
-        console.log(`✅ File received: ${info.filename}, size: ${size} bytes`);
       });
 
       stream.on("error", reject);
@@ -101,7 +93,6 @@ export function parseMultipartFromStream(req: Request): Promise<{ // parse the m
 
     bb.on("field", (name, value) => {
       fields[name] = value;
-      console.log(`🧾 Field: ${name} = ${value}`);
     });
 
     bb.on("file", (_name, stream, info) => {
@@ -119,7 +110,6 @@ export function parseMultipartFromStream(req: Request): Promise<{ // parse the m
           filename: info.filename,
           size,
         };
-        console.log(`✅ File received: ${info.filename}, size: ${size} bytes`);
       });
 
       stream.on("error", reject);
@@ -146,7 +136,6 @@ export async function fetchUniqueSvg(
 
   const [files] = await bucket.getFiles(opts);
   const svgs = files.filter((f) => f.name.toLowerCase().endsWith(".svg"));
-  console.log("fetchUniqueSvg : svgs",svgs)
 
   if (svgs.length === 0) {
     const err: any = new Error(`No SVG found at ${prefix}`);

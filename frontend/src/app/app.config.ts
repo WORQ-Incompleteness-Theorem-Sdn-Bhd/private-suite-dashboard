@@ -4,7 +4,7 @@ import { provideHttpClient, withInterceptors } from '@angular/common/http';
 
 import { provideFirebaseApp, initializeApp } from '@angular/fire/app';
 import { provideAuth, getAuth } from '@angular/fire/auth';
-import { environment } from './environments/environment.prod';
+import { environment } from './environments/environment.dev';
 import { routes } from './app.routes';
 import { authInterceptor } from './shared/interceptors/auth.interceptor';
 

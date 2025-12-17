@@ -133,13 +133,6 @@ export class DropdownFilterService {
     availabilityByRoomId: Map<string, 'free' | 'occupied'>,
     selectedStartDate: string
   ): Room[] {
-    console.log('🔍 [FILTER] applyFilters called:', {
-      totalRooms: rooms.length,
-      filters,
-      selectedSuites,
-      selectedStartDate
-    });
-
     const filtered = rooms
       .filter((r, index) => {
         const outletMatch = (() => {
@@ -159,21 +152,6 @@ export class DropdownFilterService {
 
         const passes = outletMatch && statusOk && paxOk && suiteOk;
 
-        // 🔍 DEBUG: Log first 5 rooms or failed rooms
-        if (index < 5 || !passes) {
-          console.log(`🔍 [FILTER] Room ${r.name} (${r.id}):`, {
-            outletMatch,
-            effectiveStatus,
-            statusOk,
-            paxOk,
-            suiteOk,
-            passes: passes ? '✅ PASS' : '❌ FAIL',
-            roomOutlet: r.outlet,
-            roomCapacity: r.capacity,
-            availInMap: availabilityByRoomId.has(r.id)
-          });
-        }
-
         return passes;
       })
       .sort((a, b) => {
@@ -182,7 +160,6 @@ export class DropdownFilterService {
         return 0;
       });
 
-    console.log(`🔍 [FILTER] Result: ${filtered.length} rooms passed filters (out of ${rooms.length})`);
 
     return filtered;
   }

@@ -41,11 +41,6 @@ export class SvgEventsService {
 
     // If double-click detected
     if (this.clickCount === 2) {
-      console.log('🎯 [SVG Events] Double-click detected!', {
-        room: room.name,
-        isFiltered: isFiltered,
-        willCallOnSuiteSelect: !!onSuiteSelect
-      });
       this.clickCount = 0;
       this.lastClickedRoom = null;
       // Execute suite selection (always allow for multi-select)

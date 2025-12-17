@@ -78,7 +78,6 @@ export class RoomService {
       params: httpParams
     }).pipe(
       tap((response) => {
-        console.log('Fetched resources from backend:', response);
         const data = response.data || [];
         
         const mapped = data.map((item: any) => {
@@ -115,12 +114,11 @@ export class RoomService {
           } as Room;
         });
         
-        console.log('Mapped resources:', mapped);
         this.roomsSubject.next(mapped);
         this.loadingSubject.next(false);
       }),
       catchError(error => {
-        console.error('Error fetching resources from backend:', error);
+
         this.loadingSubject.next(false);
         // Return empty array on error
         this.roomsSubject.next([]);

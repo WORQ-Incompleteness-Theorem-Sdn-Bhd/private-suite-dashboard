@@ -18,14 +18,12 @@ import {
 const BUCKET = process.env.FLOORPLAN_BUCKET || 'floorplan-dashboard-2a468.firebasestorage.app';
 const ROOT_PREFIX = process.env.FLOORPLAN_ROOT_PREFIX || ''; // Empty = root level, 'floorplans' = under floorplans folder
 
-console.log('🔧 Backend Config:', { BUCKET, ROOT_PREFIX, ROOT_PREFIX_EMPTY: ROOT_PREFIX === '' });
 
 const storage: Storage = initializeStorage();
 const bucket = storage.bucket(BUCKET);
 
 /** Main upload handler for Firebase Functions */
 export async function handleUpload(req: Request, res: Response): Promise<void> {
-  console.log("➡️ Upload request received in Firebase Functions");
 
   let tempFilePath: string | null = null;
   let cloudFile: File | null = null;
@@ -39,7 +37,7 @@ export async function handleUpload(req: Request, res: Response): Promise<void> {
         await (cloudFile as File).delete().catch(() => { });
       }
     } catch (e) {
-      console.warn("Cleanup warning:", e);
+
     }
   };
 
@@ -53,7 +51,6 @@ export async function handleUpload(req: Request, res: Response): Promise<void> {
       return await processUpload(fields, file, res, cleanup);
     }
 
-    console.log("📦 Using rawBody for parsing");
     const { fields, file } = await parseMultipartFromRawBody(
       rawBody,
       req.headers["content-type"] as string
@@ -61,10 +58,6 @@ export async function handleUpload(req: Request, res: Response): Promise<void> {
 
     await processUpload(fields, file, res, cleanup);
   } catch (error: any) {
-    console.error("❌ Upload error:", error?.message || error);
-    console.error("❌ Upload error stack:", error?.stack);
-    console.error("❌ Upload error code:", error?.code);
-    console.error("❌ Upload error status:", error?.status);
     await cleanup();
     res.status(500).json({
       error: "Upload failed",
@@ -98,24 +91,12 @@ async function processUpload(
   const fileName =
     fields.fileName || fields.filename || file.filename.replace(/\.svg$/i, "");
 
-  // Debug logging
-  console.log("📤 Upload fields received:", {
-    officeId,
-    floorId,
-    overwrite,
-    fileName,
-    fileSize: file.size,
-    fileType: file.filename
-  });
-
   if (!officeId) {
-    console.error("❌ Missing officeId in upload request");
     res.status(400).json({ error: "officeId is required" });
     return;
   }
 
   if (!floorId) {
-    console.error("❌ Missing floorId in upload request");
     res.status(400).json({ error: "floorId is required" });
     return;
   }
@@ -130,16 +111,10 @@ async function processUpload(
     const prefix = ROOT_PREFIX ? `${ROOT_PREFIX}/` : '';
     const finalKey = `${prefix}${officeId}/${floorId}/${sanitizedName}`;
 
-    console.log("🎯 Upload target path:", finalKey)
-    console.log("📁 Office ID:", officeId);
-    console.log("🏢 Floor ID:", floorId || "none (office-level)");
-    console.log("🔄 Overwrite mode:", overwrite);
 
     // Only check exact target file; folders are virtual and auto-created
     const targetFile = bucket.file(finalKey);
-    console.log("🔍 Checking if target file exists...");
     const [exists] = await targetFile.exists();
-    console.log("📄 Target file exists:", exists);
     if (exists && !overwrite) {
       await fs.unlink(tmp).catch(() => { });
       res.status(409).json({
@@ -153,8 +128,6 @@ async function processUpload(
     }
 
     // 3) Upload the new file
-    console.log("☁️ Uploading to:", finalKey);
-    console.log("🚀 Starting Firebase Storage upload...");
     await bucket.upload(tmp, {
       destination: finalKey,
       resumable: false,
@@ -168,7 +141,6 @@ async function processUpload(
         cacheControl: "public, max-age=31536000, immutable",
       },
     });
-    console.log("✅ Upload completed successfully!");
 
     // Only now set cloudFile for potential cleanup-on-error
     const cloudFile = bucket.file(finalKey);
@@ -195,10 +167,6 @@ async function processUpload(
         },
       });
     } catch (signError: any) {
-      console.error(
-        "Signed URL generation failed:",
-        signError?.message || signError
-      );
       await fs.unlink(tmp).catch(() => { });
       res.status(201).json({
         ok: true,
@@ -217,10 +185,6 @@ async function processUpload(
       await cleanup();
     }
   } catch (err: any) {
-    console.error("❌ Upload processing error:", err?.message || err);
-    console.error("❌ Error stack:", err?.stack);
-    console.error("❌ Error code:", err?.code);
-    console.error("❌ Error status:", err?.status);
     await fs.unlink(tmp).catch(() => { });
     await cleanup();
     res.status(500).json({
@@ -233,61 +197,17 @@ async function processUpload(
 /** GET /api/floorplans/:officeId[/:floorId] */
 async function fetchAllSvgs(bucket: Bucket, prefix: string): Promise<File[]> {
   try {
-    console.log(`🔍 fetchAllSvgs: Searching for SVG files at prefix: "${prefix}"`);
-    console.log(`🔍 fetchAllSvgs: Bucket name: "${bucket.name}"`);
-    console.log(`🔍 fetchAllSvgs: Search options: prefix="${prefix}", no delimiter (recursive)`);
     
     const opts: GetFilesOptions = {
       prefix,            // recursive search (no delimiter)
       autoPaginate: true
     };
     
-    console.log(`🔍 fetchAllSvgs: Calling bucket.getFiles()...`);
     const [allFiles] = await bucket.getFiles(opts);
-    console.log(`📁 fetchAllSvgs: Found ${allFiles.length} total files at prefix "${prefix}"`);
     
-    // Log ALL files found (not just first 5) for debugging
-    if (allFiles.length > 0) {
-      console.log(`📋 All files found (${allFiles.length}):`, allFiles.map(f => ({
-        name: f.name,
-        isSvg: f.name.toLowerCase().endsWith('.svg'),
-        size: f.metadata?.size || 'unknown'
-      })));
-    } else {
-      console.log(`⚠️ fetchAllSvgs: No files found at all at prefix "${prefix}"`);
-      // Try listing what's actually in the bucket to debug
-      try {
-        const [testFiles] = await bucket.getFiles({ prefix: '', maxResults: 50 });
-        console.log(`📋 Root level files in bucket (first 50):`, testFiles.map(f => f.name));
-      } catch (e) {
-        console.error(`❌ Error listing root files:`, e);
-      }
-    }
-    
-    const svgFiles = allFiles.filter((f) => {
-      const isSvg = f.name.toLowerCase().endsWith(".svg");
-      if (!isSvg) {
-        console.log(`⚠️ Skipping non-SVG file: ${f.name}`);
-      }
-      return isSvg;
-    });
-    console.log(`✅ fetchAllSvgs: Found ${svgFiles.length} SVG files at prefix "${prefix}"`);
-    
-    if (svgFiles.length > 0) {
-      console.log(`📋 SVG files found:`, svgFiles.map(f => f.name));
-    } else if (allFiles.length > 0) {
-      console.warn(`⚠️ Found ${allFiles.length} files but none are SVG files!`);
-    }
-    
+    const svgFiles = allFiles.filter((f) => f.name.toLowerCase().endsWith(".svg"));
     return svgFiles;
   } catch (error: any) {
-    console.error("❌ fetchAllSvgs: Error searching for files:", error);
-    console.error("❌ fetchAllSvgs: Error details:", {
-      message: error?.message,
-      code: error?.code,
-      stack: error?.stack
-    });
-    console.log("📭 fetchAllSvgs: No files found at prefix:", prefix, "- returning empty array");
     return [];
   }
 }
@@ -314,10 +234,7 @@ export async function getFloorplan(req: Request, res: Response): Promise<void> {
   try { 
     const officeId = (req.params.officeId || "").trim();
     const floorId = (req.params.floorId || "").trim();
-    console.log("route : /api/floorplans officeId",officeId)
-    console.log("route : /api/floorplans floorId",floorId )
 
-    console.log()
 
     if (!officeId) {
       res.status(400).json({ error: "officeId is required" });
@@ -332,14 +249,15 @@ export async function getFloorplan(req: Request, res: Response): Promise<void> {
     if (floorId) {
       const prefix = ROOT_PREFIX ? `${ROOT_PREFIX}/${officeId}/${floorId}/` : `${officeId}/${floorId}/`;
       const file = await fetchUniqueSvg(bucket, prefix);
-      console.log("getFloorplan : file", file)
 
       if (wantRaw) {
+        // Stream SVG directly with aggressive caching for better performance
         res.setHeader("Content-Type", "image/svg+xml");
-        res.setHeader("Cache-Control", "public, max-age=60");
+        res.setHeader("Cache-Control", "public, max-age=3600, immutable"); // Cache for 1 hour
+        res.setHeader("Access-Control-Allow-Origin", "*"); // Allow CORS
         file.createReadStream()
           .on("error", (err) => {
-            console.error("Stream error:", err);
+
             if (!res.headersSent) res.status(500).end("Failed to read SVG");
           })
           .pipe(res);
@@ -356,7 +274,7 @@ export async function getFloorplan(req: Request, res: Response): Promise<void> {
           });
           signedUrl = url;
         } catch (e: any) {
-          console.warn("Signed URL generation failed:", e?.message || e);
+          // Ignore signing errors
         }
       }
 
@@ -378,58 +296,9 @@ export async function getFloorplan(req: Request, res: Response): Promise<void> {
     // ---- Case B: list all floors under an office ----
     {
       const prefix = ROOT_PREFIX ? `${ROOT_PREFIX}/${officeId}/` : `${officeId}/`;
-      console.log("🔍 getFloorplan: Searching for files at prefix:", prefix);
-      console.log("🔍 getFloorplan: Bucket:", bucket.name, "ROOT_PREFIX:", ROOT_PREFIX || '(empty - root level)');
       const files = await fetchAllSvgs(bucket, prefix);
-      console.log("🔍 getFloorplan: Found files:", files.length, "files");
-      if (files.length === 0) {
-        console.log("📁 No SVG files found. Debugging folder structure...");
-        try {
-          // List all files at this prefix to see what's there
-          const [allFilesAtPrefix] = await bucket.getFiles({ 
-            prefix: prefix, 
-            delimiter: '/',
-            maxResults: 100 
-          });
-          console.log(`📁 Found ${allFilesAtPrefix.length} files/directories at prefix "${prefix}"`);
-          
-          // List subfolders (prefixes)
-          const [subfolders] = await bucket.getFiles({ 
-            prefix: prefix, 
-            delimiter: '/',
-            autoPaginate: true 
-          });
-          const [_, __, apiResponse] = subfolders as any;
-          const prefixes = (apiResponse?.prefixes || []) as string[];
-          console.log(`📁 Found ${prefixes.length} subfolders at prefix "${prefix}":`, prefixes);
-          
-          // List all files recursively (no delimiter) to see what's actually there
-          const [allFilesRecursive] = await bucket.getFiles({ 
-            prefix: prefix,
-            maxResults: 100 
-          });
-          console.log(`📁 Found ${allFilesRecursive.length} total files recursively at prefix "${prefix}"`);
-          if (allFilesRecursive.length > 0) {
-            console.log(`📋 Sample files found recursively:`, allFilesRecursive.slice(0, 10).map(f => ({
-              name: f.name,
-              isSvg: f.name.toLowerCase().endsWith('.svg'),
-              size: f.metadata.size
-            })));
-          }
-          
-          // Also list root level to debug
-          const [rootFiles] = await bucket.getFiles({ prefix: '', maxResults: 20 });
-          console.log(`📁 Root level files/folders (first 20):`, rootFiles.map(f => ({
-            name: f.name,
-            isSvg: f.name.toLowerCase().endsWith('.svg')
-          })));
-        } catch (e) {
-          console.error("❌ Error listing bucket files:", e);
-        }
-      }
       if (!files.length) {
         // Return empty list for new offices instead of 404
-        console.log("📭 No floorplans found for office:", officeId, "- returning empty list");
         res.json({
           ok: true,
           scope: "list",
@@ -453,7 +322,7 @@ export async function getFloorplan(req: Request, res: Response): Promise<void> {
               });
               signedUrl = url;
             } catch (e: any) {
-              console.warn(`Signed URL failed for ${file.name}:`, e?.message || e);
+              // Ignore signing errors
             }
           }
           const [meta] = await file.getMetadata();
@@ -485,23 +354,20 @@ export async function getFloorplan(req: Request, res: Response): Promise<void> {
       res.status(409).json({ error: err.message || "Multiple files found" });
       return;
     }
-    console.error("getFloorplan error:", err?.message || err);
+
     res.status(500).json({ error: "Internal error" });
   }
 }
 
 export async function getAllFloorplans(req: Request, res: Response) {
   try {
-    console.log("getAllFloorplans: Starting to fetch floorplans from bucket:", BUCKET);
 
     const officePrefixes = await listPrefixes(bucket, "");
-    console.log("getAllFloorplans: Found office prefixes:", officePrefixes);
 
     const offices: any[] = [];
 
     for (const op of officePrefixes) {
       const officeId = op.replace(/\/$/, "");
-      console.log("getAllFloorplans: Processing office:", officeId);
 
       // office-level file (direct under office/)
       const officeSvg = await tryBuildEntry(
@@ -523,11 +389,8 @@ export async function getAllFloorplans(req: Request, res: Response) {
       offices.push({ officeId, ...(officeSvg ? { officeSvg } : {}), floors });
     }
 
-    console.log("getAllFloorplans: Returning offices:", offices);
     res.json(offices);
   } catch (err: any) {
-    console.error("getAllFloorplans error:", err?.message || err);
-    console.error("getAllFloorplans stack:", err?.stack);
     res.status(500).json({
       error: "Internal error",
       message: err?.message || "Unknown error",
@@ -536,19 +399,117 @@ export async function getAllFloorplans(req: Request, res: Response) {
   }
 }
 
-/** DELETE /api/floorplans/:officeId[/:floorId] - Delete floorplan with audit logging */
+/** DELETE /api/floorplans/:officeId[/:floorId][/:filename] - Delete floorplan with audit logging */
 export async function deleteFloorplan(req: Request, res: Response): Promise<void> {
   try {
     const officeId = (req.params.officeId || "").trim();
-    const floorId = (req.params.floorId || "").trim(); // Now optional
+    const floorId = (req.params.floorId || "").trim(); // Optional
+    // Decode the filename in case it's URL-encoded
+    let filename = (req.params.filename || "").trim();
+    if (filename) {
+      filename = decodeURIComponent(filename);
+    }
 
-    console.log("🗑️ deleteFloorplan: Request received", { officeId, floorId: floorId || "office-level" });
+    console.log('[deleteFloorplan] Received params:', {
+      officeId,
+      floorId,
+      filename,
+      rawFilename: req.params.filename
+    });
 
     if (!officeId) {
       res.status(400).json({ error: "officeId is required" });
       return;
     }
 
+    // Case 1: Delete specific file
+    if (filename) {
+      const filePath = floorId
+        ? (ROOT_PREFIX ? `${ROOT_PREFIX}/${officeId}/${floorId}/${filename}` : `${officeId}/${floorId}/${filename}`)
+        : (ROOT_PREFIX ? `${ROOT_PREFIX}/${officeId}/${filename}` : `${officeId}/${filename}`);
+
+      console.log('[deleteFloorplan] Attempting to delete file:', {
+        officeId,
+        floorId,
+        filename,
+        filePath,
+        ROOT_PREFIX
+      });
+
+      const file = bucket.file(filePath);
+      const [exists] = await file.exists();
+      console.log('[deleteFloorplan] File exists:', exists);
+
+      if (!exists) {
+        // Try to list files in the directory to help debug
+        const prefix = floorId
+          ? (ROOT_PREFIX ? `${ROOT_PREFIX}/${officeId}/${floorId}/` : `${officeId}/${floorId}/`)
+          : (ROOT_PREFIX ? `${ROOT_PREFIX}/${officeId}/` : `${officeId}/`);
+
+        console.log('[deleteFloorplan] Listing files in prefix:', prefix);
+        const existingFiles = await fetchAllSvgs(bucket, prefix);
+        console.log('[deleteFloorplan] Existing files:', existingFiles.map(f => f.name));
+
+        res.status(404).json({
+          error: "File not found",
+          officeId,
+          floorId: floorId || "office-level",
+          filename,
+          path: filePath,
+          message: `File not found at ${filePath}`,
+          existingFiles: existingFiles.map(f => f.name),
+          debug: {
+            searchedPath: filePath,
+            prefix,
+            ROOT_PREFIX
+          }
+        });
+        return;
+      }
+
+      // Get user info for audit log
+      const userId = (req as any).user?.uid || (req as any).user?.id || "unknown";
+      const userEmail = (req as any).user?.email || "unknown";
+
+      // Get metadata before deletion
+      const [metadata] = await file.getMetadata();
+      const auditData = {
+        path: file.name,
+        size: Number(metadata.size || 0),
+        contentType: metadata.contentType || "image/svg+xml",
+        updated: metadata.updated,
+        metadata: metadata.metadata || {},
+      };
+
+      // Delete the specific file
+      await file.delete();
+
+      // Log audit event
+      try {
+        await logDeletionAudit({
+          officeId,
+          floorId,
+          deletedFiles: [auditData],
+          deletedBy: userId,
+          deletedByEmail: userEmail,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (auditErr: any) {
+        // Continue even if audit logging fails
+      }
+
+      res.status(200).json({
+        success: true,
+        message: `Successfully deleted floorplan file: ${filename}`,
+        deletedFiles: [auditData.path],
+        officeId,
+        floorId,
+        filename,
+      });
+      return;
+    }
+
+    // Case 2: Delete all files at location (original behavior)
     // Build prefix based on whether floorId is provided
     // Floor-level: {officeId}/{floorId}/
     // Office-level: {officeId}/
@@ -556,13 +517,11 @@ export async function deleteFloorplan(req: Request, res: Response): Promise<void
       ? (ROOT_PREFIX ? `${ROOT_PREFIX}/${officeId}/${floorId}/` : `${officeId}/${floorId}/`)
       : (ROOT_PREFIX ? `${ROOT_PREFIX}/${officeId}/` : `${officeId}/`);
 
-    console.log("🗑️ deleteFloorplan: Searching for files at prefix:", prefix);
 
     // Find all SVG files at this location
     const files = await fetchAllSvgs(bucket, prefix);
 
     if (files.length === 0) {
-      console.log("🗑️ deleteFloorplan: No floorplan found at", prefix);
       res.status(404).json({
         error: "Floorplan not found",
         officeId,
@@ -577,11 +536,9 @@ export async function deleteFloorplan(req: Request, res: Response): Promise<void
     const userId = (req as any).user?.uid || (req as any).user?.id || "unknown";
     const userEmail = (req as any).user?.email || "unknown";
 
-    console.log(`🗑️ deleteFloorplan: Found ${files.length} file(s) to delete`);
 
     // Delete all SVG files at this location
     const deletePromises = files.map(async (file) => {
-      console.log("🗑️ deleteFloorplan: Deleting file:", file.name);
       const [metadata] = await file.getMetadata();
 
       // Store metadata for audit log before deletion
@@ -612,11 +569,9 @@ export async function deleteFloorplan(req: Request, res: Response): Promise<void
         timestamp: new Date().toISOString(),
       });
     } catch (auditErr: any) {
-      console.error("🗑️ deleteFloorplan: Audit log failed (non-fatal):", auditErr?.message);
       // Continue even if audit logging fails
     }
 
-    console.log("✅ deleteFloorplan: Successfully deleted", deletedFiles.length, "file(s)");
 
     res.status(200).json({
       success: true,
@@ -626,9 +581,6 @@ export async function deleteFloorplan(req: Request, res: Response): Promise<void
       floorId,
     });
   } catch (err: any) {
-    console.error("❌ deleteFloorplan error:", err?.message || err);
-    console.error("❌ deleteFloorplan stack:", err?.stack);
-
     // Check if it's a permission error
     if (err?.code === 403 || err?.message?.includes("permission")) {
       res.status(403).json({
@@ -663,25 +615,20 @@ async function logDeletionAudit(data: {
       ...data,
     });
 
-    console.log("📝 Audit log saved:", data.officeId, data.floorId);
   } catch (err: any) {
-    console.error("❌ Failed to save audit log:", err?.message);
     throw err;
   }
 }
 //helper
 async function listPrefixes(bucket: Bucket, prefix: string): Promise<string[]> {
   try {
-    console.log("listPrefixes: Listing prefixes for bucket:", bucket.name, "prefix:", prefix);
     const opts: GetFilesOptions = { prefix, delimiter: "/", autoPaginate: true };
     const [_files, _next, apiResponse] = (await (bucket as any).getFiles(
       opts
     )) as [File[], any, { prefixes?: string[] }];
     const prefixes = (apiResponse?.prefixes || []).filter(Boolean);
-    console.log("listPrefixes: Found prefixes:", prefixes);
     return prefixes;
   } catch (error) {
-    console.error("listPrefixes error:", error);
     return [];
   }
 }
@@ -702,9 +649,6 @@ async function tryBuildEntry(
 
   if (svgs.length === 0) return null;
   if (svgs.length > 1) {
-    console.warn(
-      `Multiple SVGs under ${prefix}: ${svgs.map((f) => f.name).join(", ")}`
-    );
     return null;
   }
 

@@ -92,7 +92,7 @@ export async function getResources(req: Request, res: Response): Promise<void> {
         .json({ error: "Region mismatch. Check BIGQUERY_LOCATION." });
       return;
     }
-    console.error("[getResources]", msg);
+
     res.status(500).json({ error: "Internal Server Error" });
   }
 }
@@ -155,7 +155,7 @@ export async function getLocations(req: Request, res: Response): Promise<void> {
         .json({ error: "Region mismatch. Check BIGQUERY_LOCATION." });
       return;
     }
-    console.error("[getLocations]", msg);
+
     res.status(500).json({ error: "Internal Server Error" });
   }
 }
@@ -174,9 +174,6 @@ export async function getFloors(req: Request, res: Response): Promise<void> {
 
   try {
     // Dev logs
-    console.log("[getFloors] ENV_BQ_FLOOR_TABLE_ID:", process.env.BQ_FLOOR_TABLE_ID);
-    console.log("[getFloors] ENV_PROJECT/DATASET:", process.env.BIGQUERY_PROJECT_ID, process.env.BIGQUERY_DATASET_ID);
-    console.log("[getFloors] ENV_LOCATION:", process.env.BIGQUERY_LOCATION);
 
     // Build filters — map office_id -> location_id for floors table
     const filters: Record<string, any> = {
@@ -193,7 +190,6 @@ export async function getFloors(req: Request, res: Response): Promise<void> {
       table: process.env.BQ_FLOOR_TABLE_ID,
     });
 
-    console.log("[getFloors] fetched rows count:", Array.isArray(rows) ? rows.length : typeof rows);
     res.json({
       data: rows,
       limit: limit || undefined,
@@ -203,7 +199,6 @@ export async function getFloors(req: Request, res: Response): Promise<void> {
     return;
   } catch (err: any) {
     const msg = String(err?.message || err);
-    console.error("[getFloors] BigQuery / fetchFromTable error:", msg, err?.stack);
 
     if (msg.includes("Access Denied")) {
       res.status(403).json({ error: "BigQuery access denied", message: msg });
@@ -361,7 +356,7 @@ export async function getAvailability(req: Request, res: Response) {
         .status(400)
         .json({ error: "Region mismatch. Check BIGQUERY_LOCATION." });
     }
-    console.error("[getAvailability]", msg);
+
     return res.status(500).json({ error: "Internal Server Error" });
   }
 }

@@ -2,7 +2,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, map, catchError, of, tap } from 'rxjs';
-import { environment } from '../../environments/environment.prod';
+import { environment } from '../../environments/environment.dev';
 
 // export interface FirebaseSvgResponse {
 //   ok: boolean;
@@ -123,7 +123,7 @@ export class FirebaseSvgService {
   getAllFloorplans(): Observable<OfficeFloorplans[]> {
     return this.http.get<OfficeFloorplans[]>(`${this.baseUrl}`).pipe(
       catchError(error => {
-        console.error('Error fetching floorplans:', error);
+
         return of([]);
       })
     );
@@ -135,13 +135,10 @@ export class FirebaseSvgService {
       ? `${this.baseUrl}/${officeId}/${floorId}`
       : `${this.baseUrl}/${officeId}`;
 
-    console.log("getFloorplan url", url)
-    console.log('🔥 Firebase SVG Service - Fetching floorplan:', { officeId, floorId, url });
 
     return this.http.get<FirebaseSvgResponse>(url).pipe(
-      tap(response => console.log('✅ Firebase SVG Response:', response)),
       catchError(error => {
-        console.error('❌ Firebase SVG Error:', error);
+
         throw error;
       })
     );
@@ -152,7 +149,7 @@ export class FirebaseSvgService {
     return this.getFloorplan(officeId, floorId).pipe(
       map((response: any) => response.signedUrl),
       catchError(error => {
-        console.error('Error getting SVG URL:', error);
+
         return of(null);
       })
     );
@@ -182,7 +179,7 @@ export class FirebaseSvgService {
         return urls;
       }),
       catchError(error => {
-        console.error('Error getting office SVG URLs:', error);
+
         return of([]);
       })
     );
@@ -193,7 +190,7 @@ export class FirebaseSvgService {
     return this.getFloorplan(officeId, floorId).pipe(
       map((response: any) => response.signedUrl ? [response.signedUrl] : []),
       catchError(error => {
-        console.error('Error getting floor SVG URLs:', error);
+
         return of([]);
       })
     );
@@ -227,7 +224,7 @@ export class FirebaseSvgService {
         return mapping;
       }),
       catchError(error => {
-        console.error('Error building office floor mapping:', error);
+
         return of(new Map());
       })
     );

@@ -17,8 +17,10 @@ router.post("/", handleUpload);
 router.get("/", getAllFloorplans);
 router.get("/:officeId", getFloorplan);
 router.get("/:officeId/:floorId", getFloorplan);
-// Delete routes - order matters! More specific route must come first
-router.delete("/:officeId/:floorId", deleteFloorplan); // Floor-level delete
-router.delete("/:officeId", deleteFloorplan);          // Office-level delete (NEW)
+// Delete routes - order matters! More specific routes must come first
+router.delete("/:officeId/:floorId/:filename", deleteFloorplan); // Delete specific file in floor
+router.delete("/:officeId/:floorId", deleteFloorplan);           // Delete all floor-level files
+router.delete("/:officeId/:filename", deleteFloorplan);          // Delete specific office-level file
+router.delete("/:officeId", deleteFloorplan);                    // Delete all office-level files
 
 export default router;

@@ -311,7 +311,7 @@ export class AvailabilityDashboardComponent implements OnInit {
         this.loading = false;
       },
       error: (error) => {
-        console.error('Error loading availability:', error);
+
         this.errorMessage = error.error?.error || 'Failed to load availability data';
         this.loading = false;
       }

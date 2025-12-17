@@ -105,22 +105,18 @@ export function findRoomElementInline(rootSvg: SVGSVGElement, room: Room): Eleme
   const findShapeElement = (selector: string): Element | null => {
     const elements = rootSvg.querySelectorAll(selector);
 
-  // console.log(`🔍 findRoomElementInline: ${room.name} with selector "${selector}" found ${elements.length} elements`);
 
     // Log all elements found for debugging
     for (let i = 0; i < elements.length; i++) {
       const tag = elements[i].tagName.toLowerCase();
       const isShape = isShapeElement(elements[i]);
       const inDefs = !!elements[i].closest('defs');
-      console.log(`  [${i}] <${tag}> ${isShape ? '✅ SHAPE' : '❌ ' + tag}${inDefs ? ' [IN <defs>]' : ''}`);
 
       // If it's a shape element, log its bbox
       if (isShape) {
         try {
           const bbox = (elements[i] as SVGGraphicsElement).getBBox();
-          console.log(`       bbox: (${bbox.x.toFixed(1)}, ${bbox.y.toFixed(1)}, ${bbox.width.toFixed(1)}x${bbox.height.toFixed(1)})`);
         } catch (e) {
-          console.log(`       bbox: error getting bbox`);
         }
       }
     }
@@ -128,7 +124,6 @@ export function findRoomElementInline(rootSvg: SVGSVGElement, room: Room): Eleme
     // First pass: look for shape elements NOT in <defs>
     for (let i = 0; i < elements.length; i++) {
       if (isShapeElement(elements[i]) && !elements[i].closest('defs')) {
-        console.log(`  ✅ Selected element [${i}] <${elements[i].tagName.toLowerCase()}> (not in <defs>)`);
         return elements[i];
       }
     }
@@ -260,7 +255,7 @@ export function extractFloorIdFromUrl(url: string, rooms?: any[]): string | null
       }
     }
   } catch (error) {
-    console.warn('Error extracting floor_id from URL:', url, error);
+
   }
 
   return null;

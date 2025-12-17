@@ -30,7 +30,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
       if (error.status === 401) {
         // Only clear if it was actually set
         if (sessionStorage.getItem('userAccessToken')) {
-          console.warn('Token expired or invalid. Clearing session.');
+
           sessionStorage.removeItem('userAccessToken');
         }
       }

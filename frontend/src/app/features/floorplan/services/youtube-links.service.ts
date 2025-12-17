@@ -10,7 +10,7 @@ export class YoutubeLinksService {
     if (youtubeUrl) {
       window.open(youtubeUrl, '_blank', 'noopener,noreferrer');
     } else {
-      console.warn('No valid YouTube URL found for room:', room.name);
+
     }
   }
 

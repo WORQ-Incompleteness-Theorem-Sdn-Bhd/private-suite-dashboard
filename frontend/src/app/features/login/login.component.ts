@@ -25,7 +25,6 @@ export class LoginComponent {
       await this.auth.signInWithGoogle();
       // Success toast is now handled by AuthService based on email domain validation
     } catch (err: any) {
-      console.error('[Login] Sign-in failed:', err);
 
       // Handle specific error cases
       if (err?.code === 'auth/popup-closed-by-user') {

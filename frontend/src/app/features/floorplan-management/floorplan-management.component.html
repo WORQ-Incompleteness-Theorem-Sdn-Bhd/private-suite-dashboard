@@ -1,21 +1,97 @@
+<div
+  class="h-screen bg-white overflow-y-auto overflow-x-hidden transition-[padding] duration-300"
+  [ngClass]="{ 'pl-0': sidebarCollapsed, 'pl-64': !sidebarCollapsed }"
+  (click)="onMainContentClick()"
+>
 
-<!-- 🔙 Back Arrow Top Bar -->
-<div class="w-full px-6 py-4 bg-white shadow-sm rounded-lg mb-6 flex items-center">
-  <button
-    (click)="goBackToDashboard()"
-    class="flex items-center gap-2 text-gray-600 hover:text-orange-600 transition-colors"
+<!-- Sidebar -->
+  <aside
+    class="fixed inset-y-0 left-0 z-40 flex flex-col bg-white shadow-lg transition-transform duration-300"
+    [ngClass]="{
+      'w-64 -translate-x-0': !sidebarCollapsed,
+      '-translate-x-full': sidebarCollapsed
+    }"
+    [attr.aria-hidden]="sidebarCollapsed ? 'true' : 'false'"
+    (click)="$event.stopPropagation()"
   >
-    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        stroke-width="2"
-        d="M10 19l-7-7m0 0l7-7m-7 7h18"
-      />
-    </svg>
-    <span class="text-sm font-medium">Back to Dashboard</span>
+    <!-- Header (logo) -->
+    <div class="flex items-center justify-between px-4 py-4 border-b border-gray-200">
+      <img src="assets/Logo/Worq-logo.png" alt="WORQ" class="h-16 w-auto object-contain max-w-full" *ngIf="!sidebarCollapsed" />
+      <img src="assets/Logo/Worq-logo.png" alt="WORQ" class="h-10 w-10 object-contain" *ngIf="sidebarCollapsed" />
+    </div>
+
+    <!-- Navigation -->
+    <nav class="flex-1 p-3 space-y-1 overflow-y-auto">
+      <a (click)="goBackToDashboard()"
+        class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer">
+        <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+        </svg>
+        <span class="font-medium" *ngIf="!sidebarCollapsed">Dashboard</span>
+      </a>
+
+      <div class="flex items-center gap-3 px-3 py-2 bg-orange-100 text-orange-600 rounded-lg">
+        <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066
+                  c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572
+                  c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573
+                  c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065
+                  c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066
+                  c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572
+                  c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573
+                  c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+        <span class="font-medium" *ngIf="!sidebarCollapsed">Management</span>
+      </div>
+
+      <!-- Guidelines Button -->
+      <button
+        (click)="toggleGuidelinesModal()"
+        class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
+        title="View Guidelines"
+      >
+        <img src="assets/Icon/info.png" alt="Info" class="w-5 h-5 shrink-0" />
+        <span class="font-medium" *ngIf="!sidebarCollapsed">Guidelines</span>
+      </button>
+    </nav>
+
+    <!-- Sidebar footer -->
+    <div class="mt-auto p-4 border-t border-gray-200">
+      <button
+        (click)="logout()"
+        class="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium
+               text-white bg-orange-600 rounded-lg hover:bg-orange-700 transition-colors"
+      >
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a2 2 0 01-2 2H5
+                   a2 2 0 01-2-2V7a2 2 0 012-2h6a2 2 0 012 2v1" />
+        </svg>
+        <span *ngIf="!sidebarCollapsed">Logout</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Image button to toggle sidebar-->
+  <button
+    *ngIf="sidebarCollapsed"
+    (click)="$event.stopPropagation();toggleSidebar()"
+    class="fixed top-5 left-4 z-50 flex items-center justify-center h-10 w-10
+          rounded-full shadow-md bg-white hover:bg-gray-100 transition-transform hover:scale-105"
+    aria-label="Toggle sidebar"
+  >
+    <img src="assets/Icon/app.png" alt="Menu Icon" class="h-6 w-6 object-contain" />
   </button>
-</div>
+
+  <!-- Backdrop (mobile) -->
+  <div class="fixed inset-0 z-30 bg-black/40 lg:hidden" *ngIf="mobileOpen" (click)="closeMobile()"></div>
+
+<!-- Main Content Area -->
+<main class="flex-1 overflow-auto p-4">
 
 <!-- 🧭 Main Page Layout -->
 <div class="grid grid-cols-1 gap-6 mx-auto lg:grid-cols-12 max-w-7xl">
@@ -116,9 +192,6 @@
           <div *ngIf="form.get('officeId')?.value" class="space-y-2">
             <div class="flex items-center gap-2">
               <label class="block text-sm font-semibold text-gray-700">Floor</label>
-              <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-                Optional
-              </span>
             </div>
             <select formControlName="floorId"
                     (change)="onUploadFloorSelected()"
@@ -159,17 +232,6 @@
             File is required
           </small>
         </div>
-
-    <!-- !!! REMOVE THIS BEFORE DEPLOYING !!! -->
-    <!-- Overwrite existing toggle
-        <div class="flex items-start gap-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <input type="checkbox" id="overwrite" formControlName="overwrite" class="mt-1 h-4 w-4 text-orange-600 border-gray-300 rounded" />
-          <label for="overwrite" class="text-sm text-gray-700 cursor-pointer">
-            <span class="font-medium">Overwrite existing floorplan</span>
-            <span class="block text-xs text-gray-600">Enable to replace an existing floorplan at this location.</span>
-          </label>
-        </div> -->
-
         <button 
           type="submit"
           class="w-full px-4 py-2 text-sm font-medium text-white bg-orange-600 rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -261,16 +323,16 @@
       <div class="text-sm">{{ error }}</div>
     </div>
 
-  
+
     <!-- Multiple SVG Navigation (if multiple levels) -->
     <div *ngIf="totalFloorplans > 1 && !loading && !error" class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-      <div class="flex items-center justify-between">
+      <div class="flex items-center justify-between mb-3">
         <div class="text-sm text-blue-800">
           <span class="font-semibold">{{ totalFloorplans }} floorplans</span> available
         </div>
         <div class="flex space-x-2">
-          <button 
-            (click)="previousFloorplan()" 
+          <button
+            (click)="previousFloorplan()"
             [disabled]="!hasPreviousFloorplan"
             class="px-3 py-1 text-xs bg-blue-600 text-white rounded disabled:bg-gray-300 disabled:cursor-not-allowed">
             ← Previous
@@ -278,12 +340,101 @@
           <span class="px-2 py-1 text-xs bg-white border rounded">
             {{ currentFloorplanIndex + 1 }} of {{ totalFloorplans }}
           </span>
-          <button 
-            (click)="nextFloorplan()" 
+          <button
+            (click)="nextFloorplan()"
             [disabled]="!hasNextFloorplan"
             class="px-3 py-1 text-xs bg-blue-600 text-white rounded disabled:bg-gray-300 disabled:cursor-not-allowed">
             Next →
           </button>
+        </div>
+      </div>
+
+      <!-- Collapsible Floorplan List Header -->
+      <div class="mt-3 border-t border-blue-200 pt-3">
+        <button
+          (click)="toggleFloorplanList()"
+          class="w-full flex items-center justify-between p-2 bg-white hover:bg-blue-50 rounded-lg transition-colors">
+          <div class="flex items-center gap-2">
+            <svg
+              class="w-4 h-4 text-blue-600 transition-transform duration-200"
+              [class.rotate-90]="showFloorplanList"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+            <span class="text-xs font-medium text-blue-800">
+              Floorplan List (Drag to reorder)
+              <span *ngIf="hasUnsavedChanges" class="ml-1 text-orange-600">*</span>
+            </span>
+          </div>
+          <span class="text-xs text-gray-500">
+            {{ showFloorplanList ? 'Hide' : 'Show' }}
+          </span>
+        </button>
+
+        <!-- Draggable Floorplan List -->
+        <div *ngIf="showFloorplanList" class="space-y-2 mt-3 transition-all duration-300">
+          <div
+            *ngFor="let svgUrl of displayedSvgs; let i = index"
+            draggable="true"
+            (dragstart)="onDragStart($event, i)"
+            (dragover)="onDragOver($event)"
+            (drop)="onDrop($event, i)"
+            (dragend)="onDragEnd($event)"
+            [class.opacity-50]="draggedIndex === i"
+            class="flex items-center justify-between p-2 bg-white border rounded-lg cursor-move hover:bg-blue-50 hover:border-blue-300 transition-all"
+            [class.ring-2]="i === currentFloorplanIndex"
+            [class.ring-blue-500]="i === currentFloorplanIndex">
+
+            <!-- Drag Handle -->
+            <div class="flex items-center gap-2 flex-1">
+              <svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M7 2a2 2 0 1 0 .001 4.001A2 2 0 0 0 7 2zm0 6a2 2 0 1 0 .001 4.001A2 2 0 0 0 7 8zm0 6a2 2 0 1 0 .001 4.001A2 2 0 0 0 7 14zm6-8a2 2 0 1 0-.001-4.001A2 2 0 0 0 13 6zm0 2a2 2 0 1 0 .001 4.001A2 2 0 0 0 13 8zm0 6a2 2 0 1 0 .001 4.001A2 2 0 0 0 13 14z"></path>
+              </svg>
+              <span class="text-xs font-medium text-gray-700">
+                {{ getFloorplanName(svgUrl, i) }}
+                <span *ngIf="i === currentFloorplanIndex" class="ml-1 text-blue-600">(viewing)</span>
+              </span>
+            </div>
+
+            <!-- View Button -->
+            <button
+              (click)="goToFloorplan(i)"
+              class="px-2 py-1 text-xs text-blue-600 hover:bg-blue-100 rounded transition-colors">
+              View
+            </button>
+          </div>
+
+          <!-- Save & Reset Buttons -->
+          <div class="flex gap-2 mt-4 pt-3 border-t border-blue-200">
+            <button
+              (click)="saveFloorplanOrder()"
+              [disabled]="!hasUnsavedChanges || isSavingOrder"
+              class="flex-1 px-3 py-2 text-xs font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+              </svg>
+              <span *ngIf="!isSavingOrder">Save Order</span>
+              <span *ngIf="isSavingOrder">Saving...</span>
+            </button>
+            <button
+              (click)="resetFloorplanOrder()"
+              [disabled]="isSavingOrder"
+              class="flex-1 px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+              </svg>
+              Reset
+            </button>
+          </div>
+
+          <!-- Unsaved Changes Warning -->
+          <div *ngIf="hasUnsavedChanges" class="mt-2 p-2 bg-orange-50 border border-orange-200 rounded-lg">
+            <p class="text-xs text-orange-800">
+              ⚠️ You have unsaved changes. Click "Save Order" to apply this order to the dashboard.
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -405,3 +556,107 @@
     </div>
   </div>
 </div>
+
+<!-- Guidelines Modal -->
+<div *ngIf="showGuidelinesModal"
+     class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4"
+     (click)="closeGuidelinesModal()">
+  <div class="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col"
+       (click)="$event.stopPropagation()">
+    <!-- Modal Header -->
+    <div class="flex items-center justify-between p-6 border-b border-gray-200">
+      <div class="flex items-center gap-3">
+        <img src="assets/Icon/info.png" alt="Info" class="w-8 h-8" />
+        <h2 class="text-2xl font-bold text-gray-900">Floorplan Guidelines</h2>
+      </div>
+      <button
+        (click)="closeGuidelinesModal()"
+        class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Modal Content -->
+    <div class="flex-1 overflow-y-auto p-6">
+      <div class="space-y-6">
+        <!-- Introduction -->
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <h3 class="text-lg font-semibold text-blue-900 mb-2">📋 Important Guidelines</h3>
+          <p class="text-sm text-blue-800">
+            Please follow these guidelines when creating or uploading floorplan SVG files to ensure proper display and functionality.
+          </p>
+        </div>
+
+        <!-- Download PDF Buttons -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <a
+            href="assets/Guidelines/Floorplan Dashboard – Figma Drawing Guideline.pdf"
+            download="Floorplan Dashboard - Figma Drawing Guideline.pdf"
+            class="flex items-center gap-3 p-4 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors">
+            <svg class="w-10 h-10 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            <div class="flex-1 text-left">
+              <div class="font-semibold text-gray-900">Figma Drawing Guideline</div>
+              <div class="text-xs text-gray-600">Step-by-step drawing instructions</div>
+            </div>
+          </a>
+
+          <a
+            href="assets/Guidelines/Floorplan Dashboard.pdf"
+            download="Floorplan Dashboard.pdf"
+            class="flex items-center gap-3 p-4 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors">
+            <svg class="w-10 h-10 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            <div class="flex-1 text-left">
+              <div class="font-semibold text-gray-900">Dashboard Overview</div>
+              <div class="text-xs text-gray-600">General dashboard guidelines</div>
+            </div>
+          </a>
+        </div>
+
+        <!-- Quick Tips -->
+        <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+          <h3 class="text-lg font-semibold text-gray-900 mb-3">💡 Quick Tips</h3>
+          <ul class="space-y-2 text-sm text-gray-700">
+            <li class="flex items-start gap-2">
+              <span class="text-orange-600 mt-0.5">•</span>
+              <span>Each room/suite must have a unique <code class="px-1 py-0.5 bg-gray-200 rounded text-xs">id</code> attribute in the SVG</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-orange-600 mt-0.5">•</span>
+              <span>Use consistent naming conventions for room IDs (e.g., "room-101", "suite-202")</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-orange-600 mt-0.5">•</span>
+              <span>Export SVGs with optimized settings to reduce file size</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-orange-600 mt-0.5">•</span>
+              <span>Test your floorplan after uploading to ensure all rooms are clickable</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-orange-600 mt-0.5">•</span>
+              <span>Use the drag-and-drop feature to reorder floorplans as needed</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Footer -->
+    <div class="flex items-center justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
+      <button
+        (click)="closeGuidelinesModal()"
+        class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+        Close
+      </button>
+    </div>
+  </div>
+</div>
+
+</main> <!-- Close main content -->
+</div> <!-- Close outer wrapper -->

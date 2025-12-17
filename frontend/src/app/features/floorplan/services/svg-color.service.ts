@@ -16,13 +16,6 @@ export class SvgColorService {
     getPaxColor: (capacity: number) => string,
   ): void {
     // 🔍 DEBUG: Log when updateSvgColors is called
-    console.log('🎨 updateSvgColors (object-embedded) called:', {
-      roomsCount: rooms.length,
-      filteredRoomsCount: filteredRooms.length,
-      hasDate: !!selectedStartDate,
-      statusFilter: filtersStatus,
-      timestamp: new Date().toISOString()
-    });
 
     let elementsFound = 0;
     let elementsColored = 0;
@@ -46,29 +39,18 @@ export class SvgColorService {
           // 🔍 DEBUG: Log color decision for first 3 rooms
           const debugThis = elementsFound <= 3;
           if (debugThis) {
-            console.log(`🎨 [Object SVG] Room ${room.name}:`, {
-              roomStatus: room.status,
-              effectiveStatus,
-              filtersStatus,
-              hasDate: !!selectedStartDate,
-              avail,
-              capacity: room.capacity
-            });
           }
 
           let color: string;
           if (effectiveStatus === 'Occupied') {
             color = '#ef4444';
-            if (debugThis) console.log(`  → RED (Occupied)`);
           } else if (filtersStatus === 'Available') {
             // ✅ Apply pax colors when status filter is "Available" (works with OR without date)
             color = getPaxColor(room.capacity);
             elementsColored++;
-            if (debugThis) console.log(`  → PAX COLOR: ${color} (capacity: ${room.capacity})`);
           } else {
             color = '#22c55e';
             elementsColored++;
-            if (debugThis) console.log(`  → GREEN (Available, filter not set to Available)`);
           }
 
           el.setAttribute('fill', color);
@@ -80,11 +62,6 @@ export class SvgColorService {
     });
 
     // 🔍 DEBUG: Summary
-    console.log('✅ updateSvgColors (object-embedded) complete:', {
-      elementsFound,
-      elementsColored,
-      filteredRoomsCount: filteredRooms.length
-    });
   }
 
   updateSvgColorsInline(
@@ -99,13 +76,6 @@ export class SvgColorService {
     findRoomElementInline: (rootSvg: SVGSVGElement, room: Room) => Element | null
   ): void {
     // 🔍 DEBUG: Log when updateSvgColorsInline is called
-    console.log('🎨 updateSvgColorsInline called:', {
-      roomsCount: rooms.length,
-      filteredRoomsCount: filteredRooms.length,
-      hasDate: !!selectedStartDate,
-      statusFilter: filtersStatus,
-      timestamp: new Date().toISOString()
-    });
 
     let elementsFound = 0;
     let elementsColored = 0;
@@ -114,7 +84,6 @@ export class SvgColorService {
       const el = findRoomElementInline(rootSvg, room);
       if (!el) {
         // 🔍 DEBUG: Log ALL missing elements for UBP3A debugging
-        console.warn(`⚠️ SVG element not found for room ${room.id} (${room.name})`);
         return;
       }
       elementsFound++;
@@ -127,7 +96,6 @@ export class SvgColorService {
 
       // 🔍 DEBUG: Log filtering status
       if (!isSelected && elementsFound <= 5) {
-        console.log(`⚪ Room ${room.name} (${room.id}) NOT in filteredRooms - will be white/gray`);
       }
 
       if (isSelected) {
@@ -143,29 +111,16 @@ export class SvgColorService {
         }
 
         // 🔍 DEBUG: Enhanced logging for UBP3A
-        console.log(`🎨 [Inline SVG] Room ${room.name} (${room.id}):`, {
-          roomStatus: room.status,
-          effectiveStatus,
-          filtersStatus,
-          hasDate: !!selectedStartDate,
-          avail,
-          availInMap: availabilityByRoomId.has(room.id),
-          capacity: room.capacity,
-          isSelected: true
-        });
 
         if (effectiveStatus === 'Occupied') {
           color = '#ef4444';
-          console.log(`  → RED (Occupied)`);
         } else if (filtersStatus === 'Available') {
           // ✅ Apply pax colors when status filter is "Available" (works with OR without date)
           color = getPaxColor(room.capacity);
           elementsColored++;
-          console.log(`  → PAX COLOR: ${color} (capacity: ${room.capacity})`);
         } else {
           color = '#22c55e';
           elementsColored++;
-          console.log(`  → GREEN (Available, filter not set to Available)`);
         }
       }
 
@@ -194,11 +149,6 @@ export class SvgColorService {
     });
 
     // 🔍 DEBUG: Summary of color updates
-    console.log('✅ updateSvgColorsInline complete:', {
-      elementsFound,
-      elementsColored,
-      filteredRoomsCount: filteredRooms.length
-    });
   }
 
   /**
@@ -216,12 +166,6 @@ export class SvgColorService {
     getPaxColor: (capacity: number) => string,
     findRoomElementInline: (rootSvg: SVGSVGElement, room: Room) => Element | null
   ): void {
-    console.log('🎨 applySvgColorsForPdfExport called:', {
-      roomsCount: rooms.length,
-      filteredRoomsCount: filteredRooms.length,
-      hasDate: !!selectedStartDate,
-      statusFilter: filtersStatus
-    });
 
     let elementsFound = 0;
     let elementsColored = 0;
@@ -281,11 +225,6 @@ export class SvgColorService {
       }
     });
 
-    console.log('✅ applySvgColorsForPdfExport complete:', {
-      elementsFound,
-      elementsColored,
-      filteredRoomsCount: filteredRooms.length
-    });
   }
 }
 

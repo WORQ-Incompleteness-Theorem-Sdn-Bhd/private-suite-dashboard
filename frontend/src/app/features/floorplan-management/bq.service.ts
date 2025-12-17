@@ -42,18 +42,6 @@ export class BQService {
     if (fileName) form.append('fileName', fileName);
     if (overwrite) form.append('overwrite', 'true');
 
-    console.log('📤 BQService: Upload request details:', {
-      url: `${this.floorplanUrl}`,
-      formData: {
-        officeId,
-        floorId,
-        fileName,
-        overwrite,
-        fileSize: file.size,
-        fileType: file.type
-      }
-    });
-
     return this.http
       .post<UploadResponse>(`${this.floorplanUrl}`, form, {
         reportProgress: true,

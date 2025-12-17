@@ -58,7 +58,10 @@ export class FloorplanComponent implements OnInit, AfterViewInit {
   floorIdToFloorMap: Map<string, Floor> = new Map();
   
   sidebarCollapsed = false;
-  mobileOpen = false; 
+  mobileOpen = false;
+
+  // Guidelines modal state
+  showGuidelinesModal = false;
 
   // Pagination for floorplans
   currentFloorplanIndex = 0;
@@ -331,7 +334,7 @@ ngOnInit() {
     // This ensures the BehaviorSubject is only updated with filtered offices
     this.officeService.loadOfficesWithFloorplans().pipe(
       catchError((error) => {
-        console.error('❌ [DASHBOARD] Error loading outlets:', error);
+
         this.toastService.error('Failed to load outlets. Please try again.');
         return of({ success: false, count: 0 });
       }),
@@ -345,7 +348,7 @@ ngOnInit() {
           this.toastService.success('Outlets loaded successfully');
           this.buildOptions();
         } else {
-          console.warn('⚠️ [DASHBOARD] No outlets with floorplans found');
+
           this.toastService.info('No outlets with floorplans available');
           this.buildOptions(); // Still build options to show empty state
         }
@@ -357,7 +360,7 @@ ngOnInit() {
   loadFloors() {
     this.floorService.getFloors().pipe(
       catchError((error) => {
-        console.error('Error loading floors:', error);
+
         this.toastService.error('Failed to load floors. Please try again.');
         return of([]);
       })
@@ -394,7 +397,7 @@ ngOnInit() {
     // Get the office ID from the display name and store normalized ID in filters
     const officeId = this.getOfficeIdFromOutletName(outletDisplayName);
     if (!officeId) {
-      console.error('Office ID not found for outlet:', outletDisplayName);
+
       this.toastService.error('Invalid outlet selected');
       return;
     }
@@ -435,7 +438,7 @@ ngOnInit() {
         }
       }),
       catchError((error) => {
-        console.error('Error loading resources:', error);
+
         this.toastService.error('Failed to load resources. Please try again.');
         this.dataLoading = false;
         return of(null);
@@ -478,7 +481,7 @@ ngOnInit() {
           this.applyFloorplanState();
         };
         const onError = () => {
-          console.error('SVG object failed to load');
+
           this.svgFailed = true;
           this.svgLoading = false;
           this.applyFloorplanState();
@@ -612,7 +615,7 @@ ngOnInit() {
       this.floorplansLoaded = true;
       this.updateDisplayedSvgs();
     } catch (error) {
-      console.error('Error updating selected outlet SVGs:', error);
+
       this.floorplansLoaded = true;
     }
 
@@ -784,7 +787,7 @@ ngOnInit() {
       // }
 
       if (this.availabilityByRoomId.size < this.rooms.length) {
-        console.warn(`⚠️ Availability data incomplete: ${this.availabilityByRoomId.size}/${this.rooms.length} rooms`);
+
       }
 
       // ✅ FIX: Update UI after availability is confirmed loaded
@@ -799,7 +802,7 @@ ngOnInit() {
       });
 
     } catch (error) {
-      console.error('❌ Failed to fetch availability', error);
+
       this.toastService.error('Failed to fetch availability for selected date(s)');
       this.availabilityByRoomId.clear();
       this.buildOptions(); // Rebuild options even on error
@@ -889,6 +892,9 @@ ngOnInit() {
       this.displayedSvgs = this.selectedOutletSvgs || [];
     }
 
+    // Apply saved floorplan order from localStorage if exists
+    this.applySavedFloorplanOrder();
+
     this.currentFloorplanIndex = 0; // Reset pagination
 
     if (this.displayedSvgs.length > 0) {
@@ -898,6 +904,51 @@ ngOnInit() {
       this.svgLoading = false;
       this.svgFailed = true;
       this.floorplansLoaded = true; // Ensure loaded state is set
+    }
+  }
+
+  /**
+   * Apply saved floorplan order from localStorage for the current outlet
+   */
+  private applySavedFloorplanOrder() {
+    const outletId = this.filters.outlet;
+
+    if (!outletId || outletId === 'Select Outlet' || this.displayedSvgs.length === 0) {
+      return;
+    }
+
+    try {
+      const existingOrders = localStorage.getItem('floorplanOrders');
+
+      if (!existingOrders) {
+        return;
+      }
+
+      const orders = JSON.parse(existingOrders);
+      const savedOrder = orders[outletId];
+
+      if (!savedOrder || !Array.isArray(savedOrder) || savedOrder.length === 0) {
+        return;
+      }
+
+      // Create a map of saved order for quick lookup (normalize URLs for comparison)
+      const orderMap = new Map<string, number>();
+      savedOrder.forEach((url: string, index: number) => {
+        const normalizedUrl = this.normalizeUrlKey(url);
+        orderMap.set(normalizedUrl, index);
+      });
+
+      // Sort displayedSvgs based on saved order
+      // SVGs in saved order come first, then any new SVGs that weren't in the saved order
+      this.displayedSvgs.sort((urlA, urlB) => {
+        const normalizedA = this.normalizeUrlKey(urlA);
+        const normalizedB = this.normalizeUrlKey(urlB);
+        const indexA = orderMap.has(normalizedA) ? orderMap.get(normalizedA)! : Number.MAX_SAFE_INTEGER;
+        const indexB = orderMap.has(normalizedB) ? orderMap.get(normalizedB)! : Number.MAX_SAFE_INTEGER;
+        return indexA - indexB;
+      });
+    } catch (error) {
+      console.error('Error loading saved floorplan order:', error);
     }
   }
 
@@ -1232,7 +1283,7 @@ async downloadFloorplanWithDetails(format: 'svg' | 'png' = 'svg') {
     this.showDownloadMenu = false;
 
     if (!this.selectedOutletSvgs || this.selectedOutletSvgs.length === 0) {
-      console.warn('No floorplan to export.');
+
       return;
     }
 
@@ -1242,7 +1293,7 @@ async downloadFloorplanWithDetails(format: 'svg' | 'png' = 'svg') {
       const svgHosts = this.svgHosts?.toArray?.() ?? [];
       
       if (svgHosts.length === 0) {
-        console.warn('❌ No SVG hosts found for PDF export');
+
         this.showMessage('No floorplan data available for export', true);
         return;
       }
@@ -1267,8 +1318,8 @@ async downloadFloorplanWithDetails(format: 'svg' | 'png' = 'svg') {
         displayedSvgs: this.displayedSvgs,
         availabilityByRoomId: this.availabilityByRoomId,
         paxPalette: this.paxPalette,
-        paxBuckets: dynamicBuckets, // Use dynamic buckets based on outlet's pax groups
-        paxBucketColorMap: paxBucketColorMap, // Color mapping for dynamic buckets
+        paxBuckets: dynamicBuckets,
+        paxBucketColorMap,
         toStatusUnion: (status: string) => this.availabilityService.toStatusUnion(status),
         getFloorLabel: (path: string) => this.getFloorLabel(path),
         findRoomElementInline: (rootSvg: SVGSVGElement, room: Room) => this.findRoomElementInline(rootSvg, room),
@@ -1298,7 +1349,7 @@ async downloadFloorplanWithDetails(format: 'svg' | 'png' = 'svg') {
 
       this.showMessage(`Floorplan PDF exported successfully! 🎉`);
     } catch (error) {
-      console.error('Error exporting floorplan as PDF:', error);
+
       this.showMessage('Failed to export floorplan PDF. Please try again.', true);
     } finally {
       this.isExportingFloorplan = false;
@@ -1435,5 +1486,19 @@ async downloadFloorplanWithDetails(format: 'svg' | 'png' = 'svg') {
       (capacity: number) => this.getPaxColor(capacity),
       (rootSvg: SVGSVGElement, room: Room) => this.findRoomElementInline(rootSvg, room)
     );
+  }
+
+  /**
+   * Toggle the guidelines modal
+   */
+  toggleGuidelinesModal(): void {
+    this.showGuidelinesModal = !this.showGuidelinesModal;
+  }
+
+  /**
+   * Close the guidelines modal
+   */
+  closeGuidelinesModal(): void {
+    this.showGuidelinesModal = false;
   }
 }

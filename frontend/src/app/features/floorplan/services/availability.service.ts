@@ -57,14 +57,12 @@ export class AvailabilityService {
         
         forkJoin(calls).subscribe({
           next: (responses: any[]) => {
-            console.log(`🔍 Chunked availability: Received ${responses.length} responses`);
 
             const combined = new Map<string, 'free' | 'occupied'>();
 
             responses.forEach((resp, respIndex) => {
               const rows = resp?.resources || resp?.rows || resp?.data || [];
               if (respIndex === 0) {
-                console.log(`🔍 Chunk ${respIndex} has ${rows.length} rows, sample:`, rows[0]);
               }
 
               rows.forEach((r: any) => {
@@ -108,7 +106,7 @@ export class AvailabilityService {
             resolve(combined);
           },
           error: (e) => {
-            console.error('Failed to fetch availability', e);
+
             this.toastService.error('Failed to fetch availability data. Please try again.');
             resolve(new Map());
           }
@@ -119,7 +117,7 @@ export class AvailabilityService {
       // --- SCENARIO 2: SHORT DATE RANGE (Single Call) ---
       this.roomService.getAvailability({ start, end, officeId }).pipe(
         catchError((e) => {
-          console.error('Failed to fetch availability', e);
+
           if (e.error && e.error.error && e.error.error.includes('Range too large')) {
             this.toastService.error('Date range too large. Please select a range of 366 days or less.');
           } else {
@@ -131,43 +129,25 @@ export class AvailabilityService {
         next: (resp) => {
           // ✅ FIX: Validate response structure
           if (!resp || typeof resp !== 'object') {
-            console.error('❌ Invalid API response:', resp);
+
             this.toastService.error('Invalid availability data received from server');
             resolve(new Map());
             return;
           }
-
-          // 🔍 DEBUG: Log raw API response
-          console.log('🔍 Raw availability API response:', {
-            responseKeys: Object.keys(resp || {}),
-            hasResources: !!resp?.resources,
-            hasRows: !!resp?.rows,
-            hasData: !!resp?.data,
-            fullResponse: resp
-          });
 
           const map = new Map<string, 'free' | 'occupied'>();
           const rows = resp?.resources || resp?.rows || resp?.data || [];
 
           // ✅ FIX: Warn if API returned empty array
           if (rows.length === 0) {
-            console.warn('⚠️ API returned empty resources/rows/data array');
+
           }
 
-          console.log(`🔍 Extracted ${rows.length} rows from API response`);
           if (rows.length > 0) {
-            console.log('🔍 Sample row structure:', rows[0]);
           }
 
           rows.forEach((r: any, index: number) => {
             const days = r.days || [];
-            if (index < 3) {
-              console.log(`🔍 Processing row ${index}:`, {
-                resource_id: r.resource_id,
-                daysLength: days.length,
-                sampleDays: days.slice(0, 2)
-              });
-            }
             if (days.length === 0) return;
 
             // For a single chunk, if ANY day is not free, the whole range is occupied
@@ -179,26 +159,6 @@ export class AvailabilityService {
             // ✅ FIX: Normalize IDs before matching
             const normalizeId = (id: string) => id?.toLowerCase().trim();
             const room = rooms.find(room => normalizeId(room.id) === normalizeId(r.resource_id));
-
-            // 🔍 DEBUG: Enhanced logging for UBP3A debugging
-            if (!room) {
-              console.warn(`⚠️ No room found for resource_id: ${r.resource_id}`, {
-                normalizedResourceId: normalizeId(r.resource_id),
-                totalRoomsInMemory: rooms.length,
-                availableRoomIds: rooms.slice(0, 5).map(rm => ({
-                  id: rm.id,
-                  name: rm.name,
-                  normalized: normalizeId(rm.id)
-                }))
-              });
-            } else if (index < 3) {
-              console.log(`✅ Room FOUND for resource_id: ${r.resource_id}`, {
-                roomName: room.name,
-                roomStatus: room.status,
-                isAvailable,
-                willSetAs: isAvailable ? 'free' : 'occupied'
-              });
-            }
 
             if (room && isRoomUnavailable(room)) {
               map.set(r.resource_id, 'occupied');
